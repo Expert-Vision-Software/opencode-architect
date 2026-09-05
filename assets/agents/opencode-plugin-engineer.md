@@ -42,8 +42,13 @@ Deliverables
 - Keep plugins small and focused.
 - Avoid writing logs with console if structured logging is available.
 
-Docs usage
+References usage
 
-- Use '~/.cache/opencode/opencode-architect/docs/plugins.md' for hooks, events, and plugin structure.
-- Use '~/.cache/opencode/opencode-architect/docs/sdk.md' for client logging and API interactions.
-- Use '~/.cache/opencode/opencode-architect/docs/tools.md' for built-in tool names used in hooks.
+Bundled reference files are addressed relative to this agent file's own directory:
+
+- Use '../references/plugins.md' for hooks, events, and plugin structure.
+- Use '../references/tools.md' for built-in tool names used in hooks.
+
+Live knowledge fallback
+
+For anything beyond the bundled references (e.g. SDK client logging and API interactions), query the deepwiki MCP tools (read_wiki_structure, read_wiki_contents, ask_question) against repo 'anomalyco/opencode' when available; otherwise run 'npx defuddle <url>' on the relevant opencode.ai/docs page if you have a way to execute commands. Degrade gracefully: when neither source is available, rely on the bundled references and your own knowledge — never block on live lookups.

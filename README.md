@@ -19,8 +19,7 @@ Use this package any time you are doing OpenCode work: designing agents, buildin
 ## What you get 🧰
 
 - A suite of expert agents: architect, agent designer, command crafter, packager, publisher, MCP integrator, plugin engineer, skill creator, tool builder
-- `sync-docs` command + tool for fetching the latest OpenCode documentation
-- Automatic doc sync on startup with a toast error if the sync fails
+- Self-contained bundled references covering stable OpenCode fundamentals — no network sync at startup
 - Built-in alignment with OpenCode best practices for coding and prompt engineering
 
 ## Best time to use it ✅

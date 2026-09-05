@@ -82,10 +82,15 @@ Route from opencode-architect when user wants to:
 - "make distributable"
 - "publish package"
 
-## Docs usage
+## References usage
 
-- Use '~/.cache/opencode/opencode-architect/docs/plugins.md' for plugin structure
-- Use '~/.cache/opencode/opencode-architect/docs/sdk.md' for SDK features
+Bundled reference files are addressed relative to this agent file's own directory:
+
+- Use '../references/plugins.md' for plugin structure
+
+## Live knowledge fallback
+
+For anything beyond the bundled references (e.g. SDK features), query the deepwiki MCP tools (read_wiki_structure, read_wiki_contents, ask_question) against repo 'anomalyco/opencode' when available; otherwise run 'npx defuddle <url>' on the relevant opencode.ai/docs page. Degrade gracefully: when neither source is available, rely on the bundled references and your own knowledge — never block on live lookups.
 
 ## Code style rules
 

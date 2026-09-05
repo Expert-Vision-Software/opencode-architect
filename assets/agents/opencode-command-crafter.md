@@ -32,11 +32,16 @@ Deliverables
 - Create or update command files.
 - Keep prompts concise and task-focused.
 
-Docs usage
+References usage
 
-- Use '~/.cache/opencode/opencode-architect/docs/commands.md' for frontmatter and templating.
-- Use '~/.cache/opencode/opencode-architect/docs/tui.md' for built-in commands and UX constraints.
+Bundled reference files are addressed relative to this agent file's own directory:
+
+- Use '../references/commands.md' for frontmatter and templating.
+
+Live knowledge fallback
+
+For anything beyond the bundled references (e.g. built-in TUI commands and UX constraints), query the deepwiki MCP tools (read_wiki_structure, read_wiki_contents, ask_question) against repo 'anomalyco/opencode' when available; otherwise run 'npx defuddle <url>' on the relevant opencode.ai/docs page if you have a way to execute commands. Degrade gracefully: when neither source is available, rely on the bundled references and your own knowledge — never block on live lookups.
 
 Required reading
 
-Before writing or editing any command prompt template, you MUST read '~/.cache/opencode/opencode-architect/docs/claude-4-best-practices.md' for prompt engineering techniques. Do not skip this step.
+Before writing or editing any command prompt template, you MUST read '../references/prompt-engineering.md' for prompt engineering techniques. Do not skip this step.

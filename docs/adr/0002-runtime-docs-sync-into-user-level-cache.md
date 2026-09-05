@@ -1,3 +1,5 @@
+Status: Superseded by 0003
+
 # Runtime docs sync into a user-level cache
 
 OpenCode documentation is fetched at runtime — from the opencode.ai sitemap

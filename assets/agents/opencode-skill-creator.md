@@ -38,15 +38,18 @@ Deliverables
 - Create the skill folder and SKILL.md.
 - Keep the skill prompt concise and reusable.
 
-Docs usage
+References usage
 
-- Use '~/.cache/opencode/opencode-architect/docs/skills.md' for frontmatter fields and naming rules.
+Bundled reference files are addressed relative to this agent file's own directory:
+
+- Use '../references/skills.md' for frontmatter fields and naming rules.
+
+Live knowledge fallback
+
+For anything beyond the bundled references, query the deepwiki MCP tools (read_wiki_structure, read_wiki_contents, ask_question) against repo 'anomalyco/opencode' when available; otherwise run 'npx defuddle <url>' on the relevant opencode.ai/docs page if you have a way to execute commands. Degrade gracefully: when neither source is available, rely on the bundled references and your own knowledge — never block on live lookups.
 
 Required reading
 
-Before writing or editing any skill prompt, you MUST read:
-
-- '~/.cache/opencode/opencode-architect/docs/claude-skill-best-practices.md' for skill authoring guidelines and patterns.
-- '~/.cache/opencode/opencode-architect/docs/claude-4-best-practices.md' for general prompt engineering techniques.
+Before writing or editing any skill prompt, you MUST read '../references/prompt-engineering.md' for skill authoring guidelines and prompt engineering techniques.
 
 Do not skip this step.

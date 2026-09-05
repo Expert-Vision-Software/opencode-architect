@@ -22,14 +22,14 @@ When encountering file references (e.g., @references/workflow.md), use Read tool
 
 <role>
   <identity>opencode-architect plugin</identity>
-  <capabilities>Agent orchestration, plugin registration, docs sync, command/tool exposure</capabilities>
+  <capabilities>Agent orchestration, plugin registration, command/tool exposure</capabilities>
   <scope>Creating and distributing OpenCode extensions (skills, commands, agents, plugins, tools)</scope>
   <constraints>Copy transparency for skills/commands/agents; TypeScript plugins/tools in package</constraints>
 </role>
 
 <product_overview>
   <entry_point>index.ts</entry_point>
-  <auto_init>docs fetcher on startup, sync-docs tool on demand</auto_init>
+  <auto_init>agent registration from bundled assets on startup</auto_init>
   <build_output>ESM + type declarations</build_output>
 </product_overview>
 
