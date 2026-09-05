@@ -79,7 +79,7 @@ When encountering file references (e.g., @references/workflow.md), use Read tool
 
 <design_principles>
   <principle name="Copying_for_Transparency">
-    - Skills, commands, agents COPYED to consumer's `.opencode/` (not via config.skills.paths)
+    - Skills, commands, agents COPIED to consumer's `.opencode/` (not via config.skills.paths)
     - End-users can see, read, modify extension content locally
     - Plugins and tools remain as TypeScript in package
   </principle>
@@ -111,3 +111,17 @@ When encountering file references (e.g., @references/workflow.md), use Read tool
 <index>
   <file name="@docs/coding-standards.md" description="Detailed TypeScript coding standards, function syntax, class patterns, nullable types" />
 </index>
+
+## Agent skills
+
+### Issue tracker
+
+GitHub Issues at `diegohb/opencode-architect`, accessed via the `gh` CLI. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Default vocabulary — the five canonical role names used as-is. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context: root `CONTEXT.md` + `docs/adr/`. See `docs/agents/domain.md`.
