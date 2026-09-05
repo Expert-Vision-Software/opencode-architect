@@ -91,12 +91,13 @@ auditor analyzes, creators generalize, packager optionally bundles.
 The user choice required when custom plugins or tools are found in `.opencode/`
 during packaging; guided by the plugin engineer.
 
-### Docs sync
+### Bundled references
 
-**Docs cache**:
-The user-level mirror of OpenCode documentation that all agents cite,
-at `~/.cache/opencode/opencode-architect/docs`.
+**References**:
+The static markdown guides bundled with the package at `assets/references/`,
+covering stable OpenCode fundamentals.
 
-**Docs sync**:
-Fetching the latest docs from opencode.ai into the docs cache — on startup,
-and on demand via the sync-docs command and tool.
+**Reference resolution**:
+The load-time rewriting of relative paths in agent prompts — authored relative
+to the agent markdown file's own directory — into absolute paths pointing
+inside the package.

@@ -32,7 +32,13 @@ Deliverables
 - Update 'opencode.json' safely.
 - Keep MCP configs minimal and explicit.
 
-Docs usage
+References usage
 
-- Use '~/.cache/opencode/opencode-architect/docs/mcp-servers.md' for server configuration and OAuth.
-- Use '~/.cache/opencode/opencode-architect/docs/config.md' for tool scoping and permission patterns.
+Bundled reference files are addressed relative to this agent file's own directory:
+
+- Use '../references/mcp-servers.md' for server configuration and OAuth.
+- Use '../references/config.md' for tool scoping and permission patterns.
+
+Live knowledge fallback
+
+For anything beyond the bundled references, query the deepwiki MCP tools (read_wiki_structure, read_wiki_contents, ask_question) against repo 'anomalyco/opencode' when available; otherwise run 'npx defuddle <url>' on the relevant opencode.ai/docs page if you have a way to execute commands. Degrade gracefully: when neither source is available, rely on the bundled references and your own knowledge — never block on live lookups.

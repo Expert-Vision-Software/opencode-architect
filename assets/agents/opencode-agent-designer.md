@@ -51,12 +51,18 @@ Deliverables
 - Create or update the agent file.
 - If adding a new agent, add a short line to '.opencode/AGENTS.md' describing it.
 
-Docs usage
+References usage
 
-- Use '~/.cache/opencode/opencode-architect/docs/agents.md' for agent fields, modes, tools, and permissions.
-- Use '~/.cache/opencode/opencode-architect/docs/tools.md' for available tool IDs and behavior.
-- Use '~/.cache/opencode/opencode-architect/docs/config.md' for agent config precedence and defaults.
+Bundled reference files are addressed relative to this agent file's own directory:
+
+- Use '../references/agents.md' for agent fields, modes, tools, and permissions.
+- Use '../references/tools.md' for available tool IDs and behavior.
+- Use '../references/config.md' for agent config precedence and defaults.
+
+Live knowledge fallback
+
+For anything beyond the bundled references, query the deepwiki MCP tools (read_wiki_structure, read_wiki_contents, ask_question) against repo 'anomalyco/opencode' when available; otherwise run 'npx defuddle <url>' on the relevant opencode.ai/docs page if you have a way to execute commands. Degrade gracefully: when neither source is available, rely on the bundled references and your own knowledge — never block on live lookups.
 
 Required reading
 
-Before writing or editing any agent prompt, you MUST read '~/.cache/opencode/opencode-architect/docs/claude-4-best-practices.md' for prompt engineering techniques. Do not skip this step.
+Before writing or editing any agent prompt, you MUST read '../references/prompt-engineering.md' for prompt engineering techniques. Do not skip this step.
