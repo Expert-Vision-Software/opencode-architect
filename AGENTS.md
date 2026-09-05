@@ -111,3 +111,17 @@ When encountering file references (e.g., @references/workflow.md), use Read tool
 <index>
   <file name="@docs/coding-standards.md" description="Detailed TypeScript coding standards, function syntax, class patterns, nullable types" />
 </index>
+
+## Agent skills
+
+### Issue tracker
+
+GitHub Issues at `diegohb/opencode-architect`, accessed via the `gh` CLI. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Default vocabulary — the five canonical role names used as-is. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context: root `CONTEXT.md` + `docs/adr/`. See `docs/agents/domain.md`.
