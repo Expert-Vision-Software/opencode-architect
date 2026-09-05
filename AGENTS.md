@@ -116,7 +116,7 @@ When encountering file references (e.g., @references/workflow.md), use Read tool
 
 ### Issue tracker
 
-GitHub Issues at `diegohb/opencode-architect`, accessed via the `gh` CLI. See `docs/agents/issue-tracker.md`.
+GitHub Issues at `Expert-Vision-Software/opencode-architect`, accessed via the `gh` CLI. See `docs/agents/issue-tracker.md`.
 
 ### Triage labels
 

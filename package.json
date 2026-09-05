@@ -6,17 +6,22 @@
   "module": "index.ts",
   "repository": {
     "type": "git",
-    "url": "https://github.com/diegohb/opencode-architect.git"
+    "url": "git+https://github.com/Expert-Vision-Software/opencode-architect.git"
   },
+  "homepage": "https://github.com/Expert-Vision-Software/opencode-architect#readme",
   "publisher": "Expert Vision Software",
   "author": "Expert Vision Support <support@expertvision.software>",
   "bugs": {
-    "url": "https://github.com/diegohb/opencode-architect/issues",
+    "url": "https://github.com/Expert-Vision-Software/opencode-architect/issues",
     "email": "support@expertvision.software"
   },
   "scripts": {
     "check": "tsc --noEmit",
+    "test": "bun test",
     "release": "npm version patch && npm publish && git push --follow-tags"
+  },
+  "publishConfig": {
+    "access": "public"
   },
   "files": [
     "index.ts",
