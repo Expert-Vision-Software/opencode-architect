@@ -79,7 +79,7 @@ When encountering file references (e.g., @references/workflow.md), use Read tool
 
 <design_principles>
   <principle name="Copying_for_Transparency">
-    - Skills, commands, agents COPYED to consumer's `.opencode/` (not via config.skills.paths)
+    - Skills, commands, agents COPIED to consumer's `.opencode/` (not via config.skills.paths)
     - End-users can see, read, modify extension content locally
     - Plugins and tools remain as TypeScript in package
   </principle>
