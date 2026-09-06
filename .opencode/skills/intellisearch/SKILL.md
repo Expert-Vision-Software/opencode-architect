@@ -1,6 +1,6 @@
 ---
 name: intellisearch
-description: Find, search, or discover JavaScript/TypeScript libraries, frameworks, packages, or GitHub repositories — comparisons, alternatives, setup choices, code examples. Loads for queries like 'find N solutions', 'search for libraries', 'discover repositories'.
+description: Find, search, or discover JavaScript/TypeScript libraries, frameworks, packages, or GitHub repositories — comparisons, alternatives, setup choices, code examples. Loads for queries like 'find N solutions', 'search for libraries', 'show me code examples', 'discover repositories'.
 license: MIT
 compatibility: opencode
 metadata:
@@ -24,7 +24,7 @@ Load a file reference (e.g., @references/workflow.md) with your Read tool when t
 **USE this skill when the user asks about:**
 
 <use_cases>
-<case category="discovery">"Is there a TypeScript library for semver validation?" · "Which React framework handles server-side rendering?"</case>
+<case category="discovery">"Is there a TypeScript library for semver validation?" · "Which React framework handles server-side rendering?" · "What's the best way to handle auth in Node.js?"</case>
 <case category="comparisons">"Compare Next.js vs Remix for my project"</case>
 <case category="alternatives">"Alternatives to Moment.js for date handling"</case>
 <case category="setup">"How do I set up Tailwind with Vite?"</case>
