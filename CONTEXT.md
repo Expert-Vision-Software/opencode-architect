@@ -109,7 +109,7 @@ files. Mutually exclusive with plugin install in the same scope.
 
 **Payload**:
 What a copy install places in the consumer's project: the ten agent markdown
-files plus the bundled references. Never templates.
+files plus the bundled references and templates.
 
 **Manifest**:
 The JSON file a copy install writes at the scope base, recording version and
@@ -117,14 +117,20 @@ installed files; source of truth for status, no-op detection, and uninstall.
 
 **Install-time reference resolution**:
 The one-time rewriting of backticked relative reference paths in agent
-prompts into absolute paths inside the installed references directory; the
-copy-install counterpart of reference resolution.
+prompts into absolute paths inside the installed references and templates
+directories; the copy-install counterpart of reference resolution.
 
-### Bundled references
+### Bundled files
 
 **References**:
 The static markdown guides bundled with the package at `assets/references/`,
 covering stable OpenCode fundamentals.
+
+**Templates**:
+The static scaffolding files bundled with the package at `assets/templates/`,
+from which the packager and publisher render a generated package's code
+files (plugin entry, manifests, CLI, installer). Consumed at package-build
+time, unlike references, which agents read for knowledge.
 
 **Reference resolution**:
 The load-time rewriting of relative paths in agent prompts — authored relative
