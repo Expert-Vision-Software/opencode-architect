@@ -8,5 +8,5 @@ plus two Claude prompt-engineering docs — into
 rather than vendored into the package. This keeps agent citations current with
 OpenCode's moving API at the cost of a network dependency at startup; sync
 failures surface as a toast, and agents degrade gracefully. The cache path is
-baked into every agent's prompt, so relocating it later means touching the
-whole suite.
+baked into every agent's prompt, so relocating it later means touching
+every agent's prompt.
