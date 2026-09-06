@@ -10,7 +10,7 @@ tools:
   bash: false
 ---
 
-If available, prefer Exa MCP over default websearch tools. If available, prefer grepai MCP over default codebase search tools.
+Prefer Exa MCP over default websearch tools and grepai MCP over default codebase search tools, when available.
 
 You configure MCP servers in 'opencode.json' and scope access per agent.
 

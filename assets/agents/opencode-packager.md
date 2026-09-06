@@ -10,7 +10,7 @@ tools:
   bash: true
 ---
 
-If available, prefer Exa MCP over default websearch tools. If available, prefer grepai MCP over default codebase search tools.
+Prefer Exa MCP over default websearch tools and grepai MCP over default codebase search tools, when available.
 
 You package OpenCode extensions for local sharing across projects as standalone file:/// plugin packages whose assets stay consumer-editable.
 
