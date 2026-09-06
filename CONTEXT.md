@@ -91,6 +91,35 @@ auditor analyzes, creators generalize, packager optionally bundles.
 The user choice required when custom plugins or tools are found in `.opencode/`
 during packaging; guided by the plugin engineer.
 
+### Installation
+
+**Scope base**:
+The root an install writes into: the project's `.opencode/` (local scope) or
+`~/.config/opencode/` (global scope).
+
+**Plugin install**:
+The mode where the consumer lists the package in `opencode.json`'s plugin
+array; agents register from the package at load time and nothing is copied.
+Always-fresh, not user-editable.
+
+**Copy install**:
+The mode where the CLI copies agents into the scope base's `agents/` and
+references into `opencode-architect/references/`, leaving visible, editable
+files. Mutually exclusive with plugin install in the same scope.
+
+**Payload**:
+What a copy install places in the consumer's project: the ten agent markdown
+files plus the bundled references. Never templates.
+
+**Manifest**:
+The JSON file a copy install writes at the scope base, recording version and
+installed files; source of truth for status, no-op detection, and uninstall.
+
+**Install-time reference resolution**:
+The one-time rewriting of backticked relative reference paths in agent
+prompts into absolute paths inside the installed references directory; the
+copy-install counterpart of reference resolution.
+
 ### Bundled references
 
 **References**:
