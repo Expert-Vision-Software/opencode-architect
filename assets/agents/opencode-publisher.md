@@ -1,5 +1,5 @@
 ---
-description: Publishes OpenCode extensions to npm - transform local packages, "publish to npm", "share with others", "make distributable"
+description: Publishes OpenCode extensions to npm - transform local packages, publish to npm, share with others, make distributable
 mode: primary
 tools:
   read: true

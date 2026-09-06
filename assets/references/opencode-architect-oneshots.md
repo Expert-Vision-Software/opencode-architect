@@ -34,27 +34,19 @@ Reference examples for routing decisions. Each shows: request → analysis → a
 **Execution:**
 1. Single: `opencode-mcp-integrator` - configure server in opencode.json with permission rules
 
-**Config produced:**
+**Config produced** (disable the tools globally, enable them for `build` only):
 ```json
 {
   "mcp": {
     "my-company-tools": {
-      "command": "npx",
-      "args": ["-y", "@my-company/mcp-server"]
+      "type": "local",
+      "command": ["npx", "-y", "@my-company/mcp-server"]
     }
   },
-  "permission": {
-    "tool": {
-      "deploy-*": "deny"
-    }
-  },
+  "tools": { "deploy-*": false },
   "agent": {
     "build": {
-      "permission": {
-        "tool": {
-          "deploy-*": "allow"
-        }
-      }
+      "tools": { "deploy-*": true }
     }
   }
 }
@@ -116,23 +108,18 @@ export const CommitValidatorPlugin = async (ctx) => {
 **Execution:**
 1. Single: `opencode-agent-designer` - create agent frontmatter
 
-**Agent structure:**
+**Agent structure** (`.opencode/agents/pr-reviewer.md`; the filename becomes the agent name):
 ```markdown
 ---
-name: pr-reviewer
 description: Review pull requests with security and quality focus
-tools:
-  bash: false
-  write: false
-  edit: false
-  github: true
-  read: true
-  grep: true
-  glob: true
+mode: subagent
+model: anthropic/claude-sonnet-4-5
 permission:
+  bash: deny
+  edit: deny
+  "github_*": allow
   skill:
-    "git-release": "allow"
-model: anthropic/claude-3.5-sonnet
+    "git-release": allow
 ---
 
 ## Role
@@ -143,6 +130,8 @@ Review PRs for code quality, security vulnerabilities, and test coverage.
 2. Analyze changes for patterns and issues
 3. Provide structured feedback
 ```
+
+`read`/`grep`/`glob` need no entry (tools are enabled by default); `edit` denies `write` and `apply_patch` too.
 
 ---
 
@@ -175,18 +164,14 @@ opencode-devtools/
 
 ---
 
-## Example 6: Local-Only Session Notification Plugin (plugin-engineer, NOT packager)
+## Example 6: Local-Only Session Notification Plugin (plugin-engineer)
 
 **User Request:**
 > Create a plugin that sends a desktop notification when a session completes or errors. This is for my local machine only, not for publishing.
 
 **Analysis:**
 - Plugin with event hooks → `opencode-plugin-engineer`
-- **NOT** packager because:
-  - No npm distribution needed
-  - No skills or commands to bundle
-  - Single local plugin file, not a package
-  - User explicitly said "local machine only"
+- Local machine only, single plugin file → `opencode-plugin-engineer` (distribution intent is the packager test; see the table below)
 
 **Execution:**
 1. Single: `opencode-plugin-engineer` - create local plugin with event hooks
@@ -214,23 +199,17 @@ export const SessionNotifyPlugin: Plugin = async ({ $ }) => {
 | Local-only plugin                    | Local package for sharing          |
 | Event hooks / behavior modification  | Bundling skills + commands as assets|
 | Single `.ts`/`.js` file              | Full package structure with package.json |
-| No distribution intent              | Intended for local file:// sharing |
-| Injecting env vars, notifications    | Combining multiple opencode artifacts |
+| Single-machine use                   | Local file:// sharing across projects |
 
 ---
 
-## Example 7: Plugin with Embedded Static Instructions (plugin-engineer, NOT packager)
+## Example 7: Plugin with Embedded Static Instructions (plugin-engineer)
 
 **User Request:**
 > Create a customer support plugin that injects a "support-agent" prompt into sessions. The prompt should be embedded in the plugin file itself, not as separate files.
 
 **Analysis:**
-- Plugin that injects static content → `opencode-plugin-engineer`
-- **NOT** packager because:
-  - Instructions are embedded as string literals in code
-  - No separate `.md` files to bundle
-  - Content is generated/managed programmatically within the plugin
-  - Not a distributable asset package
+- Prompt embedded as a string literal in the plugin file, managed programmatically at runtime → `opencode-plugin-engineer`
 
 **Execution:**
 1. Single: `opencode-plugin-engineer` - create plugin with embedded prompt string
@@ -270,24 +249,6 @@ export const SupportAgentPlugin: Plugin = async ({ client }) => {
 | Instructions embedded as string in code          | Separate `.md` files as assets     |
 | Content generated programmatically               | Static markdown files to distribute|
 | Single file contains logic + content             | Package structure with multiple files |
-| Runtime-generated prompts                        | Pre-authored skill/command files  |
-| Agent definitions with inline prompts            | Skill SKILL.md + command .md bundles |
-
-**Real-world pattern (reference):**
-```typescript
-// Agent with embedded prompt - NO separate .md files
-export const agent: AgentConfig = {
-  name: "data-analyzer",
-  prompt: `
-    Analyze data files and produce reports.
-    
-    ## Steps
-    1. Read input files
-    2. Parse and validate
-    3. Generate summary statistics
-  `
-}
-```
 
 ---
 

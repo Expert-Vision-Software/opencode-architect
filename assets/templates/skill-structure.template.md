@@ -24,7 +24,7 @@ compatibility: opencode
 metadata:
   version: 1.0.0
   audience: agents
-  topic: [topic1, topic2]
+  topic: "topic1, topic2"
 ---
 
 ## Activation Triggers
@@ -32,9 +32,9 @@ metadata:
 **USE this skill when user asks about:**
 - Category: "Example query"
 
-**DO NOT USE for:**
-- Non-technical topics
-- Known specific repos
+**Route elsewhere when:**
+- The topic is non-technical
+- The repo is well-known and already documented
 
 ## Workflow Summary
 

@@ -50,8 +50,6 @@ Address co-located files **relative to the skill's own directory** (its base dir
 
 ## Authoring quick rules
 
-- Set degrees of freedom to match fragility: exact scripts for critical/fragile operations, heuristics for flexible tasks.
-- Provide workflows as numbered steps with checklists; add feedback loops (validate → fix → repeat) for quality-critical tasks.
-- No time-sensitive information; use consistent terminology throughout; avoid offering many equivalent options — pick a default with an escape hatch.
-- Gerund names read well (`processing-pdfs`); avoid vague names (`helper`, `utils`).
+- General authoring rules (degrees of freedom, workflows, defaults, terminology): see `prompt-engineering.md`.
+- Gerund names read well (`processing-pdfs`); vague names (`helper`, `utils`) hide the skill from selection.
 - Gate access with `permission.skill` glob patterns (`"internal-*": "deny"`); disable entirely with `tools: { skill: false }`.
