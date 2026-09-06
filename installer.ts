@@ -115,7 +115,7 @@ export class Installer {
         continue;
       }
       const source = await readFile(path.join(ASSETS_AGENTS_DIR, filename), "utf-8");
-      await writeFile(path.join(base, relativePath), this.rewriteReferencePaths(source, referencesDir));
+      await writeFile(path.join(base, relativePath), rewriteReferencePaths(source, referencesDir));
       hashes.push({ path: relativePath, hash: await this.sha256File(path.join(base, relativePath)) });
       if (fileAction === "overwrite") overwritten.push(relativePath);
       else copied.push(relativePath);
@@ -211,20 +211,6 @@ export class Installer {
     return createHash("sha256").update(await readFile(filePath)).digest("hex");
   }
 
-  private rewriteReferencePaths(content: string, referencesDir: string): string {
-    return content.replace(
-      RELATIVE_REFERENCE_REGEX,
-      (token: string, relativePath: string): string => {
-        const normalized = relativePath.replaceAll("\\", "/");
-        const packagedPath = path.resolve(ASSETS_AGENTS_DIR, normalized);
-        const withinReferences = path.relative(ASSETS_REFERENCES_DIR, packagedPath);
-        if (withinReferences.startsWith("..")) return token;
-        const installedPath = path.resolve(referencesDir, withinReferences).replaceAll("\\", "/");
-        return `\`${installedPath}\``;
-      },
-    );
-  }
-
   private scopeBase(scope: Scope, projectDir: string): string {
     if (scope === "local") return path.join(projectDir, ".opencode");
     const xdgConfigHome = process.env.XDG_CONFIG_HOME;
@@ -283,4 +269,18 @@ export class Installer {
     const contents = await readdir(directory);
     if (contents.length === 0) await rmdir(directory);
   }
+}
+
+export function rewriteReferencePaths(content: string, referencesDir: string): string {
+  return content.replace(
+    RELATIVE_REFERENCE_REGEX,
+    (token: string, relativePath: string): string => {
+      const normalized = relativePath.replaceAll("\\", "/");
+      const packagedPath = path.resolve(ASSETS_AGENTS_DIR, normalized);
+      const withinReferences = path.relative(ASSETS_REFERENCES_DIR, packagedPath);
+      if (withinReferences.startsWith("..")) return token;
+      const installedPath = path.resolve(referencesDir, withinReferences).replaceAll("\\", "/");
+      return `\`${installedPath}\``;
+    },
+  );
 }
