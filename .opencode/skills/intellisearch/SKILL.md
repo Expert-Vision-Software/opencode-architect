@@ -7,7 +7,7 @@ metadata:
   version: 0.5.1
   audience: agents
   topic: [github-discovery, api-reference, code-patterns, library-comparison]
-  usage_tips: "Best used after a failed local search. Combines repo-finding with DeepWiki deep-querying."
+  usage_tips: Best used after a failed local search. Combines repo-finding with DeepWiki deep-querying.
 ---
 
 <critical_rules priority="highest">
