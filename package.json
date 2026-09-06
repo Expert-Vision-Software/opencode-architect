@@ -1,6 +1,19 @@
 {
   "name": "opencode-architect",
   "version": "0.4.0",
+  "description": "OpenCode plugin and CLI with ten specialist agents for agent skills, slash commands, custom tools, plugins, and MCP server integration",
+  "keywords": [
+    "opencode",
+    "opencode-plugin",
+    "opencode-agents",
+    "agent-skills",
+    "ai-agents",
+    "slash-commands",
+    "mcp",
+    "mcp-server",
+    "coding-agent",
+    "bun"
+  ],
   "private": false,
   "type": "module",
   "module": "index.ts",
