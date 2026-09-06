@@ -112,8 +112,9 @@ What a copy install places in the consumer's project: the ten agent markdown
 files plus the bundled references and templates.
 
 **Manifest**:
-The JSON file a copy install writes at the scope base, recording version and
-installed files; source of truth for status, no-op detection, and uninstall.
+The JSON file a copy install writes at the scope base, recording version,
+installed files, and their content hashes; source of truth for status, no-op
+detection, and uninstall.
 
 **Install-time reference resolution**:
 The one-time rewriting of backticked relative reference paths in agent
@@ -133,6 +134,6 @@ files (plugin entry, manifests, CLI, installer). Consumed at package-build
 time, unlike references, which agents read for knowledge.
 
 **Reference resolution**:
-The load-time rewriting of relative paths in agent prompts — authored relative
-to the agent markdown file's own directory — into absolute paths pointing
-inside the package.
+The load-time rewriting of backtick-quoted relative paths in agent prompts —
+authored relative to the agent markdown file's own directory — into absolute
+paths pointing inside the package.

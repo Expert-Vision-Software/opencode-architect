@@ -5,8 +5,6 @@
   <rule>NEVER auto-fix issues without explicit user approval</rule>
   <rule>STOP immediately on test failure</rule>
   <rule>Confirm before cleaning up files</rule>
-  <rule>Enforce global agent rules on every run</rule>
-  <rule>Lazy-load external file references denoted by '@' in markdown files. See `<external_file_loading />`.</rule>
 </critical_rules>
 
 <external_file_loading policy="lazy">
@@ -41,22 +39,17 @@ When encountering file references (e.g., @references/workflow.md), use Read tool
   </stage>
   <stage name="Iterate">
     - User refines extensions based on usage feedback
+    - Project-local extensions stop here: no packaging required
   </stage>
-  <stage name="Package">
-    - For cross-project reuse: delegate to `opencode-packager`
+  <stage name="Package" trigger="cross-project reuse (local file:/// package)">
+    - Delegate to `opencode-packager`
     - Extracts `.opencode/` assets, copies to `assets/`, creates `plugin.ts`, `package.json`, `tsconfig.json`
   </stage>
-  <stage name="Publish">
-    - For public sharing: `opencode-architect` → `opencode-publisher`
+  <stage name="Publish" trigger="public sharing (npm registry)">
+    - Delegate to `opencode-publisher`, fed by the packager's output
     - Transforms to npm-ready structure, adds CLI entry point, extracts installer module
   </stage>
 </happy_path>
-
-<distribution_decision_tree>
-  <option trigger="project_local_only">No packaging required</option>
-  <option trigger="reuse_own_projects">opencode-packager (local file:/// package)</option>
-  <option trigger="share_publicly">opencode-packager → opencode-publisher (npm registry)</option>
-</distribution_decision_tree>
 
 <agent_categories>
   <category name="Creators">
@@ -89,27 +82,20 @@ When encountering file references (e.g., @references/workflow.md), use Read tool
   </principle>
 </design_principles>
 
-<coding_guidelines>
-  - For detailed code style rules, execute read on `@docs/coding-standards.md`
-</coding_guidelines>
-
 <file_structure_conventions>
   - Keep agents, tools, commands focused and cohesive
-  - Add new classes in separate files
-  - Prefer descriptive names over comments
   - Wire new agents/commands through plugin entry for runtime availability
 </file_structure_conventions>
 
 <principles>
   <lean>Concise, focused responses; no unnecessary preamble</lean>
   <adaptive>Tone-match: direct for tasks, brief for questions</adaptive>
-  <safe>ALWAYS request approval before ANY execution</safe>
   <report_first>On errors: REPORT → PLAN → APPROVAL → FIX</report_first>
   <lazy>Files and sessions only as needed</lazy>
 </principles>
 
 <index>
-  <file name="@docs/coding-standards.md" description="Detailed TypeScript coding standards, function syntax, class patterns, nullable types" />
+  <file name="@docs/coding-standards.md" description="TypeScript style rules — read before writing or reviewing TypeScript code" />
 </index>
 
 ## Agent skills

@@ -2,7 +2,7 @@
 
 ## Function Syntax
 
-Prefer `function` syntax over arrow functions assigned to variables:
+Prefer `function` declarations over arrow functions assigned to variables:
 
 ```typescript
 // Preferred
@@ -43,7 +43,7 @@ Encapsulate related logic in classes with private methods instead of standalone 
 
 ## Nullable Over Optional
 
-Avoid optional fields in types/interfaces. Use explicit nullable:
+Avoid optional fields in types/interfaces. Type the field explicitly as nullable:
 
 ```typescript
 // Preferred

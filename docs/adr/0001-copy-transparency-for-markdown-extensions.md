@@ -11,6 +11,7 @@ version marker so the plugin re-copies only when the package version changes.
 ## Considered Options
 
 - Copying (chosen): transparent, editable, works for all three kinds
+  (skills, commands, agents)
 - Path registration: single source of truth, but black-box and unavailable
   for commands and agents
 - Hybrid: rejected for inconsistency

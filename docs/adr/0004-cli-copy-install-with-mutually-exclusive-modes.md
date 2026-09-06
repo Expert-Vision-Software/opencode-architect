@@ -19,7 +19,8 @@ and uninstall removes exactly what install wrote.
 - Complement (copy plus plugin entry): OpenCode loads `.opencode/agents/`
   after plugin-registered agents, so copied files silently shadow the
   plugin's agents — undetected version skew
-- Install-time reference resolution (chosen): copied agents are plain files
+- Install-time reference resolution (chosen for the path problem): copied
+  agents are plain files
   OpenCode loads verbatim, so the plugin's load-time resolution never runs
   for them and relative paths would be unresolvable against a consumer's cwd
 - Rewrite to package-cache paths: transparency-hostile; the bunx/npm cache
