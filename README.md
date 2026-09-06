@@ -8,7 +8,7 @@
 
 opencode-architect is an [OpenCode](https://opencode.ai) plugin and CLI that ships a suite of AI agent experts for OpenCode work: designing agents, creating skills and slash commands, building plugins and custom tools, integrating MCP servers, and packaging extensions for npm. Install it once and every specialist agent is available in your coding sessions.
 
-## Quick start
+## Quick start: install the OpenCode plugin suite
 
 ### Option 1 — Install as an OpenCode plugin
 
@@ -45,11 +45,11 @@ bunx opencode-architect install --force         # overwrite locally modified fil
 bunx opencode-architect --help                  # full usage
 ```
 
-A copy install writes 10 agents into `agents/`, 9 reference docs into `opencode-architect/references/`, and 4 starter templates into `opencode-architect/templates/` of the scope base, plus an `opencode-architect.json` manifest that tracks versions and file hashes for safe upgrades. Relative reference paths inside agents are rewritten to absolute paths at install time.
+A copy install writes 10 agents into `agents/`, 9 reference docs into `opencode-architect/references/`, and 9 starter templates into `opencode-architect/templates/` of the scope base, plus an `opencode-architect.json` manifest that tracks versions and file hashes for safe upgrades. Relative reference paths inside agents are rewritten to absolute paths at install time.
 
 Plugin install and copy install are mutually exclusive per scope — the CLI refuses to copy over an existing plugin entry unless you pass `--force`.
 
-## What you get
+## What you get: ten specialist OpenCode agents
 
 Ten specialist agents, one router:
 
@@ -68,10 +68,10 @@ Ten specialist agents, one router:
 
 Also bundled and installed with the agents:
 
-- **References** — self-contained docs covering stable OpenCode fundamentals: agents, commands, config, MCP servers, plugins, prompt engineering, skills, tools
-- **Templates** — starter files for new skills, package manifests, and TypeScript configs
+- **References** — self-contained docs covering stable OpenCode fundamentals: agents, commands, config, MCP servers, plugins, prompt engineering, skills, tools, plus worked one-shot examples
+- **Templates** — starter files for new skills, plugins, package manifests, and TypeScript configs
 
-## When to use it
+## When to use these OpenCode agents
 
 Reach for opencode-architect whenever you want to:
 
@@ -86,7 +86,7 @@ Reach for opencode-architect whenever you want to:
 - [OpenCode](https://opencode.ai) — the AI coding assistant the plugin extends
 - [Bun](https://bun.sh) — runs the plugin and the CLI (`bunx`); if you use `npx`, Bun must still be on your `PATH` because the CLI ships as TypeScript
 
-## Contributing
+## Development
 
 Install dependencies:
 
