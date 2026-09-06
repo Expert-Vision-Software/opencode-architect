@@ -11,7 +11,7 @@ The filename becomes the agent name (`review.md` → `review` agent). The markdo
 
 - `primary` — main assistant the user interacts with (Tab to cycle).
 - `subagent` — invoked by primary agents via the Task tool or by `@` mention.
-- `mode` defaults to `all` if unspecified; set it explicitly.
+- `all` — both: usable as primary and invokable as subagent (the default mode).
 
 ## Frontmatter fields
 
