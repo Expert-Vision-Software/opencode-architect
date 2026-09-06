@@ -5,7 +5,7 @@ import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promis
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { AGENT_FILENAMES, RELATIVE_REFERENCE_REGEX } from "../agent-loader";
-import { Installer, type Manifest, type Scope } from "../installer";
+import { Installer, rewriteReferencePaths, type Manifest, type Scope } from "../installer";
 
 const PACKAGE_ROOT = path.resolve(import.meta.dirname, "..");
 const SOURCE_AGENTS_DIR = path.join(PACKAGE_ROOT, "assets", "agents");
@@ -62,7 +62,11 @@ async function sourceReferenceNames(): Promise<string[]> {
 }
 
 async function sha256(filePath: string): Promise<string> {
-  return createHash("sha256").update(await readFile(filePath)).digest("hex");
+  return sha256Text(await readFile(filePath, "utf-8"));
+}
+
+function sha256Text(text: string): string {
+  return createHash("sha256").update(text).digest("hex");
 }
 
 describe("Installer.install", () => {
@@ -196,7 +200,8 @@ describe("Installer.install", () => {
     const modifiedEntry = manifestAfterUpgrade.hashes.find(
       (entry) => entry.path === path.join("agents", modifiedName),
     );
-    expect(modifiedEntry?.hash).toBe(await sha256(path.join(SOURCE_AGENTS_DIR, modifiedName)));
+    const reinstalledSource = rewriteReferencePaths(modifiedSource, outcome.referencesDir);
+    expect(modifiedEntry?.hash).toBe(sha256Text(reinstalledSource));
 
     manifestAfterUpgrade.version = "0.0.2";
     await writeFile(manifestPath("local"), JSON.stringify(manifestAfterUpgrade, null, 2));
@@ -221,7 +226,9 @@ describe("Installer.install", () => {
 
     expect(outcome.action).toBe("upgraded");
     expect(outcome.overwritten).toContain(path.join("agents", modifiedName));
-    expect(await readFile(modifiedPath, "utf-8")).toBe(modifiedSource);
+    expect(await readFile(modifiedPath, "utf-8")).toBe(
+      rewriteReferencePaths(modifiedSource, outcome.referencesDir),
+    );
   });
 
   test("refuses while the plugin entry exists", async () => {
