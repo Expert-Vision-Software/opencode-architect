@@ -133,9 +133,10 @@ describe("Installer.install", () => {
     const referencePaths = absolutePaths.filter((candidate) => /\.md$/.test(candidate));
     expect(referencePaths.length).toBeGreaterThanOrEqual(9);
 
+    const normalizedReferencesDir = outcome.referencesDir.replaceAll("\\", "/");
     for (const referencePath of referencePaths) {
       expect(existsSync(referencePath), `missing rewritten path ${referencePath}`).toBe(true);
-      expect(referencePath.startsWith(outcome.referencesDir)).toBe(true);
+      expect(referencePath.startsWith(normalizedReferencesDir)).toBe(true);
     }
   });
 
@@ -165,8 +166,8 @@ describe("Installer.install", () => {
     await writeFile(manifestPath("local"), JSON.stringify(fakeManifest, null, 2));
 
     const untouchedPath = path.join(scopeBase("local"), "agents", "opencode-architect.md");
-    const untouchedSource = await readFile(path.join(SOURCE_AGENTS_DIR, "opencode-architect.md"), "utf-8");
-    const doctored = untouchedSource + "\ndoctored but hash updated";
+    const untouchedInstalled = await readFile(untouchedPath, "utf-8");
+    const doctored = untouchedInstalled + "\ndoctored but hash updated";
     await writeFile(untouchedPath, doctored);
     fakeManifest.hashes = fakeManifest.hashes.map((entry) =>
       entry.path === path.join("agents", "opencode-architect.md")
@@ -185,7 +186,7 @@ describe("Installer.install", () => {
     expect(outcome.action).toBe("upgraded");
     expect(outcome.skipped).toEqual([path.join("agents", modifiedName)]);
     expect(outcome.copied).toContain(path.join("agents", "opencode-architect.md"));
-    expect(await readFile(untouchedPath, "utf-8")).toBe(untouchedSource);
+    expect(await readFile(untouchedPath, "utf-8")).toBe(untouchedInstalled);
     expect(await readFile(modifiedPath, "utf-8")).toBe(modifiedSource + "\nlocally modified");
     expect((await readJson(manifestPath("local")) as unknown as Manifest).version).toBe(
       await readPackageVersion(),
