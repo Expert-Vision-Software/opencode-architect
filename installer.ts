@@ -17,6 +17,7 @@ export interface Manifest {
   version: string;
   agentFiles: string[];
   referencesDir: string;
+  templatesDir: string;
   hashes: ManifestHashEntry[];
 }
 
@@ -30,6 +31,7 @@ export interface InstallOutcome {
   scope: Scope;
   agentsDir: string;
   referencesDir: string;
+  templatesDir: string;
   manifestPath: string;
   copied: string[];
   skipped: string[];
@@ -54,6 +56,7 @@ const PACKAGE_NAME = "opencode-architect";
 const MANIFEST_NAME = "opencode-architect.json";
 const ASSETS_AGENTS_DIR = path.join(import.meta.dirname, "assets", "agents");
 const ASSETS_REFERENCES_DIR = path.join(import.meta.dirname, "assets", "references");
+const ASSETS_TEMPLATES_DIR = path.join(import.meta.dirname, "assets", "templates");
 
 export class Installer {
   public async install(scope: Scope, options: InstallOptions): Promise<InstallOutcome> {
@@ -62,6 +65,7 @@ export class Installer {
     const manifestPath = path.join(base, MANIFEST_NAME);
     const agentsDir = path.join(base, "agents");
     const referencesDir = path.join(base, "opencode-architect", "references");
+    const templatesDir = path.join(base, "opencode-architect", "templates");
     const version = await this.getPackageVersion();
 
     let pluginRemoved = false;
@@ -84,6 +88,7 @@ export class Installer {
         scope,
         agentsDir,
         referencesDir,
+        templatesDir,
         manifestPath,
         copied: [],
         skipped: [],
@@ -100,6 +105,7 @@ export class Installer {
 
     await mkdir(agentsDir, { recursive: true });
     await mkdir(referencesDir, { recursive: true });
+    await mkdir(templatesDir, { recursive: true });
 
     for (const filename of AGENT_FILENAMES) {
       const relativePath = path.join("agents", filename);
@@ -115,7 +121,7 @@ export class Installer {
         continue;
       }
       const source = await readFile(path.join(ASSETS_AGENTS_DIR, filename), "utf-8");
-      await writeFile(path.join(base, relativePath), rewriteReferencePaths(source, referencesDir));
+      await writeFile(path.join(base, relativePath), rewriteReferencePaths(source, referencesDir, templatesDir));
       hashes.push({ path: relativePath, hash: await this.sha256File(path.join(base, relativePath)) });
       if (fileAction === "overwrite") overwritten.push(relativePath);
       else copied.push(relativePath);
@@ -140,10 +146,29 @@ export class Installer {
       else copied.push(relativePath);
     }
 
-    const manifest: Manifest = { version, agentFiles: [...AGENT_FILENAMES], referencesDir, hashes };
+    for (const entry of await readdir(ASSETS_TEMPLATES_DIR)) {
+      const relativePath = path.join("opencode-architect", "templates", entry);
+      const { action: fileAction, priorHash } = await this.disposition(
+        existingManifest,
+        base,
+        relativePath,
+        options.force,
+      );
+      if (fileAction === "skip") {
+        skipped.push(relativePath);
+        hashes.push({ path: relativePath, hash: priorHash as string });
+        continue;
+      }
+      await copyFile(path.join(ASSETS_TEMPLATES_DIR, entry), path.join(base, relativePath));
+      hashes.push({ path: relativePath, hash: await this.sha256File(path.join(base, relativePath)) });
+      if (fileAction === "overwrite") overwritten.push(relativePath);
+      else copied.push(relativePath);
+    }
+
+    const manifest: Manifest = { version, agentFiles: [...AGENT_FILENAMES], referencesDir, templatesDir, hashes };
     await writeFile(manifestPath, JSON.stringify(manifest, null, 2) + "\n");
 
-    return { action, scope, agentsDir, referencesDir, manifestPath, copied, skipped, overwritten, pluginRemoved };
+    return { action, scope, agentsDir, referencesDir, templatesDir, manifestPath, copied, skipped, overwritten, pluginRemoved };
   }
 
   public async uninstall(scope: Scope, projectDir: string): Promise<UninstallOutcome> {
@@ -164,6 +189,7 @@ export class Installer {
       }
       await rm(manifestPath);
       removed.push(manifestPath);
+      await this.removeIfEmpty(path.join(base, "opencode-architect", "templates"));
       await this.removeIfEmpty(path.join(base, "opencode-architect", "references"));
       await this.removeIfEmpty(path.join(base, "opencode-architect"));
       await this.removeIfEmpty(path.join(base, "agents"));
@@ -271,16 +297,23 @@ export class Installer {
   }
 }
 
-export function rewriteReferencePaths(content: string, referencesDir: string): string {
+export function rewriteReferencePaths(content: string, referencesDir: string, templatesDir: string): string {
   return content.replace(
     RELATIVE_REFERENCE_REGEX,
     (token: string, relativePath: string): string => {
       const normalized = relativePath.replaceAll("\\", "/");
       const packagedPath = path.resolve(ASSETS_AGENTS_DIR, normalized);
       const withinReferences = path.relative(ASSETS_REFERENCES_DIR, packagedPath);
-      if (withinReferences.startsWith("..")) return token;
-      const installedPath = path.resolve(referencesDir, withinReferences).replaceAll("\\", "/");
-      return `\`${installedPath}\``;
+      if (!withinReferences.startsWith("..")) {
+        const installedPath = path.resolve(referencesDir, withinReferences).replaceAll("\\", "/");
+        return `\`${installedPath}\``;
+      }
+      const withinTemplates = path.relative(ASSETS_TEMPLATES_DIR, packagedPath);
+      if (!withinTemplates.startsWith("..")) {
+        const installedPath = path.resolve(templatesDir, withinTemplates).replaceAll("\\", "/");
+        return `\`${installedPath}\``;
+      }
+      return token;
     },
   );
 }

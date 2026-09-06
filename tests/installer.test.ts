@@ -10,6 +10,7 @@ import { Installer, rewriteReferencePaths, type Manifest, type Scope } from "../
 const PACKAGE_ROOT = path.resolve(import.meta.dirname, "..");
 const SOURCE_AGENTS_DIR = path.join(PACKAGE_ROOT, "assets", "agents");
 const SOURCE_REFERENCES_DIR = path.join(PACKAGE_ROOT, "assets", "references");
+const SOURCE_TEMPLATES_DIR = path.join(PACKAGE_ROOT, "assets", "templates");
 const ABSOLUTE_PATH_REGEX = /`([A-Za-z]:[\\/][^`]+|\/[^`]+)`/g;
 
 let projectDir = "";
@@ -61,6 +62,10 @@ async function sourceReferenceNames(): Promise<string[]> {
   return entries.filter((name) => name.endsWith(".md")).sort();
 }
 
+async function sourceTemplateNames(): Promise<string[]> {
+  return (await readdir(SOURCE_TEMPLATES_DIR)).sort();
+}
+
 async function sha256(filePath: string): Promise<string> {
   return sha256Text(await readFile(filePath, "utf-8"));
 }
@@ -79,6 +84,9 @@ describe("Installer.install", () => {
     expect(outcome.referencesDir).toBe(
       path.join(scopeBase("local"), "opencode-architect", "references"),
     );
+    expect(outcome.templatesDir).toBe(
+      path.join(scopeBase("local"), "opencode-architect", "templates"),
+    );
     expect(outcome.manifestPath).toBe(manifestPath("local"));
 
     const installedAgents = (await readdir(outcome.agentsDir)).sort();
@@ -87,15 +95,20 @@ describe("Installer.install", () => {
     const installedReferences = (await readdir(outcome.referencesDir)).sort();
     expect(installedReferences).toEqual(await sourceReferenceNames());
 
+    const installedTemplates = (await readdir(outcome.templatesDir)).sort();
+    expect(installedTemplates).toEqual(await sourceTemplateNames());
+
     const manifest = (await readJson(manifestPath("local"))) as unknown as Manifest;
     expect(manifest.version).toBe(await readPackageVersion());
     expect(manifest.agentFiles.sort()).toEqual([...AGENT_FILENAMES].sort());
     expect(manifest.referencesDir).toBe(outcome.referencesDir);
+    expect(manifest.templatesDir).toBe(outcome.templatesDir);
 
     const hashedPaths = manifest.hashes.map((entry) => entry.path).sort();
     const expectedPaths = [
       ...AGENT_FILENAMES.map((name) => path.join("agents", name)),
       ...installedReferences.map((name) => path.join("opencode-architect", "references", name)),
+      ...installedTemplates.map((name) => path.join("opencode-architect", "templates", name)),
     ].sort();
     expect(hashedPaths).toEqual(expectedPaths);
 
@@ -105,7 +118,7 @@ describe("Installer.install", () => {
     }
   });
 
-  test("payload contains no templates", async () => {
+  test("payload separates templates into their own directory", async () => {
     const outcome = await installer.install("local", { force: false, projectDir });
 
     for (const name of await readdir(outcome.agentsDir)) {
@@ -114,6 +127,7 @@ describe("Installer.install", () => {
     for (const name of await readdir(outcome.referencesDir)) {
       expect(name.includes("template")).toBe(false);
     }
+    expect((await readdir(outcome.templatesDir)).sort()).toEqual(await sourceTemplateNames());
   });
 
   test("global install respects XDG_CONFIG_HOME", async () => {
@@ -141,6 +155,25 @@ describe("Installer.install", () => {
     for (const referencePath of referencePaths) {
       expect(existsSync(referencePath), `missing rewritten path ${referencePath}`).toBe(true);
       expect(referencePath.startsWith(normalizedReferencesDir)).toBe(true);
+    }
+  });
+
+  test("rewrites template references to absolute installed paths", async () => {
+    const outcome = await installer.install("local", { force: false, projectDir });
+    const agentPath = path.join(outcome.agentsDir, "opencode-packager.md");
+    const content = await readFile(agentPath, "utf-8");
+
+    const leftoverRelative = [...content.matchAll(RELATIVE_REFERENCE_REGEX)].map((m) => m[1] ?? "");
+    expect(leftoverRelative).toEqual([]);
+
+    const absolutePaths = [...content.matchAll(ABSOLUTE_PATH_REGEX)].map((m) => m[1] ?? "");
+    const templatePaths = absolutePaths.filter((candidate) => /\.(txt|json|md)$/.test(candidate));
+    expect(templatePaths.length).toBeGreaterThanOrEqual(5);
+
+    const normalizedTemplatesDir = outcome.templatesDir.replaceAll("\\", "/");
+    for (const templatePath of templatePaths) {
+      expect(existsSync(templatePath), `missing rewritten path ${templatePath}`).toBe(true);
+      expect(templatePath.startsWith(normalizedTemplatesDir)).toBe(true);
     }
   });
 
@@ -200,7 +233,7 @@ describe("Installer.install", () => {
     const modifiedEntry = manifestAfterUpgrade.hashes.find(
       (entry) => entry.path === path.join("agents", modifiedName),
     );
-    const reinstalledSource = rewriteReferencePaths(modifiedSource, outcome.referencesDir);
+    const reinstalledSource = rewriteReferencePaths(modifiedSource, outcome.referencesDir, outcome.templatesDir);
     expect(modifiedEntry?.hash).toBe(sha256Text(reinstalledSource));
 
     manifestAfterUpgrade.version = "0.0.2";
@@ -227,7 +260,7 @@ describe("Installer.install", () => {
     expect(outcome.action).toBe("upgraded");
     expect(outcome.overwritten).toContain(path.join("agents", modifiedName));
     expect(await readFile(modifiedPath, "utf-8")).toBe(
-      rewriteReferencePaths(modifiedSource, outcome.referencesDir),
+      rewriteReferencePaths(modifiedSource, outcome.referencesDir, outcome.templatesDir),
     );
   });
 

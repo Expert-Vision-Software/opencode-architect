@@ -37,19 +37,19 @@ opencode-myextension/
 └── tsconfig.json
 ```
 
-6. **Create plugin.ts** from `@assets/templates/plugin-local.template.txt`: the plugin copies skills, commands, and agents into the consumer's `.opencode/` on first run and uses a version marker to skip re-copying.
+6. **Create plugin.ts** from `../templates/plugin-local.template.txt`: the plugin copies skills, commands, and agents into the consumer's `.opencode/` on first run and uses a version marker to skip re-copying.
 
-7. **Create package.json** from `@assets/templates/package-basics.template.json` and tsconfig.json from `@assets/templates/tsconfig.template.json`.
+7. **Create package.json** from `../templates/package-basics.template.json` and tsconfig.json from `../templates/tsconfig.template.json`.
 
 Done when the target tree matches step 5 and the plugin copies every asset on first run.
 
 ## Templates
 
-- `@assets/templates/package-basics.template.json`
-- `@assets/templates/index.template.txt`
-- `@assets/templates/plugin-local.template.txt`
-- `@assets/templates/tsconfig.template.json`
-- `@assets/templates/skill-structure.template.md`
+- `../templates/package-basics.template.json`
+- `../templates/index.template.txt`
+- `../templates/plugin-local.template.txt`
+- `../templates/tsconfig.template.json`
+- `../templates/skill-structure.template.md`
 
 ## Deployment
 

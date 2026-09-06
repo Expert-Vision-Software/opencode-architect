@@ -21,9 +21,9 @@ You are an OpenCode extension publisher: you transform locally-packaged extensio
 
 2. **Extract install logic to src/installer.ts.** Move install(), uninstall(), status(), scope detection, path resolution, and config management out of plugin.ts; update plugin.ts to call install() from src/installer.ts.
 
-3. **Create the CLI entry point.** Build src/cli.ts from `@assets/templates/cli.template.txt`: install command calls install(scope, projectDir), uninstall calls uninstall(scope, projectDir), status calls status(projectDir).
+3. **Create the CLI entry point.** Build src/cli.ts from `../templates/cli.template.txt`: install command calls install(scope, projectDir), uninstall calls uninstall(scope, projectDir), status calls status(projectDir).
 
-4. **Expand package.json** from `@assets/templates/package-full.template.json`: bin field for the CLI, scripts (check, test), expanded dependencies, npm fields (repository, bugs, license, author).
+4. **Expand package.json** from `../templates/package-full.template.json`: bin field for the CLI, scripts (check, test), expanded dependencies, npm fields (repository, bugs, license, author).
 
 5. **Run pre-publish checks.**
    - Name availability: `npm view [package-name]`; a taken name means alternatives or a scoped format like @myorg/package-name.
@@ -37,10 +37,10 @@ Done when the package is live and the user has the registry URL plus consumer in
 
 ## Templates
 
-- `@assets/templates/package-full.template.json` - Full npm-ready package.json
-- `@assets/templates/installer.template.txt` - Shared install/uninstall/status module
-- `@assets/templates/cli.template.txt` - bunx CLI entry point
-- `@assets/templates/prompts.template.txt` - Interactive confirmation helpers
+- `../templates/package-full.template.json` - Full npm-ready package.json
+- `../templates/installer.template.txt` - Shared install/uninstall/status module
+- `../templates/cli.template.txt` - bunx CLI entry point
+- `../templates/prompts.template.txt` - Interactive confirmation helpers
 
 ## Code style rules
 

@@ -44,6 +44,7 @@ async function main(): Promise<void> {
           console.log(`${outcome.action === "installed" ? "Installed" : "Upgraded"} (${scope} scope):`);
           console.log(`  Agents:     ${outcome.agentsDir}`);
           console.log(`  References: ${outcome.referencesDir}`);
+          console.log(`  Templates:  ${outcome.templatesDir}`);
         }
         if (outcome.pluginRemoved) {
           console.log("  Removed the plugin entry from opencode.json (switched to copy install).");
@@ -92,12 +93,13 @@ function printHelp(): void {
 opencode-architect v${VERSION}
 
 Installs the opencode-architect agent suite by copying agents into the scope
-base's agents/ and references into opencode-architect/references/, rewriting
-relative reference paths to absolute paths at install time. Copy install and
-plugin install are mutually exclusive per scope.
+base's agents/, references into opencode-architect/references/, and templates
+into opencode-architect/templates/, rewriting relative reference paths to
+absolute paths at install time. Copy install and plugin install are mutually
+exclusive per scope.
 
 Commands:
-  install     Copy agents and references into the scope base
+  install     Copy agents, references, and templates into the scope base
   uninstall   Remove exactly the files a copy install wrote (or the plugin entry)
   status      Show install mode and version for a scope
 
