@@ -62,7 +62,7 @@ export class Installer {
     const manifestPath = path.join(base, MANIFEST_NAME);
     const agentsDir = path.join(base, "agents");
     const referencesDir = path.join(base, "opencode-architect", "references");
-    const version = await getPackageVersion();
+    const version = await this.getPackageVersion();
 
     let pluginRemoved = false;
     if (await this.hasPluginEntry(configPath)) {
@@ -103,30 +103,40 @@ export class Installer {
 
     for (const filename of AGENT_FILENAMES) {
       const relativePath = path.join("agents", filename);
-      const disposition = await this.disposition(existingManifest, base, relativePath, options.force);
-      if (disposition === "skip") {
+      const { action: fileAction, priorHash } = await this.disposition(
+        existingManifest,
+        base,
+        relativePath,
+        options.force,
+      );
+      if (fileAction === "skip") {
         skipped.push(relativePath);
-        hashes.push({ path: relativePath, hash: await sha256File(path.join(base, relativePath)) });
+        hashes.push({ path: relativePath, hash: priorHash as string });
         continue;
       }
       const source = await readFile(path.join(ASSETS_AGENTS_DIR, filename), "utf-8");
       await writeFile(path.join(base, relativePath), this.rewriteReferencePaths(source, referencesDir));
-      hashes.push({ path: relativePath, hash: await sha256File(path.join(base, relativePath)) });
-      if (disposition === "overwrite") overwritten.push(relativePath);
+      hashes.push({ path: relativePath, hash: await this.sha256File(path.join(base, relativePath)) });
+      if (fileAction === "overwrite") overwritten.push(relativePath);
       else copied.push(relativePath);
     }
 
     for (const entry of await readdir(ASSETS_REFERENCES_DIR)) {
       const relativePath = path.join("opencode-architect", "references", entry);
-      const disposition = await this.disposition(existingManifest, base, relativePath, options.force);
-      if (disposition === "skip") {
+      const { action: fileAction, priorHash } = await this.disposition(
+        existingManifest,
+        base,
+        relativePath,
+        options.force,
+      );
+      if (fileAction === "skip") {
         skipped.push(relativePath);
-        hashes.push({ path: relativePath, hash: await sha256File(path.join(base, relativePath)) });
+        hashes.push({ path: relativePath, hash: priorHash as string });
         continue;
       }
       await copyFile(path.join(ASSETS_REFERENCES_DIR, entry), path.join(base, relativePath));
-      hashes.push({ path: relativePath, hash: await sha256File(path.join(base, relativePath)) });
-      if (disposition === "overwrite") overwritten.push(relativePath);
+      hashes.push({ path: relativePath, hash: await this.sha256File(path.join(base, relativePath)) });
+      if (fileAction === "overwrite") overwritten.push(relativePath);
       else copied.push(relativePath);
     }
 
@@ -187,14 +197,18 @@ export class Installer {
     base: string,
     relativePath: string,
     force: boolean,
-  ): Promise<"copy" | "overwrite" | "skip"> {
-    if (manifest === null) return "copy";
+  ): Promise<{ action: "copy" | "overwrite" | "skip"; priorHash: string | null }> {
+    if (manifest === null) return { action: "copy", priorHash: null };
     const priorHash = manifest.hashes.find((entry) => entry.path === relativePath)?.hash ?? null;
-    if (priorHash === null) return "copy";
+    if (priorHash === null) return { action: "copy", priorHash };
     const installedPath = path.join(base, relativePath);
-    if (!(await exists(installedPath))) return "copy";
-    if ((await sha256File(installedPath)) === priorHash) return "copy";
-    return force ? "overwrite" : "skip";
+    if (!(await exists(installedPath))) return { action: "copy", priorHash };
+    if ((await this.sha256File(installedPath)) === priorHash) return { action: "copy", priorHash };
+    return { action: force ? "overwrite" : "skip", priorHash };
+  }
+
+  private async sha256File(filePath: string): Promise<string> {
+    return createHash("sha256").update(await readFile(filePath)).digest("hex");
   }
 
   private rewriteReferencePaths(content: string, referencesDir: string): string {
@@ -228,17 +242,21 @@ export class Installer {
 
   private async hasPluginEntry(configPath: string): Promise<boolean> {
     const plugins = await this.readPluginArray(configPath);
-    return plugins.includes(PACKAGE_NAME);
+    return plugins.some((name) => this.isPluginEntry(name));
   }
 
   private async removePluginEntry(configPath: string): Promise<void> {
     const plugins = await this.readPluginArray(configPath);
-    const remaining = plugins.filter((name) => name !== PACKAGE_NAME);
+    const remaining = plugins.filter((name) => !this.isPluginEntry(name));
     const config = await this.readConfig(configPath);
     if (remaining.length === 0) delete config.plugin;
     else config.plugin = remaining;
     await mkdir(path.dirname(configPath), { recursive: true });
     await writeFile(configPath, JSON.stringify(config, null, 2) + "\n");
+  }
+
+  private isPluginEntry(name: string): boolean {
+    return name === PACKAGE_NAME || name.startsWith(`${PACKAGE_NAME}@`);
   }
 
   private async readPluginArray(configPath: string): Promise<string[]> {
@@ -255,18 +273,14 @@ export class Installer {
     }
   }
 
+  private async getPackageVersion(): Promise<string> {
+    const content = await readFile(path.join(import.meta.dirname, "package.json"), "utf-8");
+    return (JSON.parse(content) as { version: string }).version;
+  }
+
   private async removeIfEmpty(directory: string): Promise<void> {
     if (!(await exists(directory))) return;
     const contents = await readdir(directory);
     if (contents.length === 0) await rmdir(directory);
   }
-}
-
-async function getPackageVersion(): Promise<string> {
-  const content = await readFile(path.join(import.meta.dirname, "package.json"), "utf-8");
-  return (JSON.parse(content) as { version: string }).version;
-}
-
-async function sha256File(filePath: string): Promise<string> {
-  return createHash("sha256").update(await readFile(filePath)).digest("hex");
 }

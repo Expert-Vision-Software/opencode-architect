@@ -191,6 +191,18 @@ describe("Installer.install", () => {
     expect((await readJson(manifestPath("local")) as unknown as Manifest).version).toBe(
       await readPackageVersion(),
     );
+
+    const manifestAfterUpgrade = (await readJson(manifestPath("local"))) as unknown as Manifest;
+    const modifiedEntry = manifestAfterUpgrade.hashes.find(
+      (entry) => entry.path === path.join("agents", modifiedName),
+    );
+    expect(modifiedEntry?.hash).toBe(await sha256(path.join(SOURCE_AGENTS_DIR, modifiedName)));
+
+    manifestAfterUpgrade.version = "0.0.2";
+    await writeFile(manifestPath("local"), JSON.stringify(manifestAfterUpgrade, null, 2));
+    const secondUpgrade = await installer.install("local", { force: false, projectDir });
+    expect(secondUpgrade.skipped).toEqual([path.join("agents", modifiedName)]);
+    expect(await readFile(modifiedPath, "utf-8")).toBe(modifiedSource + "\nlocally modified");
   });
 
   test("upgrade with force overwrites locally modified files", async () => {
@@ -220,6 +232,22 @@ describe("Installer.install", () => {
     expect(installer.install("local", { force: false, projectDir })).rejects.toThrow(/--force/);
 
     expect(existsSync(path.join(scopeBase("local"), "agents"))).toBe(false);
+  });
+
+  test("refuses and force-removes a versioned plugin entry", async () => {
+    await writeJson(path.join(scopeBase("local"), "opencode.json"), {
+      plugin: ["opencode-architect@^0.3.0"],
+    });
+
+    expect(installer.install("local", { force: false, projectDir })).rejects.toThrow(/--force/);
+    expect(existsSync(path.join(scopeBase("local"), "agents"))).toBe(false);
+
+    const outcome = await installer.install("local", { force: true, projectDir });
+
+    expect(outcome.action).toBe("installed");
+    expect(outcome.pluginRemoved).toBe(true);
+    expect((await readJson(path.join(scopeBase("local"), "opencode.json"))).plugin).toBeUndefined();
+    expect(existsSync(outcome.manifestPath)).toBe(true);
   });
 
   test("force removes the plugin entry and switches to copy mode", async () => {

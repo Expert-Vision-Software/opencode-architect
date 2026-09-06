@@ -4,34 +4,6 @@ import { Installer, type Scope } from "./installer";
 
 const VERSION = (JSON.parse(await Bun.file(`${import.meta.dirname}/package.json`).text()) as { version: string }).version;
 
-function printHelp(): void {
-  console.log(`
-opencode-architect v${VERSION}
-
-Installs the opencode-architect agent suite by copying agents into the scope
-base's agents/ and references into opencode-architect/references/, rewriting
-relative reference paths to absolute paths at install time. Copy install and
-plugin install are mutually exclusive per scope.
-
-Commands:
-  install     Copy agents and references into the scope base
-  uninstall   Remove exactly the files a copy install wrote (or the plugin entry)
-  status      Show install mode and version for a scope
-
-Options:
-  -s, --scope <scope>    "local" (project .opencode/) or "global" (~/.config/opencode/); default local
-  -f, --force            install: remove an existing plugin entry and overwrite locally modified files
-  -h, --help             Show this help message
-  -v, --version          Show version
-
-Examples:
-  opencode-architect install
-  opencode-architect install --scope global
-  opencode-architect uninstall --force
-  opencode-architect status
-`);
-}
-
 async function main(): Promise<void> {
   const { positionals, values } = parseArgs({
     options: {
@@ -113,6 +85,34 @@ async function main(): Promise<void> {
     console.error(`Error: ${message}`);
     process.exit(1);
   }
+}
+
+function printHelp(): void {
+  console.log(`
+opencode-architect v${VERSION}
+
+Installs the opencode-architect agent suite by copying agents into the scope
+base's agents/ and references into opencode-architect/references/, rewriting
+relative reference paths to absolute paths at install time. Copy install and
+plugin install are mutually exclusive per scope.
+
+Commands:
+  install     Copy agents and references into the scope base
+  uninstall   Remove exactly the files a copy install wrote (or the plugin entry)
+  status      Show install mode and version for a scope
+
+Options:
+  -s, --scope <scope>    "local" (project .opencode/) or "global" (~/.config/opencode/); default local
+  -f, --force            install: remove an existing plugin entry and overwrite locally modified files
+  -h, --help             Show this help message
+  -v, --version          Show version
+
+Examples:
+  opencode-architect install
+  opencode-architect install --scope global
+  opencode-architect uninstall
+  opencode-architect status
+`);
 }
 
 main();
