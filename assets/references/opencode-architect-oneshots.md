@@ -171,7 +171,7 @@ opencode-devtools/
 
 **Analysis:**
 - Plugin with event hooks → `opencode-plugin-engineer`
-- Local machine only: single plugin file, no assets to bundle, no npm distribution → the plugin-engineer vs packager table below decides it
+- Local machine only, single plugin file → `opencode-plugin-engineer` (distribution intent is the packager test; see the table below)
 
 **Execution:**
 1. Single: `opencode-plugin-engineer` - create local plugin with event hooks
@@ -199,7 +199,7 @@ export const SessionNotifyPlugin: Plugin = async ({ $ }) => {
 | Local-only plugin                    | Local package for sharing          |
 | Event hooks / behavior modification  | Bundling skills + commands as assets|
 | Single `.ts`/`.js` file              | Full package structure with package.json |
-| Injecting env vars, notifications    | Intended for local file:// sharing |
+| Single-machine use                   | Local file:// sharing across projects |
 
 ---
 
