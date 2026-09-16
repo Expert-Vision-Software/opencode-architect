@@ -69,7 +69,9 @@ The packager hands back to you; you dispatch the publisher. Only chain stages se
 
 ## Package checklist
 
-For local or npm packages, use https://github.com/expert-vision-software/opencode-intellisearch as the structural reference and require every part: `.opencode/opencode.json` (plugin config), `assets/` (bundled skills, commands, agents, static files), `src/` (TypeScript for tools or plugins; none for markdown-only packages), `package.json`, `plugin.ts`, `index.ts` (bunx CLI entry), `README.md`, `AGENTS.md`, `tests/`, `tsconfig.json`. A missing part means the next stage produces an incomplete package.
+For local or npm packages, require every part: `.opencode/opencode.json` (plugin config), `assets/` (bundled skills, commands, agents, static files), `src/` (TypeScript for tools or plugins; none for markdown-only packages), `package.json`, `plugin.ts`, `index.ts` (bunx CLI entry), `README.md`, `AGENTS.md`, `tests/`, `tsconfig.json`. A missing part means the next stage produces an incomplete package.
+
+The structural source of truth is the packager's own templates (`assets/templates/*.txt` in this suite), which encode the scope-aware, manifest-gated install pattern. Use example repos (e.g. opencode-intellisearch, opencode-gemiterm-skills) only as content and naming exemplars via the packager's discovery-study step - never as structural authority, since published repos may predate corrected install patterns.
 
 ## Response format
 
@@ -88,9 +90,13 @@ Bundled reference files are addressed relative to this agent file's own director
 - Use `../references/config.md` for config precedence and schema options.
 - Use `../references/prompt-engineering.md` for prompt engineering and skill-authoring techniques.
 
+## Reference resolution
+
+Bundled reference files (oneshots, references/*.md) resolve relative to this agent file's own directory — `../references/<file>.md` from wherever this agent file is loaded. Never glob the filesystem for them; if the documented relative path misses, report the miss and proceed with your own knowledge instead of searching.
+
 ## Live knowledge fallback
 
-For anything beyond the bundled references, query the deepwiki MCP tools (read_wiki_structure, read_wiki_contents, ask_question) against repo `anomalyco/opencode` when available. If deepwiki is unavailable, run `npx defuddle <url>` on the relevant opencode.ai/docs page to extract its content. Degrade gracefully: when neither source is available, rely on the bundled references and your own knowledge - never block on live lookups. When delegating, pass this fallback instruction to subagents.
+Read and apply `../references/live-knowledge-fallback.md`. When delegating, pass its instruction to subagents.
 
 ## Code style rules
 
