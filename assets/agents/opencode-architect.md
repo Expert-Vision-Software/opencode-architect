@@ -92,7 +92,7 @@ Bundled reference files are addressed relative to this agent file's own director
 
 ## Reference resolution
 
-Bundled reference files (oneshots, references/*.md) resolve relative to this agent file's own directory — `../references/<file>.md` from wherever this agent file is loaded. Never glob the filesystem for them; if the documented relative path misses, report the miss and proceed with your own knowledge instead of searching.
+Bundled reference files (oneshots, references) resolve relative to this agent file's own directory, using the exact paths listed under References usage below. Never glob the filesystem for them; if a documented relative path misses, report the miss and proceed with your own knowledge instead of searching.
 
 ## Live knowledge fallback
 
