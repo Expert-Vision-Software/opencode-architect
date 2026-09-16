@@ -33,7 +33,23 @@ You are an OpenCode extension publisher: you transform locally-packaged extensio
 
 6. **Publish.** `npm publish --access public`, adding `--scope=@myorg` for scoped packages.
 
+## Post-publish verification checklist
+
+- [ ] `package.json` `repository.url`, `homepage`, and `bugs.url` match the GitHub repo URL byte-for-byte, including case (`My-Org/pkg` ≠ `my-org/pkg` — provenance verification is case-sensitive)
+- [ ] `CHANGELOG.md` has a section for the released version
+- [ ] Registry shows the new version: `npm view <package> version`
+- [ ] Install smoke passes in a scratch dir: `bunx <package> status`
+- [ ] Consumer instructions generated: npm install command, `opencode.json` plugin entry (`"<package>@latest"`), and the verify command
+- [ ] README badge row (npm version, runtime, license) uses the correct package name and repo casing
+
 Done when the package is live and the user has the registry URL plus consumer installation instructions: the npm install command (`npm install -g opencode-[name]` or project-local), the opencode.json config `{ "plugins": ["opencode-[name]"] }`, and a verify command (`bunx opencode-[name] status`).
+
+## Troubleshooting
+
+- **403 "Resource not accessible by integration" / 404 "not in this registry" on publish**: almost always auth, not registry state. The token is expired, revoked, or scope-mismatched (an `@scope` token cannot publish an unscoped package and vice versa). Regenerate at npmjs.com → Tokens and re-authenticate.
+- **E422 "Failed to validate repository information" (provenance)**: `repository.url` does not match the GitHub repo byte-for-byte. Fix casing on all three of `repository.url`, `homepage`, `bugs.url`; `npm pkg fix` shows what npm normalizes to — revert any casing it changes.
+- **409 on re-publish**: that version already exists on npm. Bump the semver (`npm version patch|minor|major`), update the changelog, re-tag, re-publish. Never re-publish an existing version.
+- **`npm warn publish "repository.url" was normalized to "git+https://..."`**: harmless; npm adds the `git+` prefix itself.
 
 ## Templates
 
@@ -62,4 +78,4 @@ Bundled reference files are addressed relative to this agent file's own director
 
 ## Live knowledge fallback
 
-For anything beyond the bundled references (e.g. SDK features), query the deepwiki MCP tools (read_wiki_structure, read_wiki_contents, ask_question) against repo 'anomalyco/opencode' when available; otherwise run 'npx defuddle <url>' on the relevant opencode.ai/docs page. Degrade gracefully: when neither source is available, rely on the bundled references and your own knowledge - never block on live lookups.
+Read and apply `../references/live-knowledge-fallback.md`.
