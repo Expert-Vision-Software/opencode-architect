@@ -20,7 +20,7 @@ SCOPE
 ---
 #!/usr/bin/env bun
 import { parseArgs } from "node:util";
-import { install, uninstall, status, migrateRootConfig, type Scope } from "./src/installer.ts";
+import { install, uninstall, status, migrateRootConfig, type Scope } from "./installer.ts";
 
 const VERSION = JSON.parse(
   await Bun.file(`${import.meta.dirname}/../package.json`).text()

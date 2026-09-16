@@ -18,8 +18,8 @@ PACKAGE NAME
 import { exists, mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { PluginNameNormalizer } from "./src/plugin-name.ts";
-import { InstallManifest, listFilesRecursive } from "./src/manifest.ts";
+import { PluginNameNormalizer } from "./plugin-name.ts";
+import { InstallManifest, listFilesRecursive } from "./manifest.ts";
 
 export type Scope = "local" | "global";
 

@@ -6,7 +6,7 @@ No placeholders. Emit as src/registration.ts.
 import { exists, readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { PluginNameNormalizer } from "./src/plugin-name.ts";
+import { PluginNameNormalizer } from "./plugin-name.ts";
 
 export type RegistrationScope = "none" | "global" | "repo-local" | "both";
 
