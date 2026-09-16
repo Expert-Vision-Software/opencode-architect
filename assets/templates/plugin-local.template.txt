@@ -12,57 +12,41 @@ COMMAND NAME
   "my-command.md" → your command file name in assets/commands/
 
 PACKAGE NAME
-  "./src/installer.ts" → path to installer module (for published packages)
-  Or inline install functions (for local packages)
+  "opencode-myextension" → your npm package name (must match package.json)
 
 ---
 import type { Plugin } from "@opencode-ai/plugin";
-import { install, getGlobalConfigPath, getPackageVersion, type Scope } from "./src/installer.ts";
+import { install, isUpToDateAnywhere } from "./src/installer.ts";
+import { RegistrationDetector, type RegistrationScope } from "./src/registration.ts";
 import { join } from "node:path";
+
+const PACKAGE_NAME = "opencode-myextension";
+
+let advised = false;
+
+async function adviseOnce(): Promise<void> {
+  if (advised) return;
+  advised = true;
+  console.log(`\nOpenCode MyExtension is not registered in any scope.`);
+  console.log(`  Install globally: bunx ${PACKAGE_NAME} install --scope global`);
+  console.log(`  Install locally:  bunx ${PACKAGE_NAME} install\n`);
+}
 
 const plugin: Plugin = async ({ directory }) => ({
   config: async () => {
-    const version = await getPackageVersion();
-    const globalConfigPath = getGlobalConfigPath();
-    const globalVersionMarker = join(globalConfigPath, "skills", "myextension", ".version");
-
-    const isGlobalInstall = directory === globalConfigPath || 
-      directory.startsWith(globalConfigPath + "/") ||
-      directory.startsWith(globalConfigPath + "\\");
-
-    let scope: Scope;
-    
-    if (isGlobalInstall) {
-      scope = "global";
-    } else {
-      try {
-        const globalVersion = (await Bun.file(globalVersionMarker).text()).trim();
-        if (globalVersion === version) {
-          return;
-        }
-      } catch {}
-      scope = "local";
+    const scope: RegistrationScope = await new RegistrationDetector(PACKAGE_NAME).detect(directory);
+    if (scope === "none") {
+      await adviseOnce();
+      return;
     }
-
-    const marker = scope === "global"
-      ? globalVersionMarker
-      : join(directory, ".opencode", "skills", "myextension", ".version");
-
-    try {
-      const installedVersion = (await Bun.file(marker).text()).trim();
-      if (installedVersion === version) {
-        return;
-      }
-    } catch {}
-
-    const result = await install(scope, directory);
-    
-    console.log(`\nOpenCode MyExtension installed ${scope === "global" ? "globally" : "locally"}:`);
-    console.log(`  Skill: ${result.skillPath}`);
-    console.log(`  Command: ${result.commandPath}`);
-    if (result.migrated) {
-      console.log(`  Migrated: opencode.json → .opencode/opencode.json`);
+    if (scope === "global" || scope === "both") {
+      await install("global", directory, { force: false });
     }
+    if (scope === "repo-local" || scope === "both") {
+      await install("local", directory, { force: false });
+    }
+    if (await isUpToDateAnywhere(directory)) return;
+    await adviseOnce();
   },
 });
 

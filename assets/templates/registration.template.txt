@@ -1,0 +1,50 @@
+TEMPLATE INSTRUCTIONS
+====================
+No placeholders. Emit as src/registration.ts.
+
+---
+import { exists, readFile } from "node:fs/promises";
+import { homedir } from "node:os";
+import { join } from "node:path";
+import { PluginNameNormalizer } from "./src/plugin-name.ts";
+
+export type RegistrationScope = "none" | "global" | "repo-local" | "both";
+
+function getGlobalConfigPath(): string {
+  const xdgConfig = process.env.XDG_CONFIG_HOME;
+  if (xdgConfig) return join(xdgConfig, "opencode");
+  return join(homedir(), ".config", "opencode");
+}
+
+async function readPluginEntries(path: string): Promise<string[] | null> {
+  if (!(await exists(path))) return null;
+  try {
+    const config = JSON.parse(await readFile(path, "utf-8")) as { plugin?: unknown };
+    if (!Array.isArray(config.plugin)) return [];
+    return config.plugin.filter((entry): entry is string => typeof entry === "string");
+  } catch {
+    return null;
+  }
+}
+
+export class RegistrationDetector {
+  private readonly normalizer = new PluginNameNormalizer();
+
+  constructor(private readonly packageName: string) {}
+
+  async detect(projectDir: string): Promise<RegistrationScope> {
+    const globalEntries = await readPluginEntries(join(getGlobalConfigPath(), "opencode.json"));
+    const localEntries = await readPluginEntries(join(projectDir, ".opencode", "opencode.json"))
+      ?? await readPluginEntries(join(projectDir, "opencode.json"));
+    const inGlobal = globalEntries !== null && this.matchesAny(globalEntries);
+    const inLocal = localEntries !== null && this.matchesAny(localEntries);
+    if (inGlobal && inLocal) return "both";
+    if (inGlobal) return "global";
+    if (inLocal) return "repo-local";
+    return "none";
+  }
+
+  private matchesAny(entries: string[]): boolean {
+    return entries.some(entry => this.normalizer.matches(entry, this.packageName));
+  }
+}
