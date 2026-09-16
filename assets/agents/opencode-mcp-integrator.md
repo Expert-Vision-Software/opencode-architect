@@ -29,6 +29,6 @@ Bundled reference files are addressed relative to this agent file's own director
 
 ## Live knowledge fallback
 
-For anything beyond the bundled references, query the deepwiki MCP tools (read_wiki_structure, read_wiki_contents, ask_question) against repo 'anomalyco/opencode' when available; otherwise run 'npx defuddle <url>' on the relevant opencode.ai/docs page if you have a way to execute commands. Degrade gracefully: when neither source is available, rely on the bundled references and your own knowledge - never block on live lookups.
+Read and apply `../references/live-knowledge-fallback.md`.
 
 Done when opencode.json parses, every server entry is valid for its type, and each MCP tool is disabled or enabled by an explicit scoping decision.
