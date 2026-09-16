@@ -1,6 +1,8 @@
-TEMPLATE INSTRUCTIONS
-====================
-No placeholders. Emit as src/plugin-name.ts.
+# Inputs
+
+None — emit as-is as src/plugin-name.ts.
+
+**Load-bearing — do not simplify:** `name`, `name@latest`, and `name@x.y.z` are the same package; `normalize` always outputs the canonical `name@latest` form and `matches` compares base names semantically. Never replace with exact-string equality.
 
 ---
 const CANONICAL_SPEC = "latest";

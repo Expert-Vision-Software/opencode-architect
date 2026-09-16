@@ -1,21 +1,13 @@
-TEMPLATE INSTRUCTIONS
-====================
-Replace the following placeholders before use:
+# Inputs
 
-CLI NAME
-  "opencode-myextension" → your CLI command name (matches package.json bin field)
+| Placeholder | Required | Description | Default |
+|---|---|---|---|
+| `CLI NAME` → "opencode-myextension" | Yes | CLI command name; matches package.json bin field | — |
+| `VERSION` → "1.0.0" | Yes | Initial version | `1.0.0` |
+| `COMMANDS` | Yes | install / uninstall / status / migrate subcommands | — |
+| `SCOPE` → "local" | Yes | Default scope when `--scope` is not specified | `local` |
 
-VERSION
-  "1.0.0"                → initial version
-
-COMMANDS
-  "install"               → install subcommand
-  "uninstall"             → uninstall subcommand
-  "status"                → status subcommand
-  "migrate"               → root-config migration subcommand (explicit consent only)
-
-SCOPE
-  "local"                → default scope when --scope not specified
+**Load-bearing — do not simplify:** `migrate` refuses to run without `--force` (root-config deletion is consent-gated and CLI-only); `install` forwards `force` so consumer-modified files are skipped without it; the module lives at `src/cli.ts` and imports `./installer.ts`.
 
 ---
 #!/usr/bin/env bun

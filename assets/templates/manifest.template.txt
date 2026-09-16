@@ -1,9 +1,10 @@
-TEMPLATE INSTRUCTIONS
-====================
-Replace the following placeholders before use:
+# Inputs
 
-PACKAGE NAME
-  "opencode-myextension" → your npm package name (manifest file name base)
+| Placeholder | Required | Description | Default |
+|---|---|---|---|
+| `PACKAGE NAME` → "opencode-myextension" | Yes | npm package name; the manifest file is `<configBase>/<package>.manifest.json` | — |
+
+**Load-bearing — do not simplify:** idempotency is per-file sha256 (`Bun.CryptoHasher`), never a `.version` marker; a missing or malformed manifest reads as "not installed" (drift), never as a reason to write without an ensure path.
 
 ---
 import { readdir, readFile, writeFile, mkdir } from "node:fs/promises";

@@ -1,18 +1,13 @@
-TEMPLATE INSTRUCTIONS
-====================
-Replace the following placeholders before use:
+# Inputs
 
-EXTENSION NAME
-  "myextension"  → your extension identifier (e.g., "mytool")
+| Placeholder | Required | Description | Default |
+|---|---|---|---|
+| `EXTENSION NAME` → "myextension" | Yes | Extension identifier used in the advisory text | — |
+| `SKILL NAME` → "myextension" | Yes | Must match the folder name in assets/skills/ | — |
+| `COMMAND NAME` → "my-command.md" | Yes | Command file name in assets/commands/ | — |
+| `PACKAGE NAME` → "opencode-myextension" | Yes | npm package name; must match package.json | — |
 
-SKILL NAME
-  "myextension"  → must match the folder name in assets/skills/
-
-COMMAND NAME
-  "my-command.md" → your command file name in assets/commands/
-
-PACKAGE NAME
-  "opencode-myextension" → your npm package name (must match package.json)
+**Load-bearing — do not simplify:** scope detection is read-only config inspection, never launch-directory checks; the hook passes `addPluginConfig: false`, `configurePermission: false`, `configureMcp: false` to `install()` — it never edits `plugin` arrays or permission/MCP config; writes stay inside the detected scope(s) only; the advisory fires at most once per session.
 
 ---
 import type { Plugin } from "@opencode-ai/plugin";

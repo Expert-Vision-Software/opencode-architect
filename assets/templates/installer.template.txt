@@ -1,18 +1,13 @@
-TEMPLATE INSTRUCTIONS
-====================
-Replace the following placeholders before use:
+# Inputs
 
-EXTENSION NAME
-  "myextension"  → your extension identifier (e.g., "mytool")
+| Placeholder | Required | Description | Default |
+|---|---|---|---|
+| `EXTENSION NAME` → "myextension" | Yes | Extension identifier (e.g., "mytool") | — |
+| `SKILL NAME` → "myextension" | Yes | Must match the folder name in assets/skills/ | — |
+| `COMMAND NAME` → "my-command.md" | Yes | Command file name in assets/commands/ | — |
+| `PACKAGE NAME` → "opencode-myextension" | Yes | npm package name; also the manifest file base | — |
 
-SKILL NAME
-  "myextension"  → must match the folder name in assets/skills/
-
-COMMAND NAME
-  "my-command.md" → your command file name in assets/commands/
-
-PACKAGE NAME
-  "opencode-myextension" → your npm package name
+**Load-bearing — do not simplify:** manifest-gated idempotency (never `.version` markers); `readJsonConfig` returns `null` on parse errors and every writer aborts — never rewrite config from `{}`; plugin dedup is semantic with canonical `name@latest` output; `migrateRootConfig` deletes nothing without a consent callback and is never called from `install()`.
 
 ---
 import { exists, mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";

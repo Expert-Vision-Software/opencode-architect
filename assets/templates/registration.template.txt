@@ -1,6 +1,8 @@
-TEMPLATE INSTRUCTIONS
-====================
-No placeholders. Emit as src/registration.ts.
+# Inputs
+
+None — emit as-is as src/registration.ts.
+
+**Load-bearing — do not simplify:** detection is read-only (no writes, ever); it checks the global config, the repo's `.opencode/opencode.json`, and a repo-root `opencode.json` with `@latest`-aware name matching — never the launch directory, which opencode always sets to the consumer repo.
 
 ---
 import { exists, readFile } from "node:fs/promises";
