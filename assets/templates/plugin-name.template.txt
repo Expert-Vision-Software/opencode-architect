@@ -1,0 +1,33 @@
+TEMPLATE INSTRUCTIONS
+====================
+No placeholders. Emit as src/plugin-name.ts.
+
+---
+const CANONICAL_SPEC = "latest";
+
+const SPEC_PATTERN = /^(?<base>[^@\s]+)@(?:latest|\d+\.\d+\.\d+(?:[-+][A-Za-z0-9.]+)?)$/;
+
+export class PluginNameNormalizer {
+  normalize(raw: string): string | null {
+    const bare = this.baseName(raw);
+    if (bare === null) return null;
+    return `${bare}@${CANONICAL_SPEC}`;
+  }
+
+  matches(raw: string, packageName: string): boolean {
+    const left = this.baseName(raw);
+    const right = this.baseName(packageName);
+    if (left === null || right === null) return false;
+    return left === right;
+  }
+
+  private baseName(raw: string): string | null {
+    const trimmed = raw.trim();
+    if (trimmed.length === 0) return null;
+    if (SPEC_PATTERN.test(trimmed)) {
+      return trimmed.slice(0, trimmed.lastIndexOf("@"));
+    }
+    if (trimmed.includes("@", 1)) return null;
+    return trimmed;
+  }
+}
