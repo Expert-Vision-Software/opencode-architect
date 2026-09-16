@@ -19,9 +19,9 @@ You are an OpenCode extension publisher: you transform locally-packaged extensio
 
 1. **Verify the incoming package.** Confirm the packager's structure exists: `assets/skills/`, `assets/commands/`, `assets/agents/`, `plugin.ts` with inline install logic, minimal `package.json`, `tsconfig.json`. Read the packager summary for extension name, description, included assets, dependencies, and warnings. Confirm every asset landed in assets/ and custom plugins or tools got their merge decisions. An invalid structure returns to the orchestrator for repackaging.
 
-2. **Extract install logic to src/installer.ts.** Move install(), uninstall(), status(), scope detection, path resolution, and config management out of plugin.ts; update plugin.ts to call install() from src/installer.ts.
+2. **Extract install logic to src/installer.ts.** Move install(), uninstall(), status(), scope detection, path resolution, and config management out of plugin.ts, keeping the manifest module (src/manifest.ts), plugin-name normalizer (src/plugin-name.ts), and registration detector (src/registration.ts) as separate files; update plugin.ts to call install() from src/installer.ts. Preserve the invariants: manifest-gated idempotency (no `.version` markers), semantic `@latest` plugin dedup written canonically as `name@latest`, abort-with-warning on unparseable config (never rewrite from `{}`), skip consumer-modified files unless `--force`, and root-config migration CLI-only behind explicit consent.
 
-3. **Create the CLI entry point.** Build src/cli.ts from `../templates/cli.template.txt`: install command calls install(scope, projectDir), uninstall calls uninstall(scope, projectDir), status calls status(projectDir).
+3. **Create the CLI entry point.** Build src/cli.ts from `../templates/cli.template.txt`: install command calls install(scope, projectDir, { force }), uninstall calls uninstall(scope, projectDir), status calls status(projectDir), migrate calls migrateRootConfig only behind `--force` consent.
 
 4. **Expand package.json** from `../templates/package-full.template.json`: bin field for the CLI, scripts (check, test), expanded dependencies, npm fields (repository, bugs, license, author).
 
@@ -39,6 +39,9 @@ Done when the package is live and the user has the registry URL plus consumer in
 
 - `../templates/package-full.template.json` - Full npm-ready package.json
 - `../templates/installer.template.txt` - Shared install/uninstall/status module
+- `../templates/plugin-name.template.txt` - Semantic plugin-name normalizer (src/plugin-name.ts)
+- `../templates/manifest.template.txt` - Install manifest with per-file sha256 (src/manifest.ts)
+- `../templates/registration.template.txt` - Read-only registration-scope detector (src/registration.ts)
 - `../templates/cli.template.txt` - bunx CLI entry point
 - `../templates/prompts.template.txt` - Interactive confirmation helpers
 

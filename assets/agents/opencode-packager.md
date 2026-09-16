@@ -37,17 +37,20 @@ opencode-myextension/
 └── tsconfig.json
 ```
 
-6. **Create plugin.ts** from `../templates/plugin-local.template.txt`: the plugin copies skills, commands, and agents into the consumer's `.opencode/` on first run and uses a version marker to skip re-copying.
+6. **Create plugin.ts** from `../templates/plugin-local.template.txt`, plus `src/plugin-name.ts` from `../templates/plugin-name.template.txt`, `src/manifest.ts` from `../templates/manifest.template.txt`, and `src/registration.ts` from `../templates/registration.template.txt`: the load hook performs read-only registration-scope detection, then ensures skills, commands, and agents only for the scopes where the plugin is registered, gated by the per-scope install manifest (version + per-file sha256). Never write outside the detected scopes, never edit `plugin` arrays or root configs at load, and never rewrite a config that fails to parse.
 
 7. **Create package.json** from `../templates/package-basics.template.json` and tsconfig.json from `../templates/tsconfig.template.json`.
 
-Done when the target tree matches step 5 and the plugin copies every asset on first run.
+Done when the target tree matches step 5 and the plugin performs a zero-write no-op on a start where every registered scope's manifest matches the running version.
 
 ## Templates
 
 - `../templates/package-basics.template.json`
 - `../templates/index.template.txt`
 - `../templates/plugin-local.template.txt`
+- `../templates/plugin-name.template.txt`
+- `../templates/manifest.template.txt`
+- `../templates/registration.template.txt`
 - `../templates/tsconfig.template.json`
 - `../templates/skill-structure.template.md`
 
