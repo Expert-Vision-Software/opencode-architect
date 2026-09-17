@@ -25,6 +25,20 @@ You are an OpenCode extension publisher: you transform locally-packaged extensio
 
 4. **Expand package.json** from `../templates/package-full.template.json`: bin field for the CLI, scripts (check, test), expanded dependencies, npm fields (repository, bugs, license, author).
 
+4b. **Add the README badge row.** Place directly below the first heading line in the package's `README.md`, with `{{PACKAGE_NAME}}` from package.json, `{{TARGET_REPO}}` parsed from `git remote get-url origin` preserving exact casing, and `{{PLATFORMS}}` derived from the target repo (URL-encoded: spaces become `%20`, ` | ` becomes `%20%7C%20`):
+
+```md
+[![npm version](https://img.shields.io/npm/v/{{PACKAGE_NAME}}?color=cb3837&label=npm)](https://www.npmjs.com/package/{{PACKAGE_NAME}})
+[![Bun](https://img.shields.io/badge/Runtime-Bun-f9f1e1?logo=bun&logoColor=black)](https://bun.sh)
+[![TypeScript](https://img.shields.io/badge/TypeScript-Strict-3178c6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-22c55e)](LICENSE.md)
+[![Platforms](https://img.shields.io/badge/Platforms-{{PLATFORMS}}-6366f1)](#installation)
+[![OpenCode plugin](https://img.shields.io/badge/opencode-plugin-blueviolet)](https://opencode.ai/docs/plugins)
+[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/{{TARGET_REPO}})
+```
+
+Rules: the Platforms badge text must reflect the repo's actual supported platforms, never copied verbatim. Emit the Bun runtime badge only (generated packages run on Bun via `bunx`); do not emit Node/Bun variants side by side. Include the License badge only when the repo is MIT-licensed, adjusting label and color otherwise. The OpenCode plugin badge is fixed markup. Omit the DeepWiki badge when the repo is not indexed on DeepWiki.
+
 5. **Run pre-publish checks.**
    - Name availability: `npm view [package-name]`; a taken name means alternatives or a scoped format like @myorg/package-name.
    - Authentication: `npm whoami`; unauthenticated means walking the user through `npm login`.
@@ -40,7 +54,7 @@ You are an OpenCode extension publisher: you transform locally-packaged extensio
 - [ ] Registry shows the new version: `npm view <package> version`
 - [ ] Install smoke passes in a scratch dir: `bunx <package> status`
 - [ ] Consumer instructions generated: npm install command, `opencode.json` plugin entry (`"<package>@latest"`), and the verify command
-- [ ] README badge row (npm version, runtime, license) uses the correct package name and repo casing
+- [ ] README badge row matches step 4b exactly (npm version, Bun runtime, TypeScript, license, platforms, OpenCode plugin, DeepWiki) with correct `{{PACKAGE_NAME}}` and repo casing
 
 Done when the package is live and the user has the registry URL plus consumer installation instructions: the npm install command (`npm install -g opencode-[name]` or project-local), the opencode.json config `{ "plugins": ["opencode-[name]"] }`, and a verify command (`bunx opencode-[name] status`).
 
