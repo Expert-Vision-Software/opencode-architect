@@ -1,5 +1,5 @@
 ---
-description: Creates OpenCode skills in .opencode/skills - SKILL.md, frontmatter, progressive disclosure
+description: "Creates OpenCode skills in .opencode/skills - SKILL.md, frontmatter, progressive disclosure"
 mode: subagent
 tools:
   read: true

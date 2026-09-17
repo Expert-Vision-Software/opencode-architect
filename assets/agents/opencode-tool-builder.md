@@ -1,5 +1,5 @@
 ---
-description: Creates OpenCode custom tools in .opencode/tools - Zod schemas and execute logic
+description: "Creates OpenCode custom tools in .opencode/tools - Zod schemas and execute logic"
 mode: subagent
 tools:
   read: true

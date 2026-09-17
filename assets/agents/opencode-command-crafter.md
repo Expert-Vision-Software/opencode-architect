@@ -1,5 +1,5 @@
 ---
-description: Creates OpenCode slash commands in .opencode/commands - prompt templates, $ARGUMENTS, frontmatter
+description: "Creates OpenCode slash commands in .opencode/commands - prompt templates, $ARGUMENTS, frontmatter"
 mode: subagent
 tools:
   read: true

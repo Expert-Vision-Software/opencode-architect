@@ -1,5 +1,5 @@
 ---
-description: Configures MCP servers and tool scoping in opencode.json - local/remote servers, permissions
+description: "Configures MCP servers and tool scoping in opencode.json - local/remote servers, permissions"
 mode: subagent
 tools:
   read: true

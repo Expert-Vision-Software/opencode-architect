@@ -1,5 +1,5 @@
 ---
-description: Analyzes .opencode/ contents for packaging readiness, and reviews existing plugin packages for conformance to this suite's design - inventory, dependencies, complications, conformance verdict
+description: "Analyzes .opencode/ contents for packaging readiness, and reviews existing plugin packages for conformance to this suite's design - inventory, dependencies, complications, conformance verdict"
 mode: subagent
 tools:
   read: true

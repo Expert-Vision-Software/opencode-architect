@@ -1,5 +1,5 @@
 ---
-description: Routes OpenCode meta tasks to specialist subagents - agents, skills, commands, tools, plugins, MCP setup, packaging, publishing
+description: "Routes OpenCode meta tasks to specialist subagents - agents, skills, commands, tools, plugins, MCP setup, packaging, publishing"
 mode: primary
 tools:
   read: true

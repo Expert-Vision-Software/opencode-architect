@@ -1,5 +1,5 @@
 ---
-description: Builds OpenCode plugins in .opencode/plugins - event hooks, custom tools, TypeScript
+description: "Builds OpenCode plugins in .opencode/plugins - event hooks, custom tools, TypeScript"
 mode: subagent
 tools:
   read: true

@@ -70,6 +70,13 @@ finding.
 - **D4 One-shot advisory.** Any "not installed, run bunx … install" notice
   fires at most once per session and is suppressed when any scope holds an
   install.
+- **D5 Frontmatter hygiene.** Frontmatter values in every shipped markdown
+  file (agent definitions, `SKILL.md`, command files) contain no colons:
+  a value that needs a colon (URLs, `provider/model-id`, sentences with
+  colons) is rewritten or the value is enclosed in double quotes. Where
+  possible, all frontmatter string values are double-quoted. Unquoted
+  values containing `:` are non-conformant — YAML parses them as mappings
+  or fails validation.
 
 ## Verdict scale
 
