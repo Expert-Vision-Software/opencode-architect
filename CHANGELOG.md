@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0] - 2026-09-17
+
+### Added
+
+- Scope-aware, manifest-gated install pattern for generated packages, recorded in [ADR-0006](docs/adr/0006-scope-aware-manifest-gated-generated-packages.md): read-only registration-scope detection, per-scope install manifests with per-file sha256 hashes, zero-write no-ops on matching manifests
+- New templates: `plugin-name.template.txt` (semantic `@latest` plugin-name normalizer), `manifest.template.txt` (install manifest), `registration.template.txt` (read-only scope detector)
+- Package conformance review: [conformance checklist](assets/references/conformance-checklist.md) rubric (install mechanics, config safety, scope discipline, frontmatter hygiene), a conformance review mode in `opencode-extension-auditor`, and orchestrator routing for "is this package aligned?" prompts
+- Shared `live-knowledge-fallback.md` reference replacing per-agent duplicated fallback prose
+- Publisher post-publish verification checklist and npm troubleshooting (403/404 auth, E422 provenance casing, 409 version-bump recovery)
+- Packager discovery-study step for shaping new packages from example repos, with bundled templates declared the structural source of truth
+- Frontmatter hygiene rule: no colons in frontmatter values; double-quote string values where possible
+
+### Changed
+
+- `installer.template.txt` rewritten: manifest-gated idempotency replaces `.version` markers; unparseable configs abort with a warning instead of being rewritten from `{}`; plugin entries dedupe semantically and are written canonically as `name@latest`; consumer-modified files are skipped unless the CLI passes `--force`; root-config migration is consent-gated and CLI-only
+- `plugin-local.template.txt` rewritten: loads via read-only scope detection and ensures only registered scopes; never edits `plugin` arrays or permission/MCP config at load
+- `cli.template.txt` updated: `--force` forwarded to install, consent-gated `migrate` subcommand, manifest-aware `status`; fixed `src/`-relative import paths
+
 ## [0.4.0] - 2026-09-06
 
 ### Added
