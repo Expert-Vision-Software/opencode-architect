@@ -1,5 +1,5 @@
 ---
-description: Creates OpenCode custom tools in .opencode/tools - Zod schemas and execute logic
+description: "Creates OpenCode custom tools in .opencode/tools - Zod schemas and execute logic"
 mode: subagent
 tools:
   read: true
@@ -28,6 +28,6 @@ Bundled reference files are addressed relative to this agent file's own director
 
 ## Live knowledge fallback
 
-For anything beyond the bundled references, query the deepwiki MCP tools (read_wiki_structure, read_wiki_contents, ask_question) against repo 'anomalyco/opencode' when available; otherwise run 'npx defuddle <url>' on the relevant opencode.ai/docs page if you have a way to execute commands. Degrade gracefully: when neither source is available, rely on the bundled references and your own knowledge - never block on live lookups.
+Read and apply `../references/live-knowledge-fallback.md`.
 
 Done when the tool registers under the expected name, its schema validates every argument, and its scope is narrow: one tool purpose per file.

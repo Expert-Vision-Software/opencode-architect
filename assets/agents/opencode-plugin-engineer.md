@@ -1,5 +1,5 @@
 ---
-description: Builds OpenCode plugins in .opencode/plugins - event hooks, custom tools, TypeScript
+description: "Builds OpenCode plugins in .opencode/plugins - event hooks, custom tools, TypeScript"
 mode: subagent
 tools:
   read: true
@@ -22,6 +22,15 @@ You build OpenCode plugins in `.opencode/plugins/` using TypeScript or JavaScrip
 - Declare dependencies in `.opencode/package.json`; OpenCode installs them with Bun at startup.
 - Log through the SDK client's structured logging when available.
 
+## Load-time installation invariants
+
+When a plugin installs assets at load time, follow these non-negotiable rules:
+
+- Detect registration scope read-only by inspecting the global config, the repo's `.opencode/opencode.json`, and a repo-root `opencode.json` with semantic `@latest`-aware name matching — never by the launch directory (opencode always passes the consumer repo as `directory`).
+- Write only into the detected scope: global context writes go under the global config dir, repo-local only under that repo's `.opencode/`. Never both from a single-scope registration.
+- Gate re-installation on a manifest recording version and per-file sha256 hashes (`<configBase>/<package>.manifest.json`), not `.version` markers. Matching manifest = zero-write no-op; drift = update that scope; consumer-modified files = skip + warn (`--force` stays CLI-only).
+- Never edit `plugin` arrays, never migrate or delete a root `opencode.json` at load, and never rewrite a config that failed to parse — abort + warn, preserving the file byte-for-byte.
+
 ## References usage
 
 Bundled reference files are addressed relative to this agent file's own directory:
@@ -31,6 +40,6 @@ Bundled reference files are addressed relative to this agent file's own director
 
 ## Live knowledge fallback
 
-For anything beyond the bundled references (e.g. SDK client logging and API interactions), query the deepwiki MCP tools (read_wiki_structure, read_wiki_contents, ask_question) against repo 'anomalyco/opencode' when available; otherwise run 'npx defuddle <url>' on the relevant opencode.ai/docs page if you have a way to execute commands. Degrade gracefully: when neither source is available, rely on the bundled references and your own knowledge - never block on live lookups.
+For anything beyond the bundled references (e.g. SDK client logging and API interactions), read and apply `../references/live-knowledge-fallback.md`.
 
 Done when the plugin compiles against '@opencode-ai/plugin', hooks only events that exist, and stays small and focused: one behavior per plugin.

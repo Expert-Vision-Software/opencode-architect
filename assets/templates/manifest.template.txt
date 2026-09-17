@@ -1,0 +1,89 @@
+# Inputs
+
+| Placeholder | Required | Description | Default |
+|---|---|---|---|
+| `PACKAGE NAME` → "opencode-myextension" | Yes | npm package name; the manifest file is `<configBase>/<package>.manifest.json` | — |
+
+**Load-bearing — do not simplify:** idempotency is per-file sha256 (`Bun.CryptoHasher`), never a `.version` marker; a missing or malformed manifest reads as "not installed" (drift), never as a reason to write without an ensure path.
+
+---
+import { readdir, readFile, writeFile, mkdir } from "node:fs/promises";
+import { join, relative } from "node:path";
+
+export interface ManifestData {
+  version: string;
+  files: Record<string, string>;
+}
+
+const MANIFEST_SUFFIX = ".manifest.json";
+
+export function manifestPath(configBase: string, packageName: string): string {
+  return join(configBase, `${packageName}${MANIFEST_SUFFIX}`);
+}
+
+export class InstallManifest {
+  private readonly path: string;
+
+  constructor(configBase: string, packageName: string) {
+    this.path = manifestPath(configBase, packageName);
+  }
+
+  async read(): Promise<ManifestData | null> {
+    try {
+      const content = await readFile(this.path, "utf-8");
+      const parsed = JSON.parse(content) as Partial<ManifestData>;
+      if (typeof parsed.version !== "string" || typeof parsed.files !== "object" || parsed.files === null) {
+        return null;
+      }
+      return { version: parsed.version, files: parsed.files };
+    } catch {
+      return null;
+    }
+  }
+
+  async write(version: string, rootDir: string, files: string[]): Promise<void> {
+    const data: ManifestData = { version, files: {} };
+    for (const file of files) {
+      data.files[this.toRelative(rootDir, file)] = await sha256(file);
+    }
+    await mkdir(join(this.path, ".."), { recursive: true });
+    await writeFile(this.path, JSON.stringify(data, null, 2));
+  }
+
+  async isUpToDate(version: string, rootDir: string): Promise<boolean> {
+    const data = await this.read();
+    if (data === null || data.version !== version) return false;
+    for (const [relPath, hash] of Object.entries(data.files)) {
+      const absolute = join(rootDir, relPath);
+      if (await sha256(absolute).catch(() => null) !== hash) return false;
+    }
+    return true;
+  }
+
+  async findConsumerModified(version: string, rootDir: string): Promise<string[]> {
+    const data = await this.read();
+    if (data === null || data.version === version) return [];
+    const modified: string[] = [];
+    for (const [relPath, hash] of Object.entries(data.files)) {
+      const absolute = join(rootDir, relPath);
+      const current = await sha256(absolute).catch(() => null);
+      if (current !== null && current !== hash) modified.push(absolute);
+    }
+    return modified;
+  }
+
+  private toRelative(rootDir: string, file: string): string {
+    return relative(rootDir, file).replaceAll("\\", "/");
+  }
+}
+
+export async function listFilesRecursive(rootDir: string): Promise<string[]> {
+  const entries = await readdir(rootDir, { withFileTypes: true, recursive: true });
+  return entries.filter(entry => entry.isFile()).map(entry => join(entry.parentPath, entry.name));
+}
+
+export async function sha256(path: string): Promise<string> {
+  const hasher = new Bun.CryptoHasher("sha256");
+  hasher.update(await readFile(path));
+  return hasher.digest("hex");
+}

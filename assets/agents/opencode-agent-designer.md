@@ -1,5 +1,5 @@
 ---
-description: Designs OpenCode agents and orchestrator subagents - roles, constraints, tools, permissions
+description: "Designs OpenCode agents and orchestrator subagents - roles, constraints, tools, permissions"
 mode: subagent
 tools:
   read: true

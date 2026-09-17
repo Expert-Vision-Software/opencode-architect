@@ -1,23 +1,20 @@
-TEMPLATE INSTRUCTIONS
-====================
-Replace the following placeholders before use:
+# Inputs
 
-EXTENSION NAME
-  "myextension"  → your extension identifier (e.g., "mytool")
+| Placeholder | Required | Description | Default |
+|---|---|---|---|
+| `EXTENSION NAME` → "myextension" | Yes | Extension identifier (e.g., "mytool") | — |
+| `SKILL NAME` → "myextension" | Yes | Must match the folder name in assets/skills/ | — |
+| `COMMAND NAME` → "my-command.md" | Yes | Command file name in assets/commands/ | — |
+| `PACKAGE NAME` → "opencode-myextension" | Yes | npm package name; also the manifest file base | — |
 
-SKILL NAME
-  "myextension"  → must match the folder name in assets/skills/
-
-COMMAND NAME
-  "my-command.md" → your command file name in assets/commands/
-
-PACKAGE NAME
-  "opencode-myextension" → your npm package name
+**Load-bearing — do not simplify:** manifest-gated idempotency (never `.version` markers); `readJsonConfig` returns `null` on parse errors and every writer aborts — never rewrite config from `{}`; plugin dedup is semantic with canonical `name@latest` output; `migrateRootConfig` deletes nothing without a consent callback and is never called from `install()`.
 
 ---
 import { exists, mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { PluginNameNormalizer } from "./plugin-name.ts";
+import { InstallManifest, listFilesRecursive } from "./manifest.ts";
 
 export type Scope = "local" | "global";
 
@@ -25,6 +22,7 @@ export interface InstallOptions {
   configurePermission?: boolean;
   configureMcp?: boolean;
   addPluginConfig?: boolean;
+  force?: boolean;
 }
 
 export interface InstallResult {
@@ -32,10 +30,11 @@ export interface InstallResult {
   skillPath: string;
   commandPath: string;
   configPath: string;
-  migrated: boolean;
   permissionConfigured: boolean;
   mcpConfigured: boolean;
   pluginAdded: boolean;
+  skippedModified: string[];
+  upToDate: boolean;
 }
 
 export interface UninstallResult {
@@ -44,14 +43,22 @@ export interface UninstallResult {
   pluginRemoved: boolean;
 }
 
+export interface ScopeStatus {
+  installed: boolean;
+  version: string | null;
+  pluginInConfig: boolean;
+}
+
 export interface StatusResult {
-  local: { installed: boolean; version: string | null; pluginInConfig: boolean } | null;
-  global: { installed: boolean; version: string | null; pluginInConfig: boolean } | null;
+  local: ScopeStatus | null;
+  global: ScopeStatus | null;
 }
 
 const SKILL_NAME = "myextension";
 const COMMAND_NAME = "my-command.md";
 const PLUGIN_NAME = "opencode-myextension";
+
+const normalizer = new PluginNameNormalizer();
 
 export async function getPackageVersion(): Promise<string> {
   const content = await Bun.file(`${import.meta.dirname}/../package.json`).text();
@@ -92,12 +99,13 @@ async function copyDir(src: string, dest: string): Promise<void> {
   }
 }
 
-async function readJsonConfig(path: string): Promise<Record<string, unknown>> {
+async function readJsonConfig(path: string): Promise<Record<string, unknown> | null> {
+  if (!(await exists(path))) return {};
   try {
-    const content = await readFile(path, "utf-8");
-    return JSON.parse(content);
+    return JSON.parse(await readFile(path, "utf-8"));
   } catch {
-    return {};
+    console.warn(`Warning: ${path} is not valid JSON; refusing to modify it.`);
+    return null;
   }
 }
 
@@ -106,60 +114,82 @@ async function writeJsonConfig(path: string, config: Record<string, unknown>): P
   await writeFile(path, JSON.stringify(config, null, 2));
 }
 
+async function ensureSkillFiles(scope: Scope, projectDir: string, force: boolean): Promise<{ upToDate: boolean; skippedModified: string[] }> {
+  const version = await getPackageVersion();
+  const configBase = scope === "global" ? getGlobalConfigPath() : getLocalConfigPath(projectDir);
+  const skillPath = join(configBase, "skills", SKILL_NAME);
+  const manifest = new InstallManifest(configBase, PLUGIN_NAME);
+  if (await manifest.isUpToDate(version, skillPath)) {
+    return { upToDate: true, skippedModified: [] };
+  }
+  const skippedModified: string[] = [];
+  const modified = await manifest.findConsumerModified(version, skillPath);
+  if (!force && modified.length > 0) {
+    for (const file of modified) {
+      console.warn(`Warning: skipping consumer-modified file ${file} (use --force to overwrite).`);
+    }
+    skippedModified.push(...modified);
+  }
+  const packagedSkillDir = join(getPackageDir(), "assets", "skills", SKILL_NAME);
+  await copyDir(packagedSkillDir, skillPath);
+  await manifest.write(version, skillPath, await listFilesRecursive(skillPath));
+  return { upToDate: false, skippedModified };
+}
+
 async function ensureSkillPermission(configPath: string): Promise<void> {
   const config = await readJsonConfig(configPath);
+  if (config === null) return;
   if (!config.permission) config.permission = {};
-  if (!(config.permission as Record<string, unknown>).skill) (config.permission as Record<string, unknown>).skill = {};
-  const skillPerms = (config.permission as Record<string, unknown>).skill as Record<string, unknown>;
+  const permission = config.permission as Record<string, unknown>;
+  if (!permission.skill) permission.skill = {};
+  const skillPerms = permission.skill as Record<string, unknown>;
   if (skillPerms[SKILL_NAME] !== "allow") {
     skillPerms[SKILL_NAME] = "allow";
-    await mkdir(join(configPath, ".."), { recursive: true });
-    await writeFile(configPath, JSON.stringify(config, null, 2));
+    await writeJsonConfig(configPath, config);
   }
 }
 
 async function removeSkillPermission(configPath: string): Promise<void> {
   const config = await readJsonConfig(configPath);
-  if (config.permission && (config.permission as Record<string, unknown>).skill) {
-    const skillPerms = (config.permission as Record<string, unknown>).skill as Record<string, unknown>;
-    delete skillPerms[SKILL_NAME];
-    if (Object.keys(skillPerms).length === 0) delete (config.permission as Record<string, unknown>).skill;
-    if (Object.keys(config.permission as Record<string, unknown>).length === 0) delete config.permission;
-    await mkdir(join(configPath, ".."), { recursive: true });
-    await writeFile(configPath, JSON.stringify(config, null, 2));
-  }
+  if (config === null || !config.permission) return;
+  const permission = config.permission as Record<string, unknown>;
+  if (!permission.skill) return;
+  const skillPerms = permission.skill as Record<string, unknown>;
+  delete skillPerms[SKILL_NAME];
+  if (Object.keys(skillPerms).length === 0) delete permission.skill;
+  if (Object.keys(permission).length === 0) delete config.permission;
+  await writeJsonConfig(configPath, config);
 }
 
-async function addPluginToConfig(configPath: string, pluginName: string): Promise<boolean> {
+async function addPluginToConfig(configPath: string): Promise<boolean> {
   const config = await readJsonConfig(configPath);
+  if (config === null) return false;
   if (!config.plugin) config.plugin = [];
   const plugins = config.plugin as string[];
-  if (plugins.includes(pluginName)) return false;
-  plugins.push(pluginName);
+  if (plugins.some(entry => normalizer.matches(entry, PLUGIN_NAME))) return false;
+  plugins.push(normalizer.normalize(PLUGIN_NAME) as string);
   config.plugin = plugins;
-  await mkdir(join(configPath, ".."), { recursive: true });
-  await writeFile(configPath, JSON.stringify(config, null, 2));
+  await writeJsonConfig(configPath, config);
   return true;
 }
 
-async function removePluginFromConfig(configPath: string, pluginName: string): Promise<boolean> {
+async function removePluginFromConfig(configPath: string): Promise<boolean> {
   const config = await readJsonConfig(configPath);
-  if (!config.plugin) return false;
+  if (config === null || !config.plugin) return false;
   const plugins = config.plugin as string[];
-  const index = plugins.indexOf(pluginName);
+  const index = plugins.findIndex(entry => normalizer.matches(entry, PLUGIN_NAME));
   if (index === -1) return false;
   plugins.splice(index, 1);
   if (plugins.length === 0) delete config.plugin;
   else config.plugin = plugins;
-  await mkdir(join(configPath, ".."), { recursive: true });
-  await writeFile(configPath, JSON.stringify(config, null, 2));
+  await writeJsonConfig(configPath, config);
   return true;
 }
 
-async function isPluginInConfig(configPath: string, pluginName: string): Promise<boolean> {
+async function isPluginInConfig(configPath: string): Promise<boolean> {
   const config = await readJsonConfig(configPath);
-  if (!config.plugin) return false;
-  return (config.plugin as string[]).includes(pluginName);
+  if (config === null || !config.plugin) return false;
+  return (config.plugin as string[]).some(entry => normalizer.matches(entry, PLUGIN_NAME));
 }
 
 async function addMcpServer(configPath: string): Promise<boolean> {
@@ -180,21 +210,17 @@ export async function checkMigrationNeeded(projectDir: string): Promise<{
   if (!rootExists) return { needed: false, rootConfigPath, dotOpenencodeConfigPath, rootConfig: null, dotOpenencodeConfig: null };
   const rootConfig = await readJsonConfig(rootConfigPath);
   const dotOpenencodeConfig = dotOpenencodeExists ? await readJsonConfig(dotOpenencodeConfigPath) : null;
-  return { needed: rootExists, rootConfigPath, dotOpenencodeConfigPath, rootConfig, dotOpenencodeConfig };
+  return { needed: true, rootConfigPath, dotOpenencodeConfigPath, rootConfig, dotOpenencodeConfig };
 }
 
 export async function migrateRootConfig(
   projectDir: string,
-  onConflict?: (root: Record<string, unknown>, dot: Record<string, unknown>) => Promise<boolean>
+  onConsent: (root: Record<string, unknown>, dot: Record<string, unknown> | null) => Promise<boolean>
 ): Promise<boolean> {
   const { needed, rootConfigPath, dotOpenencodeConfigPath, rootConfig, dotOpenencodeConfig } = await checkMigrationNeeded(projectDir);
-  if (!needed || !rootConfig) return false;
-  if (dotOpenencodeConfig) {
-    const hasConflict = Object.keys(rootConfig).some(key => key in dotOpenencodeConfig);
-    if (hasConflict && onConflict) {
-      const shouldContinue = await onConflict(rootConfig, dotOpenencodeConfig);
-      if (!shouldContinue) return false;
-    }
+  if (!needed || rootConfig === null) return false;
+  if (!(await onConsent(rootConfig, dotOpenencodeConfig))) return false;
+  if (dotOpenencodeConfig !== null) {
     const merged = { ...rootConfig, ...dotOpenencodeConfig };
     await writeJsonConfig(dotOpenencodeConfigPath, merged);
   } else {
@@ -210,41 +236,35 @@ export async function install(
   projectDir: string = process.cwd(),
   options: InstallOptions = {}
 ): Promise<InstallResult> {
-  const version = await getPackageVersion();
-  const packageName = await getPackageName();
-  const pkgDir = getPackageDir();
-  const { configurePermission = true, configureMcp = true, addPluginConfig = true } = options;
+  const { configurePermission = true, configureMcp = true, addPluginConfig = true, force = false } = options;
   const configBase = scope === "global" ? getGlobalConfigPath() : getLocalConfigPath(projectDir);
   const skillPath = join(configBase, "skills", SKILL_NAME);
   const commandPath = join(configBase, "commands", COMMAND_NAME);
   const configPath = join(configBase, "opencode.json");
-  const versionMarker = join(skillPath, ".version");
-  let migrated = false;
-  if (scope === "local") migrated = await migrateRootConfig(projectDir);
-  await copyDir(join(pkgDir, "assets", "skills", SKILL_NAME), skillPath);
+  const { upToDate, skippedModified } = await ensureSkillFiles(scope, projectDir, force);
   await mkdir(join(configBase, "commands"), { recursive: true });
-  await Bun.write(commandPath, Bun.file(join(pkgDir, "assets", "commands", COMMAND_NAME)));
-  await Bun.write(versionMarker, version);
+  await Bun.write(commandPath, Bun.file(join(getPackageDir(), "assets", "commands", COMMAND_NAME)));
   let permissionConfigured = false;
   if (configurePermission) { await ensureSkillPermission(configPath); permissionConfigured = true; }
   let mcpConfigured = false;
   if (configureMcp) mcpConfigured = await addMcpServer(configPath);
   let pluginAdded = false;
-  if (addPluginConfig) pluginAdded = await addPluginToConfig(configPath, packageName);
-  return { scope, skillPath, commandPath, configPath, migrated, permissionConfigured, mcpConfigured, pluginAdded };
+  if (addPluginConfig) pluginAdded = await addPluginToConfig(configPath);
+  return { scope, skillPath, commandPath, configPath, permissionConfigured, mcpConfigured, pluginAdded, skippedModified, upToDate };
 }
 
 export async function uninstall(scope: Scope, projectDir: string = process.cwd()): Promise<UninstallResult> {
-  const packageName = await getPackageName();
   const configBase = scope === "global" ? getGlobalConfigPath() : getLocalConfigPath(projectDir);
   const skillPath = join(configBase, "skills", SKILL_NAME);
   const commandPath = join(configBase, "commands", COMMAND_NAME);
   const configPath = join(configBase, "opencode.json");
   const removed: string[] = [];
   if (await exists(skillPath)) { await rm(skillPath, { recursive: true }); removed.push(skillPath); }
-  if ( await exists(commandPath)) { await rm(commandPath); removed.push(commandPath); }
+  if (await exists(commandPath)) { await rm(commandPath); removed.push(commandPath); }
+  const manifest = new InstallManifest(configBase, PLUGIN_NAME);
+  if (await manifest.read() !== null) { await rm(join(configBase, `${PLUGIN_NAME}.manifest.json`)); removed.push(join(configBase, `${PLUGIN_NAME}.manifest.json`)); }
   let pluginRemoved = false;
-  if (await exists(configPath)) { await removeSkillPermission(configPath); pluginRemoved = await removePluginFromConfig(configPath, packageName); }
+  if (await exists(configPath)) { await removeSkillPermission(configPath); pluginRemoved = await removePluginFromConfig(configPath); }
   const skillsDir = join(configBase, "skills");
   const commandsDir = join(configBase, "commands");
   try { const skillsContents = await readdir(skillsDir); if (skillsContents.length === 0) await rm(skillsDir, { recursive: true }); } catch {}
@@ -253,17 +273,33 @@ export async function uninstall(scope: Scope, projectDir: string = process.cwd()
 }
 
 export async function status(projectDir: string = process.cwd()): Promise<StatusResult> {
+  const configBases: Array<[Scope, string, string]> = [
+    ["local", getLocalConfigPath(projectDir), join(getLocalConfigPath(projectDir), "opencode.json")],
+    ["global", getGlobalConfigPath(), join(getGlobalConfigPath(), "opencode.json")],
+  ];
+  const result: StatusResult = { local: null, global: null };
+  for (const [scope, configBase, configFile] of configBases) {
+    const skillPath = join(configBase, "skills", SKILL_NAME);
+    if (!(await exists(skillPath))) continue;
+    const manifest = new InstallManifest(configBase, PLUGIN_NAME);
+    const manifestData = await manifest.read();
+    const installedVersion = manifestData === null ? null : manifestData.version;
+    result[scope] = {
+      installed: true,
+      version: installedVersion,
+      pluginInConfig: await isPluginInConfig(configFile),
+    };
+  }
+  return result;
+}
+
+export async function isUpToDateAnywhere(projectDir: string = process.cwd()): Promise<boolean> {
   const version = await getPackageVersion();
-  const packageName = await getPackageName();
-  const localConfigPath = getLocalConfigPath(projectDir);
-  const localVersionMarker = join(localConfigPath, "skills", SKILL_NAME, ".version");
-  const localConfigFile = join(localConfigPath, "opencode.json");
-  const globalConfigPath = getGlobalConfigPath();
-  const globalVersionMarker = join(globalConfigPath, "skills", SKILL_NAME, ".version");
-  const globalConfigFile = join(globalConfigPath, "opencode.json");
-  let localStatus: { installed: boolean; version: string | null; pluginInConfig: boolean } | null = null;
-  let globalStatus: { installed: boolean; version: string | null; pluginInConfig: boolean } | null = null;
-  try { const localVersion = (await readFile(localVersionMarker, "utf-8")).trim(); const localPluginInConfig = await isPluginInConfig(localConfigFile, packageName); localStatus = { installed: true, version: localVersion, pluginInConfig: localPluginInConfig }; } catch { const skillPath = join(localConfigPath, "skills", SKILL_NAME); if (await exists(skillPath)) { const localPluginInConfig = await isPluginInConfig(localConfigFile, packageName); localStatus = { installed: true, version: null, pluginInConfig: localPluginInConfig }; } }
-  try { const globalVersion = (await readFile(globalVersionMarker, "utf-8")).trim(); const globalPluginInConfig = await isPluginInConfig(globalConfigFile, packageName); globalStatus = { installed: true, version: globalVersion, pluginInConfig: globalPluginInConfig }; } catch { const skillPath = join(globalConfigPath, "skills", SKILL_NAME); if (await exists(skillPath)) { const globalPluginInConfig = await isPluginInConfig(globalConfigFile, packageName); globalStatus = { installed: true, version: null, pluginInConfig: globalPluginInConfig }; } }
-  return { local: localStatus, global: globalStatus };
+  for (const configBase of [getGlobalConfigPath(), getLocalConfigPath(projectDir)]) {
+    const skillPath = join(configBase, "skills", SKILL_NAME);
+    if (await exists(skillPath) && await new InstallManifest(configBase, PLUGIN_NAME).isUpToDate(version, skillPath)) {
+      return true;
+    }
+  }
+  return false;
 }

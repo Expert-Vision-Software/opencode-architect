@@ -1,0 +1,35 @@
+# Inputs
+
+None — emit as-is as src/plugin-name.ts.
+
+**Load-bearing — do not simplify:** `name`, `name@latest`, and `name@x.y.z` are the same package; `normalize` always outputs the canonical `name@latest` form and `matches` compares base names semantically. Never replace with exact-string equality.
+
+---
+const CANONICAL_SPEC = "latest";
+
+const SPEC_PATTERN = /^(?<base>[^@\s]+)@(?:latest|\d+\.\d+\.\d+(?:[-+][A-Za-z0-9.]+)?)$/;
+
+export class PluginNameNormalizer {
+  normalize(raw: string): string | null {
+    const bare = this.baseName(raw);
+    if (bare === null) return null;
+    return `${bare}@${CANONICAL_SPEC}`;
+  }
+
+  matches(raw: string, packageName: string): boolean {
+    const left = this.baseName(raw);
+    const right = this.baseName(packageName);
+    if (left === null || right === null) return false;
+    return left === right;
+  }
+
+  private baseName(raw: string): string | null {
+    const trimmed = raw.trim();
+    if (trimmed.length === 0) return null;
+    if (SPEC_PATTERN.test(trimmed)) {
+      return trimmed.slice(0, trimmed.lastIndexOf("@"));
+    }
+    if (trimmed.includes("@", 1)) return null;
+    return trimmed;
+  }
+}

@@ -1,25 +1,18 @@
-TEMPLATE INSTRUCTIONS
-====================
-Replace the following placeholders before use:
+# Inputs
 
-CLI NAME
-  "opencode-myextension" → your CLI command name (matches package.json bin field)
+| Placeholder | Required | Description | Default |
+|---|---|---|---|
+| `CLI NAME` → "opencode-myextension" | Yes | CLI command name; matches package.json bin field | — |
+| `VERSION` → "1.0.0" | Yes | Initial version | `1.0.0` |
+| `COMMANDS` | Yes | install / uninstall / status / migrate subcommands | — |
+| `SCOPE` → "local" | Yes | Default scope when `--scope` is not specified | `local` |
 
-VERSION
-  "1.0.0"                → initial version
-
-COMMANDS
-  "install"               → install subcommand
-  "uninstall"             → uninstall subcommand
-  "status"                → status subcommand
-
-SCOPE
-  "local"                → default scope when --scope not specified
+**Load-bearing — do not simplify:** `migrate` refuses to run without `--force` (root-config deletion is consent-gated and CLI-only); `install` forwards `force` so consumer-modified files are skipped without it; the module lives at `src/cli.ts` and imports `./installer.ts`.
 
 ---
 #!/usr/bin/env bun
 import { parseArgs } from "node:util";
-import { install, uninstall, status, type Scope } from "./src/installer.ts";
+import { install, uninstall, status, migrateRootConfig, type Scope } from "./installer.ts";
 
 const VERSION = JSON.parse(
   await Bun.file(`${import.meta.dirname}/../package.json`).text()
@@ -33,10 +26,11 @@ Commands:
   install     Install the myextension skill and command
   uninstall   Remove the myextension skill and command
   status      Check installation status
+  migrate     Migrate root opencode.json into .opencode/ (asks for --force consent)
 
 Options:
   -s, --scope <scope>    Installation scope: "local" or "global"
-  -f, --force           Skip confirmation prompts
+  -f, --force           Overwrite consumer-modified files / consent to migration
   -h, --help            Show this help message
   -v, --version         Show version
 
@@ -45,6 +39,7 @@ Examples:
   opencode-myextension install --scope global
   opencode-myextension uninstall --scope local
   opencode-myextension status
+  opencode-myextension migrate --force
 `);
 }
 
@@ -76,11 +71,13 @@ async function main(): Promise<void> {
     switch (command) {
       case "install": {
         const installScope = scope || "local";
-        const result = await install(installScope, process.cwd());
-        console.log(`Installed ${installScope}:`);
+        const result = await install(installScope, process.cwd(), { force });
+        console.log(`Installed ${installScope}${result.upToDate ? " (already up to date)" : ""}:`);
         console.log(`  Skill: ${result.skillPath}`);
         console.log(`  Command: ${result.commandPath}`);
-        if (result.migrated) console.log(`  Migrated: opencode.json → .opencode/opencode.json`);
+        for (const skipped of result.skippedModified) {
+          console.log(`  Skipped consumer-modified: ${skipped} (use --force to overwrite)`);
+        }
         break;
       }
       case "uninstall": {
@@ -93,8 +90,17 @@ async function main(): Promise<void> {
       case "status": {
         const result = await status(process.cwd());
         console.log("Status:");
-        if (result.local) console.log(`  Local: installed=${result.local.installed}, version=${result.local.version}`);
-        if (result.global) console.log(`  Global: installed=${result.global.installed}, version=${result.global.version}`);
+        if (result.local) console.log(`  Local: installed=${result.local.installed}, version=${result.local.version ?? "no manifest"}, pluginInConfig=${result.local.pluginInConfig}`);
+        if (result.global) console.log(`  Global: installed=${result.global.installed}, version=${result.global.version ?? "no manifest"}, pluginInConfig=${result.global.pluginInConfig}`);
+        break;
+      }
+      case "migrate": {
+        if (!force) {
+          console.error("Migration deletes the root opencode.json. Re-run with --force to consent.");
+          process.exit(1);
+        }
+        const migrated = await migrateRootConfig(process.cwd(), async () => true);
+        console.log(migrated ? "Migrated opencode.json into .opencode/opencode.json" : "Nothing to migrate");
         break;
       }
       default: console.error(`Unknown command: ${command}`); printHelp(); process.exit(1);

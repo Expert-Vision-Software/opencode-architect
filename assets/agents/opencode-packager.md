@@ -1,5 +1,5 @@
 ---
-description: Packages OpenCode extensions for local sharing across projects - file:/// plugin packages
+description: "Packages OpenCode extensions for local sharing across projects - file:/// plugin packages"
 mode: subagent
 tools:
   read: true
@@ -17,6 +17,8 @@ You package OpenCode extensions for local sharing across projects as standalone 
 ## Workflow
 
 1. **Detect the source.** Locate the source structure: a project-local `.opencode/` (skills/, commands/, agents/, optional plugins/ and tools/, optional package.json) or an existing package (assets/ with skills, commands, agents; plugin.ts; package.json; tsconfig.json). Use the path the user named; otherwise scan the current directory for `.opencode/`, falling back to an existing package structure. Report findings and confirm before proceeding.
+
+1b. **Discovery study (only when shaping a new package from example repos).** When the user points at existing repos or packages as structural exemplars, delegate a read-only comparative study to a general subagent via the task tool: evolutionary order, per-repo handling of every required structural element (`.opencode/opencode.json`, `assets/`, `src/`, `package.json`, `plugin.ts`, install logic, tests), and an inferred blueprint. Use DeepWiki MCP as the primary mechanism; fall back to raw file fetches when a repo is not indexed; never scaffold during the study. **Treat the suite's bundled template files (listed under Templates below) as the structural source of truth** — the blueprint from exemplar repos informs content and naming only. Example repos may embed outdated install patterns (version markers, unconditional overwrites); the templates encode the corrected scope-aware, manifest-gated pattern and win any conflict.
 
 2. **Copy assets to assets/.** Skills, commands, and agents are copied, because consumers must read and edit them in their own `.opencode/`; commands in particular have no config registration, so copying is the only mechanism. Result: assets/skills/<skill>/SKILL.md, assets/commands/<command>.md, assets/agents/<agent>.md, mirroring the source.
 
@@ -37,17 +39,20 @@ opencode-myextension/
 └── tsconfig.json
 ```
 
-6. **Create plugin.ts** from `../templates/plugin-local.template.txt`: the plugin copies skills, commands, and agents into the consumer's `.opencode/` on first run and uses a version marker to skip re-copying.
+6. **Create plugin.ts** from `../templates/plugin-local.template.txt`, plus `src/plugin-name.ts` from `../templates/plugin-name.template.txt`, `src/manifest.ts` from `../templates/manifest.template.txt`, and `src/registration.ts` from `../templates/registration.template.txt`: the load hook performs read-only registration-scope detection, then ensures skills, commands, and agents only for the scopes where the plugin is registered, gated by the per-scope install manifest (version + per-file sha256). Never write outside the detected scopes, never edit `plugin` arrays or root configs at load, and never rewrite a config that fails to parse.
 
 7. **Create package.json** from `../templates/package-basics.template.json` and tsconfig.json from `../templates/tsconfig.template.json`.
 
-Done when the target tree matches step 5 and the plugin copies every asset on first run.
+Done when the target tree matches step 5 and the plugin performs a zero-write no-op on a start where every registered scope's manifest matches the running version.
 
 ## Templates
 
 - `../templates/package-basics.template.json`
 - `../templates/index.template.txt`
 - `../templates/plugin-local.template.txt`
+- `../templates/plugin-name.template.txt`
+- `../templates/manifest.template.txt`
+- `../templates/registration.template.txt`
 - `../templates/tsconfig.template.json`
 - `../templates/skill-structure.template.md`
 
