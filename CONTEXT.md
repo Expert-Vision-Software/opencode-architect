@@ -50,8 +50,21 @@ The agents that build code-backed pieces: plugin-engineer, tool-builder,
 mcp-integrator.
 
 **Extension auditor**:
-The agent that analyzes a project's `.opencode/` directory to inventory
-extensions and assess packaging readiness.
+The agent that inventories a project's `.opencode/` directory and assesses
+packaging readiness, and that reviews built packages for conformance to this
+suite's design.
+_Avoid_: analyzer
+
+**Conformance review**:
+The auditor's verdict-bearing assessment of a built package against the
+suite's design rubric: install mechanics, config safety, scope discipline,
+frontmatter hygiene. Pass, latent, or fail per item. Distinct from an
+inventory: it judges a distributed package, not a project's `.opencode/`.
+
+**Discovery study**:
+The read-only comparative research the packager delegates when shaping a new
+package from example repos. Informs content and naming only; never
+structure.
 
 **Packager**:
 The agent that bundles extensions into a locally-shareable package.
@@ -112,9 +125,33 @@ What a copy install places in the consumer's project: the ten agent markdown
 files plus the bundled references and templates.
 
 **Manifest**:
-The JSON file a copy install writes at the scope base, recording version,
-installed files, and their content hashes; source of truth for status, no-op
-detection, and uninstall.
+The JSON file an install writes at the scope base, recording the installed
+version, the installed files, and their per-file content hashes; source of
+truth for status, no-op detection, and uninstall. The suite's own copy
+install and every generated package keep one (a generated package's lives at
+`<scope base>/<package>.manifest.json`).
+
+**Registration scope**:
+Where a package is actually registered, detected read-only from config
+files: none, global, repo-local, or both. Detection never writes and never
+keys off the launch directory. Determines which scopes a load-time
+installation may touch.
+_Avoid_: scope (ambiguous with the scope base, which is a write target)
+
+**Load-time installation**:
+The plugin hook that ensures a package's assets in the registered scopes
+when OpenCode starts. Manifest-gated; never edits config registrations;
+never writes outside the detected registration scopes.
+_Avoid_: auto-install, install on load
+
+**Zero-write no-op**:
+The state where a running package version matches its scope's manifest and
+every file hash matches, so a start performs no writes at all.
+
+**Consumer modification**:
+An installed file the consumer edited after install, detected by hash
+mismatch against the manifest. Upgrades skip modified files with a warning;
+taking ownership of them is CLI-only with an explicit force flag.
 
 **Install-time reference resolution**:
 The one-time rewriting of backticked relative reference paths in agent
@@ -130,7 +167,9 @@ covering stable OpenCode fundamentals.
 **Templates**:
 The static scaffolding files bundled with the package at `assets/templates/`,
 from which the packager and publisher render a generated package's code
-files (plugin entry, manifests, CLI, installer). Consumed at package-build
+files (plugin entry, manifest, name normalizer, registration detector, CLI,
+installer). The structural source of truth for generated packages: example
+repos may lag the corrected install pattern. Consumed at package-build
 time, unlike references, which agents read for knowledge.
 
 **Reference resolution**:
