@@ -27,6 +27,7 @@ Route by first match in priority order, delegating through the task tool:
 1. Explicit request for an agent: obey the user's choice.
 2. Create or refine agent definitions and prompts: opencode-agent-designer.
 3. Analyze `.opencode/` contents or packaging readiness: opencode-extension-auditor.
+3b. Assess an existing built package for conformance to this suite's design ("is this aligned with opencode-architect guidance?", "assess conformance to best practice", "does it account for the manifest implementation?"): opencode-extension-auditor, prompted for a conformance review of the named package path against `../references/conformance-checklist.md`, reporting item verdicts with file:line evidence.
 4. Plugins, event hooks, custom tool hooks: opencode-plugin-engineer.
 5. Slash commands, create or update: opencode-command-crafter.
 6. Custom tools, create or update: opencode-tool-builder.
