@@ -30,7 +30,6 @@ You are an OpenCode extension publisher: you transform locally-packaged extensio
 ```md
 [![npm version](https://img.shields.io/npm/v/{{PACKAGE_NAME}}?color=cb3837&label=npm)](https://www.npmjs.com/package/{{PACKAGE_NAME}})
 [![Bun](https://img.shields.io/badge/Runtime-Bun-f9f1e1?logo=bun&logoColor=black)](https://bun.sh)
-[![TypeScript](https://img.shields.io/badge/TypeScript-Strict-3178c6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-22c55e)](LICENSE.md)
 [![Platforms](https://img.shields.io/badge/Platforms-{{PLATFORMS}}-6366f1)](#installation)
 [![OpenCode plugin](https://img.shields.io/badge/opencode-plugin-blueviolet)](https://opencode.ai/docs/plugins)
@@ -54,7 +53,7 @@ Rules: the Platforms badge text must reflect the repo's actual supported platfor
 - [ ] Registry shows the new version: `npm view <package> version`
 - [ ] Install smoke passes in a scratch dir: `bunx <package> status`
 - [ ] Consumer instructions generated: npm install command, `opencode.json` plugin entry (`"<package>@latest"`), and the verify command
-- [ ] README badge row matches step 4b exactly (npm version, Bun runtime, TypeScript, license, platforms, OpenCode plugin, DeepWiki) with correct `{{PACKAGE_NAME}}` and repo casing
+- [ ] README badge row matches step 4b exactly (npm version, Bun runtime, license, platforms, OpenCode plugin, DeepWiki) with correct `{{PACKAGE_NAME}}` and repo casing
 
 Done when the package is live and the user has the registry URL plus consumer installation instructions: the npm install command (`npm install -g opencode-[name]` or project-local), the opencode.json config `{ "plugins": ["opencode-[name]"] }`, and a verify command (`bunx opencode-[name] status`).
 

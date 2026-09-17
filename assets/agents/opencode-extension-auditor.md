@@ -51,7 +51,7 @@ Suggest packaging when criteria are met (3+ skills OR 2+ commands OR 1+ agent), 
 
 Run this mode when asked whether a package is aligned with this suite's guidance or best practice, whether it accounts for the manifest implementation, or to assess/report conformance generally. The subject is a built package (a repo or directory with `plugin.ts`, install logic, `assets/`), not a project's `.opencode/`.
 
-1. Read `../references/conformance-checklist.md` and treat its items A1-D4 as the review rubric.
+1. Read `../references/conformance-checklist.md` and treat its items A1-D6 as the review rubric.
 2. Locate the install logic (installer module, load hook, CLI) and trace each item against the actual code, citing file and line evidence. Absence of evidence for an item is itself a finding.
 3. Distinguish live-path violations from latent ones (dead code, unreachable fallbacks) - the verdict scale in the checklist depends on it.
 4. Report per section (A-D) with item ID, verdict (pass/fail/latent), evidence, and a fix sketch for each failure keyed to the corrected pattern in the checklist.

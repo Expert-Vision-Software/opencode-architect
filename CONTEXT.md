@@ -58,7 +58,7 @@ _Avoid_: analyzer
 **Conformance review**:
 The auditor's verdict-bearing assessment of a built package against the
 suite's design rubric: install mechanics, config safety, scope discipline,
-frontmatter hygiene. Pass, latent, or fail per item. Distinct from an
+structure and distribution. Pass, latent, or fail per item. Distinct from an
 inventory: it judges a distributed package, not a project's `.opencode/`.
 
 **Discovery study**:

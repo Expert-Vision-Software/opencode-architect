@@ -77,6 +77,13 @@ finding.
   possible, all frontmatter string values are double-quoted. Unquoted
   values containing `:` are non-conformant — YAML parses them as mappings
   or fails validation.
+- **D6 README badge row.** The package README carries, directly below the
+  first heading, the badge row: npm version, Bun runtime, license,
+  platforms (URL-encoded, matching the repo's actual platforms), the fixed
+  OpenCode plugin badge, and DeepWiki when indexed. Badge URLs use the
+  exact package name and repo casing (`My-Org/pkg` ≠ `my-org/pkg`). A
+  missing badge row, extra runtime badges, or mismatched casing is
+  non-conformant.
 
 ## Verdict scale
 
