@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Package conformance review: [conformance checklist](assets/references/conformance-checklist.md) rubric (install mechanics, config safety, scope discipline, frontmatter hygiene), a conformance review mode in `opencode-extension-auditor`, and orchestrator routing for "is this package aligned?" prompts
 - Shared `live-knowledge-fallback.md` reference replacing per-agent duplicated fallback prose
 - Publisher post-publish verification checklist and npm troubleshooting (403/404 auth, E422 provenance casing, 409 version-bump recovery)
+- Publisher README badge row step for generated packages: npm version, Bun runtime, TypeScript, license, platforms, OpenCode plugin, and DeepWiki badges
 - Packager discovery-study step for shaping new packages from example repos, with bundled templates declared the structural source of truth
 - Frontmatter hygiene rule: no colons in frontmatter values; double-quote string values where possible
 
