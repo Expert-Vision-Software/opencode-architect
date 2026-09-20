@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.0] - 2026-09-20
+
+### Fixed
+
+- Repeated `external_directory` permission prompts when agents read bundled references in plugin install mode: the load-time `config` hook now registers an in-memory allow scoped to the package's own `assets/*` directory, preserving existing rules and respecting an explicit global deny (#11)
+
 ## [0.6.0] - 2026-09-20
 
 ### Added
