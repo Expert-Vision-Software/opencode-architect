@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.0] - 2026-09-20
+
+### Added
+
+- Startup non-interference rules, recorded in [ADR-0007](docs/adr/0007-startup-non-interference-never-throw-from-hooks.md): load-time hooks never throw — failures degrade to a warning plus one advisory so OpenCode always launches; hard errors stay CLI-only
+- npm plugin loading mechanics section in the plugins reference: cache-dir resolution, `import.meta.dirname` semantics, error-handling and timeout behavior, config-format and precedence rules (verified against the OpenCode source)
+- Conformance checklist items: **B4** hooks-never-throw, **D4** cache-rot advisory naming the exact cache directory and `npm pack --dry-run` tarball verification
+
+### Changed
+
+- Plugin-engineer agent: startup non-interference section — wrap load-time installation in try/catch, detect registration in both `opencode.json` and `opencode.jsonc`, treat absent assets as a partial npm cache artifact with a removal advisory
+- `plugin-local.template.txt`: config-hook installation wrapped in try/catch (load-bearing); load-bearing note covers format-tolerant scope detection
+- Conformance checklist: **C1** requires both config extensions, **D3** adds `.jsonc`-registration and hook-degradation regression tests, verdict scale includes B4
+- Glossary: *Startup non-interference*, *Partial cache artifact*
+
 ## [0.5.0] - 2026-09-17
 
 ### Added
