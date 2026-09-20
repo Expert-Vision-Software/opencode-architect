@@ -37,16 +37,23 @@ finding.
 - **B3 Load hook never edits config registrations.** The load-time path
   never modifies `plugin` arrays and never writes permission or MCP
   configuration — those are CLI operations.
+- **B4 Hooks never throw (startup non-interference).** The entire load-time
+  installation block is wrapped so any failure becomes a warning plus at
+  most one advisory (naming the exact remediation command or cache path)
+  and OpenCode still launches; in-memory config work still applies. A hook
+  that can reject into config assembly is non-conformant — such a rejection
+  can stall startup with no UI escape (ADR 0007).
 
 ## C. Scope discipline
 
 - **C1 Read-only, config-based scope detection.** Registration scope is
-  determined by inspecting the global config, the repo's
-  `.opencode/opencode.json`, and a repo-root `opencode.json`, using
-  semantic `@latest`-aware name matching. Detection by launch directory
-  (keying off the plugin `directory` input) is non-conformant — opencode
-  always passes the consumer repo, which caused the historical cross-scope
-  leak.
+  determined by inspecting the global config and the repo's configs —
+  `.opencode/opencode.json(c)` and a repo-root `opencode.json(c)`, both
+  extensions — using semantic `@latest`-aware name matching. Detection by
+  launch directory (keying off the plugin `directory` input) is
+  non-conformant — opencode always passes the consumer repo, which caused
+  the historical cross-scope leak. Detection that reads only `opencode.json`
+  and ignores `opencode.jsonc` is also non-conformant (ADR 0007).
 - **C2 No cross-scope writes.** Global context writes only under the global
   config directory; repo-local writes only under that repo's `.opencode/`.
   A globally-registered plugin that installs into every visited repo is the
@@ -66,18 +73,24 @@ finding.
 - **D3 Regression contract tests.** The package's test suite covers: fresh
   repo (correct scope ensured, other scope untouched), root config never
   touched, unparseable config preserved, up-to-date no-op, drift update,
-  both-scopes registration without leakage.
-- **D4 One-shot advisory.** Any "not installed, run bunx … install" notice
+  both-scopes registration without leakage, registration via
+  `opencode.jsonc` detected, and an install failure inside the config hook
+  degrading to a warning instead of rejecting.
+- **D4 Cache-rot advisory.** When bundled assets are unexpectedly absent at
+  load (partial npm cache artifact), the advisory names the exact cache
+  directory to remove; the README/publish flow verifies tarball contents
+  (`npm pack --dry-run`) so published packages ship their assets.
+- **D5 One-shot advisory.** Any "not installed, run bunx … install" notice
   fires at most once per session and is suppressed when any scope holds an
   install.
-- **D5 Frontmatter hygiene.** Frontmatter values in every shipped markdown
+- **D6 Frontmatter hygiene.** Frontmatter values in every shipped markdown
   file (agent definitions, `SKILL.md`, command files) contain no colons:
   a value that needs a colon (URLs, `provider/model-id`, sentences with
   colons) is rewritten or the value is enclosed in double quotes. Where
   possible, all frontmatter string values are double-quoted. Unquoted
   values containing `:` are non-conformant — YAML parses them as mappings
   or fails validation.
-- **D6 README badge row.** The package README carries, directly below the
+- **D7 README badge row.** The package README carries, directly below the
   first heading, the badge row: npm version, Bun runtime, license,
   platforms (URL-encoded, matching the repo's actual platforms), the fixed
   OpenCode plugin badge, and DeepWiki when indexed. Badge URLs use the
@@ -90,5 +103,5 @@ finding.
 - **Conformant** — every item evidenced.
 - **Partially conformant** — violations are latent (dead code, fallback
   paths not yet exercised); list item IDs with evidence.
-- **Non-conformant** — any A1–A4, B1, C1–C3 violation on a live code path;
+- **Non-conformant** — any A1–A4, B1, B4, C1–C3 violation on a live code path;
   these are the historically destructive patterns.

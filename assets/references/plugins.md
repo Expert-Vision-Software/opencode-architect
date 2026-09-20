@@ -74,3 +74,13 @@ Compaction hook `experimental.session.compacting` can append via `output.context
 
 - Local plugins can use npm packages: add a `package.json` to the config directory (`.opencode/package.json`); OpenCode runs `bun install` at startup.
 - Prefer structured logging via `client.app.log({ body: { service, level, message, extra } })` over `console.log`. Levels: `debug`, `info`, `warn`, `error`.
+
+## npm plugin loading mechanics
+
+Verified against the OpenCode source; rely on these when writing plugins that self-install assets.
+
+- Resolution: a `plugin` entry starting with `file://`, `.`, or an absolute path loads from disk as-is; anything else is treated as an npm spec and installed with arborist into `~/.cache/opencode/packages/<sanitized-spec>/node_modules/<name>`. An existing cached `node_modules/<name>` is reused verbatim — including a partial or corrupt install; nothing re-validates or repairs it.
+- Import: the entrypoint is picked from `exports["./server"]`, then `main`, then a root `index.{ts,tsx,js,mjs,cjs}`; it must resolve inside the package directory. The module is imported from the real directory (no bundling), so `import.meta.dirname` is the package dir and bundled `assets/` resolve normally.
+- Error handling: install/entry/import failures are caught and logged — startup continues. But the wait that joins background npm-install fibers has no timeout, and a hook that rejects during config assembly propagates into config loading: either can stall startup with no visible escape. A plugin must therefore never throw from hooks.
+- Config files: global config may be `opencode.json`, `opencode.jsonc`, or `config.json`; project config likewise `.json`/`.jsonc` (`.opencode/opencode.json(c)` and repo root). Anything reading consumer registration must check both extensions.
+- Precedence: the effective `plugin` list is the union of global and project entries (project wins on name collision). Agents, commands, and skills are scanned global-first, project-last, with later (project) definitions overriding the same name — so a consumer can override one installed skill or command file per project without touching the global install.

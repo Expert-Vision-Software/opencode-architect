@@ -144,6 +144,18 @@ when OpenCode starts. Manifest-gated; never edits config registrations;
 never writes outside the detected registration scopes.
 _Avoid_: auto-install, install on load
 
+**Startup non-interference**:
+The invariant that a package never blocks or aborts OpenCode's launch:
+load-time failures degrade to a warning and an advisory, and only the CLI
+may fail hard. A hook that throws can stall startup with no escape, so
+hooks never throw.
+
+**Partial cache artifact**:
+An npm cache install of a package left incomplete (bundled assets missing)
+by an interrupted install, which OpenCode reuses indefinitely without
+repair. Packages must detect this state at load and advise removing the
+specific cache directory; it is not a consumer-setup error.
+
 **Zero-write no-op**:
 The state where a running package version matches its scope's manifest and
 every file hash matches, so a start performs no writes at all.

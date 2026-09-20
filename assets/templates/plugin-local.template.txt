@@ -7,7 +7,7 @@
 | `COMMAND NAME` → "my-command.md" | Yes | Command file name in assets/commands/ | — |
 | `PACKAGE NAME` → "opencode-myextension" | Yes | npm package name; must match package.json | — |
 
-**Load-bearing — do not simplify:** scope detection is read-only config inspection, never launch-directory checks; the hook passes `addPluginConfig: false`, `configurePermission: false`, `configureMcp: false` to `install()` — it never edits `plugin` arrays or permission/MCP config; writes stay inside the detected scope(s) only; the advisory fires at most once per session.
+**Load-bearing — do not simplify:** scope detection is read-only config inspection (both `opencode.json` and `opencode.jsonc`, global and project), never launch-directory checks; the hook passes `addPluginConfig: false`, `configurePermission: false`, `configureMcp: false` to `install()` — it never edits `plugin` arrays or permission/MCP config; writes stay inside the detected scope(s) only; the advisory fires at most once per session; the entire installation block is wrapped in try/catch so a failure degrades to a warning and OpenCode still launches — hooks must never throw.
 
 ---
 import type { Plugin } from "@opencode-ai/plugin";
@@ -29,19 +29,26 @@ async function adviseOnce(): Promise<void> {
 
 const plugin: Plugin = async ({ directory }) => ({
   config: async () => {
-    const scope: RegistrationScope = await new RegistrationDetector(PACKAGE_NAME).detect(directory);
-    if (scope === "none") {
+    try {
+      const scope: RegistrationScope = await new RegistrationDetector(PACKAGE_NAME).detect(directory);
+      if (scope === "none") {
+        await adviseOnce();
+        return;
+      }
+      if (scope === "global" || scope === "both") {
+        await install("global", directory, { force: false });
+      }
+      if (scope === "repo-local" || scope === "both") {
+        await install("local", directory, { force: false });
+      }
+      if (await isUpToDateAnywhere(directory)) return;
       await adviseOnce();
-      return;
+    } catch (error) {
+      console.warn(
+        `[${PACKAGE_NAME}] load-time install failed; continuing without it. ` +
+          `Fix with: bunx ${PACKAGE_NAME} install. Cause: ${error instanceof Error ? error.message : String(error)}`
+      );
     }
-    if (scope === "global" || scope === "both") {
-      await install("global", directory, { force: false });
-    }
-    if (scope === "repo-local" || scope === "both") {
-      await install("local", directory, { force: false });
-    }
-    if (await isUpToDateAnywhere(directory)) return;
-    await adviseOnce();
   },
 });
 
