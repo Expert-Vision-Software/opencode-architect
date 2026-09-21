@@ -7,13 +7,14 @@
 | `COMMAND NAME` → "my-command.md" | Yes | Command file name in assets/commands/ | — |
 | `PACKAGE NAME` → "opencode-myextension" | Yes | npm package name; also the manifest file base | — |
 
-**Load-bearing — do not simplify:** manifest-gated idempotency (never `.version` markers); `readJsonConfig` returns `null` on parse errors and every writer aborts — never rewrite config from `{}`; plugin dedup is semantic with canonical `name@latest` output; `migrateRootConfig` deletes nothing without a consent callback and is never called from `install()`.
+**Load-bearing — do not simplify:** manifest-gated idempotency (never `.version` markers); `readJsonConfig` returns `null` on parse errors and every writer aborts — never rewrite config from `{}`; config reading consults both `opencode.json` and `opencode.jsonc` per base, with `.jsonc` parsed leniently (comments + trailing commas) and `.json` strict; every unparseable candidate is warned about; plugin dedup is semantic with canonical `name@latest` output; bundled assets resolve through `ASSET_LAYOUT_DIR` (packages shipping repo-root `skills/` instead of `assets/` set it to `"."`), and a missing or empty asset source is a hard error naming the path, package name+version, cache dir, and install command — never a silent skip, and a manifest is never written when zero files were written; `migrateRootConfig` deletes nothing without a consent callback and is never called from `install()`.
 
 ---
 import { exists, mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { PluginNameNormalizer } from "./plugin-name.ts";
+import { parseJsonc } from "./registration.ts";
 import { InstallManifest, listFilesRecursive } from "./manifest.ts";
 
 export type Scope = "local" | "global";
@@ -57,8 +58,19 @@ export interface StatusResult {
 const SKILL_NAME = "myextension";
 const COMMAND_NAME = "my-command.md";
 const PLUGIN_NAME = "opencode-myextension";
+const ASSET_LAYOUT_DIR = "assets";
 
 const normalizer = new PluginNameNormalizer();
+
+class AssetSourceMissingError extends Error {
+  constructor(missingPath: string, cacheDir: string) {
+    super(
+      `Bundled asset directory missing or empty: ${missingPath}. ` +
+        `The ${PLUGIN_NAME} package cache at ${cacheDir} is partial. ` +
+        `Clear that directory and reinstall with: bunx ${PLUGIN_NAME} install --scope global`
+    );
+  }
+}
 
 export async function getPackageVersion(): Promise<string> {
   const content = await Bun.file(`${import.meta.dirname}/../package.json`).text();
@@ -86,27 +98,52 @@ export function getLocalConfigPath(projectDir: string): string {
   return join(projectDir, ".opencode");
 }
 
-async function copyDir(src: string, dest: string): Promise<void> {
+async function copyDir(src: string, dest: string): Promise<number> {
   await mkdir(dest, { recursive: true });
+  let written = 0;
   for (const entry of await readdir(src, { withFileTypes: true })) {
     const s = join(src, entry.name);
     const d = join(dest, entry.name);
     if (entry.isDirectory()) {
-      await copyDir(s, d);
+      written += await copyDir(s, d);
     } else {
       await Bun.write(d, Bun.file(s));
+      written++;
     }
   }
+  return written;
+}
+
+async function requireAssetDir(path: string): Promise<string> {
+  if (!(await exists(path))) throw new AssetSourceMissingError(path, getPackageDir());
+  const contents = await readdir(path);
+  if (contents.length === 0) throw new AssetSourceMissingError(path, getPackageDir());
+  return path;
+}
+
+function parseConfig(raw: string, path: string): unknown {
+  return path.endsWith(".jsonc") ? parseJsonc(raw) : JSON.parse(raw);
 }
 
 async function readJsonConfig(path: string): Promise<Record<string, unknown> | null> {
   if (!(await exists(path))) return {};
   try {
-    return JSON.parse(await readFile(path, "utf-8"));
+    return parseConfig(await readFile(path, "utf-8"), path);
   } catch {
     console.warn(`Warning: ${path} is not valid JSON; refusing to modify it.`);
     return null;
   }
+}
+
+function configCandidates(configBase: string): string[] {
+  return [join(configBase, "opencode.json"), join(configBase, "opencode.jsonc")];
+}
+
+async function isPluginInConfigBase(configBase: string): Promise<boolean> {
+  for (const path of configCandidates(configBase)) {
+    if (await isPluginInConfig(path)) return true;
+  }
+  return false;
 }
 
 async function writeJsonConfig(path: string, config: Record<string, unknown>): Promise<void> {
@@ -130,8 +167,9 @@ async function ensureSkillFiles(scope: Scope, projectDir: string, force: boolean
     }
     skippedModified.push(...modified);
   }
-  const packagedSkillDir = join(getPackageDir(), "assets", "skills", SKILL_NAME);
-  await copyDir(packagedSkillDir, skillPath);
+  const packagedSkillDir = await requireAssetDir(join(getPackageDir(), ASSET_LAYOUT_DIR, "skills", SKILL_NAME));
+  const written = await copyDir(packagedSkillDir, skillPath);
+  if (written === 0) throw new AssetSourceMissingError(packagedSkillDir, getPackageDir());
   await manifest.write(version, skillPath, await listFilesRecursive(skillPath));
   return { upToDate: false, skippedModified };
 }
@@ -243,7 +281,8 @@ export async function install(
   const configPath = join(configBase, "opencode.json");
   const { upToDate, skippedModified } = await ensureSkillFiles(scope, projectDir, force);
   await mkdir(join(configBase, "commands"), { recursive: true });
-  await Bun.write(commandPath, Bun.file(join(getPackageDir(), "assets", "commands", COMMAND_NAME)));
+  const commandSource = await requireAssetDir(join(getPackageDir(), ASSET_LAYOUT_DIR, "commands"));
+  await Bun.write(commandPath, Bun.file(join(commandSource, COMMAND_NAME)));
   let permissionConfigured = false;
   if (configurePermission) { await ensureSkillPermission(configPath); permissionConfigured = true; }
   let mcpConfigured = false;
@@ -273,21 +312,22 @@ export async function uninstall(scope: Scope, projectDir: string = process.cwd()
 }
 
 export async function status(projectDir: string = process.cwd()): Promise<StatusResult> {
-  const configBases: Array<[Scope, string, string]> = [
-    ["local", getLocalConfigPath(projectDir), join(getLocalConfigPath(projectDir), "opencode.json")],
-    ["global", getGlobalConfigPath(), join(getGlobalConfigPath(), "opencode.json")],
+  const configBases: Array<[Scope, string]> = [
+    ["local", getLocalConfigPath(projectDir)],
+    ["global", getGlobalConfigPath()],
   ];
   const result: StatusResult = { local: null, global: null };
-  for (const [scope, configBase, configFile] of configBases) {
+  for (const [scope, configBase] of configBases) {
     const skillPath = join(configBase, "skills", SKILL_NAME);
-    if (!(await exists(skillPath))) continue;
+    const skillFiles = await exists(skillPath) ? await readdir(skillPath) : [];
     const manifest = new InstallManifest(configBase, PLUGIN_NAME);
     const manifestData = await manifest.read();
-    const installedVersion = manifestData === null ? null : manifestData.version;
+    if (skillFiles.length === 0 || manifestData === null) continue;
+    const installedVersion = manifestData.version;
     result[scope] = {
       installed: true,
       version: installedVersion,
-      pluginInConfig: await isPluginInConfig(configFile),
+      pluginInConfig: await isPluginInConfigBase(configBase),
     };
   }
   return result;
@@ -297,7 +337,9 @@ export async function isUpToDateAnywhere(projectDir: string = process.cwd()): Pr
   const version = await getPackageVersion();
   for (const configBase of [getGlobalConfigPath(), getLocalConfigPath(projectDir)]) {
     const skillPath = join(configBase, "skills", SKILL_NAME);
-    if (await exists(skillPath) && await new InstallManifest(configBase, PLUGIN_NAME).isUpToDate(version, skillPath)) {
+    const skillFiles = await exists(skillPath) ? await readdir(skillPath) : [];
+    if (skillFiles.length === 0) continue;
+    if (await new InstallManifest(configBase, PLUGIN_NAME).isUpToDate(version, skillPath)) {
       return true;
     }
   }

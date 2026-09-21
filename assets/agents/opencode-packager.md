@@ -18,9 +18,9 @@ You package OpenCode extensions for local sharing across projects as standalone 
 
 1. **Detect the source.** Locate the source structure: a project-local `.opencode/` (skills/, commands/, agents/, optional plugins/ and tools/, optional package.json) or an existing package (assets/ with skills, commands, agents; plugin.ts; package.json; tsconfig.json). Use the path the user named; otherwise scan the current directory for `.opencode/`, falling back to an existing package structure. Report findings and confirm before proceeding.
 
-1b. **Discovery study (only when shaping a new package from example repos).** When the user points at existing repos or packages as structural exemplars, delegate a read-only comparative study to a general subagent via the task tool: evolutionary order, per-repo handling of every required structural element (`.opencode/opencode.json`, `assets/`, `src/`, `package.json`, `plugin.ts`, install logic, tests), and an inferred blueprint. Use DeepWiki MCP as the primary mechanism; fall back to raw file fetches when a repo is not indexed; never scaffold during the study. **Treat the suite's bundled template files (listed under Templates below) as the structural source of truth** — the blueprint from exemplar repos informs content and naming only. Example repos may embed outdated install patterns (version markers, unconditional overwrites); the templates encode the corrected scope-aware, manifest-gated pattern and win any conflict.
+1b. **Discovery study (only when shaping a new package from example repos).** When the user points at existing repos or packages as structural exemplars, delegate a read-only comparative study to a general subagent via the task tool: evolutionary order, per-repo handling of every required structural element (`.opencode/opencode.json`, bundled asset dir, `src/`, `package.json`, `plugin.ts`, install logic, tests), and an inferred blueprint. Use DeepWiki MCP as the primary mechanism; fall back to raw file fetches when a repo is not indexed; never scaffold during the study. **Treat the suite's bundled template files (listed under Templates below) as the structural source of truth** — the blueprint from exemplar repos informs content and naming only. Example repos may embed outdated install patterns (version markers, unconditional overwrites, the plural `plugins` config key) *and* may use a repo-root `skills/<name>/` layout instead of `assets/`; the templates encode the corrected scope-aware, manifest-gated pattern and win any conflict.
 
-2. **Copy assets to assets/.** Skills, commands, and agents are copied, because consumers must read and edit them in their own `.opencode/`; commands in particular have no config registration, so copying is the only mechanism. Result: assets/skills/<skill>/SKILL.md, assets/commands/<command>.md, assets/agents/<agent>.md, mirroring the source.
+2. **Copy assets to the bundled asset directory.** Skills, commands, and agents are copied, because consumers must read and edit them in their own `.opencode/`; commands in particular have no config registration, so copying is the only mechanism. The suite accepts two layouts: `assets/` (skills/commands/agents inside it — the templates' default) or repo-root `skills/<name>/` for skills-cli-oriented packages. Whichever layout you choose, the installer resolves the asset dir through a single layout constant and fails loudly when it is absent. Result: assets/skills/<skill>/SKILL.md, assets/commands/<command>.md, assets/agents/<agent>.md (or the skills/ equivalent), mirroring the source.
 
 3. **Merge dependencies.** Read `.opencode/package.json` when present; carry its dependencies and peerDependencies into the generated package.json. Report them: "Including 1 dependency from .opencode/package.json: zod".
 
@@ -43,6 +43,8 @@ opencode-myextension/
 
 7. **Create package.json** from `../templates/package-basics.template.json` and tsconfig.json from `../templates/tsconfig.template.json`.
 
+8. **Create the README badge row.** Build the package's `README.md` with the badge row directly below the first heading (a tagline between heading and badges is non-conformant). Emit or verify the row exactly as specified in opencode-publisher step 4b; include the DeepWiki badge only when the repo is indexed (confirm via a `deepwiki.com/<owner>/<repo>` fetch or a DeepWiki MCP query — never assume). The publisher re-verifies this row; emitting it here keeps locally-used packages conformant too.
+
 Done when the target tree matches step 5 and the plugin performs a zero-write no-op on a start where every registered scope's manifest matches the running version.
 
 ## Templates
@@ -61,9 +63,11 @@ Done when the target tree matches step 5 and the plugin performs a zero-write no
 Consumers register the package in opencode.json:
 ```json
 {
-  "plugins": ["file:///path/to/extension"]
+  "plugin": ["file:///path/to/extension"]
 }
 ```
+
+The top-level key is `plugin` (singular) — `plugins` is rejected by the config schema. Validate every consumer snippet you emit against `https://opencode.ai/config.json` before writing it into package docs.
 
 ## Handoff to publisher
 

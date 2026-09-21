@@ -7,7 +7,7 @@
 | `COMMAND NAME` → "my-command.md" | Yes | Command file name in assets/commands/ | — |
 | `PACKAGE NAME` → "opencode-myextension" | Yes | npm package name; must match package.json | — |
 
-**Load-bearing — do not simplify:** scope detection is read-only config inspection (both `opencode.json` and `opencode.jsonc`, global and project), never launch-directory checks; the hook passes `addPluginConfig: false`, `configurePermission: false`, `configureMcp: false` to `install()` — it never edits `plugin` arrays or permission/MCP config; writes stay inside the detected scope(s) only; the advisory fires at most once per session; the entire installation block is wrapped in try/catch so a failure degrades to a warning and OpenCode still launches — hooks must never throw.
+**Load-bearing — do not simplify:** scope detection is read-only config inspection (both `opencode.json` and `opencode.jsonc`, global and project), never launch-directory checks and never any directory-identity comparison (`import.meta.dirname`, `process.cwd()`, realpath) — a maintainer's own checkout is served by that repo's own config registration; the hook passes `addPluginConfig: false`, `configurePermission: false`, `configureMcp: false` to `install()` — it never edits `plugin` arrays or permission/MCP config; writes stay inside the detected scope(s) only; the **entire hook body** (detection, installs, advisory) is wrapped in try/catch so a failure degrades to a warning and OpenCode still launches — hooks must never throw; the failure advisory names both the remediation command (`bunx <package> install --scope global`) and the package-qualified cache dir (`~/.cache/opencode/packages/<package>@<version>`), is built inside its own try/catch with a static fallback, and each emitter swallows independently; the failure advisory and the not-installed advisory carry **separate** once-guards so neither suppresses the other; the hook never deletes the cache — it instructs only.
 
 ---
 import type { Plugin } from "@opencode-ai/plugin";
@@ -17,14 +17,33 @@ import { join } from "node:path";
 
 const PACKAGE_NAME = "opencode-myextension";
 
-let advised = false;
+let notInstalledAdvised = false;
+let failureAdvised = false;
 
-async function adviseOnce(): Promise<void> {
-  if (advised) return;
-  advised = true;
+async function adviseNotInstalledOnce(): Promise<void> {
+  if (notInstalledAdvised) return;
+  notInstalledAdvised = true;
   console.log(`\nOpenCode MyExtension is not registered in any scope.`);
   console.log(`  Install globally: bunx ${PACKAGE_NAME} install --scope global`);
   console.log(`  Install locally:  bunx ${PACKAGE_NAME} install\n`);
+}
+
+async function adviseFailureOnce(message: string): Promise<void> {
+  if (failureAdvised) return;
+  failureAdvised = true;
+  let text: string;
+  try {
+    let version = "<version>";
+    try {
+      version = JSON.parse(await Bun.file(`${import.meta.dirname}/../package.json`).text()).version ?? version;
+    } catch {}
+    text = `MyExtension load-time install failed. Clear ~/.cache/opencode/packages/${PACKAGE_NAME}@${version} and run: bunx ${PACKAGE_NAME} install --scope global. Cause: ${message}`;
+  } catch {
+    text = `MyExtension load-time install failed. Clear the package cache under ~/.cache/opencode/packages/ and run: bunx ${PACKAGE_NAME} install --scope global`;
+  }
+  try {
+    console.warn(`[${PACKAGE_NAME}] ${text}`);
+  } catch {}
 }
 
 const plugin: Plugin = async ({ directory }) => ({
@@ -32,7 +51,7 @@ const plugin: Plugin = async ({ directory }) => ({
     try {
       const scope: RegistrationScope = await new RegistrationDetector(PACKAGE_NAME).detect(directory);
       if (scope === "none") {
-        await adviseOnce();
+        await adviseNotInstalledOnce();
         return;
       }
       if (scope === "global" || scope === "both") {
@@ -42,12 +61,9 @@ const plugin: Plugin = async ({ directory }) => ({
         await install("local", directory, { force: false });
       }
       if (await isUpToDateAnywhere(directory)) return;
-      await adviseOnce();
+      await adviseNotInstalledOnce();
     } catch (error) {
-      console.warn(
-        `[${PACKAGE_NAME}] load-time install failed; continuing without it. ` +
-          `Fix with: bunx ${PACKAGE_NAME} install. Cause: ${error instanceof Error ? error.message : String(error)}`
-      );
+      await adviseFailureOnce(error instanceof Error ? error.message : String(error));
     }
   },
 });

@@ -2,8 +2,9 @@
 
 Canonical review criteria for assessing whether an existing plugin package
 conforms to this suite's design (ADR 0006: scope-aware, manifest-gated
-installation). Review a built package — a repo with `plugin.ts`,
-`src/installer.ts`, `assets/`, `package.json` — against every item. Cite
+installation). Review a built package — a repo with `plugin.ts`, install
+logic, a bundled asset directory (`assets/` or repo-root `skills/`), and
+`package.json` — against every item. Cite
 file and line evidence per item; an item with no evidence found is a
 finding.
 
@@ -22,6 +23,14 @@ finding.
   silently clobbers consumer edits is non-conformant.
 - **A4 Version drift is scoped.** On drift, only the affected scope is
   updated and its manifest rewritten.
+- **A5 Loud asset absence.** When a bundled asset source directory is
+  missing or empty (partial cache artifact), the install fails loudly: the
+  error names the missing path, the package name and version, the cache
+  directory to clear, and the install command. A manifest is never written
+  when zero files were written, and `status`/up-to-date checks never report
+  a manifest-only or zero-file scope as installed. A skipped asset that
+  leaves the scope looking installed is non-conformant. (Hard error on the
+  CLI; the B4 catch turns it into a warning at load.)
 
 ## B. Config safety
 
@@ -42,7 +51,18 @@ finding.
   most one advisory (naming the exact remediation command or cache path)
   and OpenCode still launches; in-memory config work still applies. A hook
   that can reject into config assembly is non-conformant — such a rejection
-  can stall startup with no UI escape (ADR 0007).
+  can stall startup with no UI escape (ADR 0007). The wrap covers the
+  **entire hook body**, not just the install block. The advisory names both
+  the remediation command (`bunx <package> install --scope global`) and the
+  package-qualified cache directory
+  (`~/.cache/opencode/packages/<package>@<version>`, or a literal
+  `<version>` placeholder when metadata is unreadable); the advisory builder
+  sits in its own try/catch with a static fallback, and each emitter (log,
+  toast) swallows independently. The failure advisory and the D5
+  not-installed advisory are distinct advisories with **separate**
+  once-guards — sharing one flag lets either suppress the other. The hook
+  never deletes the cache (deletion races OpenCode's in-flight installs);
+  it instructs only.
 
 ## C. Scope discipline
 
@@ -54,6 +74,16 @@ finding.
   non-conformant — opencode always passes the consumer repo, which caused
   the historical cross-scope leak. Detection that reads only `opencode.json`
   and ignores `opencode.jsonc` is also non-conformant (ADR 0007).
+  Detection that performs **any** directory-identity comparison — the
+  plugin dir against the launch `directory`, `import.meta.dirname`,
+  `process.cwd()`, or a realpath of any of these — is non-conformant,
+  including "self-checkout" conveniences. A maintainer's own checkout is
+  made to work by registering the package in that repo's config
+  (`skills.paths` and/or a `plugin` entry), never by a directory check.
+  Detection that silently treats an unparseable candidate as unregistered
+  is also non-conformant: every candidate `opencode.json(c)` that fails to
+  parse is preserved byte-for-byte and warned about, before any
+  short-circuit on a successful match.
 - **C2 No cross-scope writes.** Global context writes only under the global
   config directory; repo-local writes only under that repo's `.opencode/`.
   A globally-registered plugin that installs into every visited repo is the
@@ -74,12 +104,18 @@ finding.
   repo (correct scope ensured, other scope untouched), root config never
   touched, unparseable config preserved, up-to-date no-op, drift update,
   both-scopes registration without leakage, registration via
-  `opencode.jsonc` detected, and an install failure inside the config hook
-  degrading to a warning instead of rejecting.
+  `opencode.jsonc` detected (including a `.jsonc` with a comment between a
+  trailing comma and its closer), a missing bundled asset directory making
+  install throw, and repeated failing hook invocations emitting exactly one
+  failure advisory while the D5 advisory still fires independently in a
+  later session.
 - **D4 Cache-rot advisory.** When bundled assets are unexpectedly absent at
   load (partial npm cache artifact), the advisory names the exact cache
   directory to remove; the README/publish flow verifies tarball contents
-  (`npm pack --dry-run`) so published packages ship their assets.
+  (`npm pack --dry-run`) so published packages ship their assets. The
+  advisory must be derived from package metadata with an infallible
+  fallback, so it still carries the package-qualified cache path when
+  metadata is unreadable.
 - **D5 One-shot advisory.** Any "not installed, run bunx … install" notice
   fires at most once per session and is suppressed when any scope holds an
   install.
@@ -96,7 +132,15 @@ finding.
   OpenCode plugin badge, and DeepWiki when indexed. Badge URLs use the
   exact package name and repo casing (`My-Org/pkg` ≠ `my-org/pkg`). A
   missing badge row, extra runtime badges, or mismatched casing is
-  non-conformant.
+   non-conformant.
+
+- **D8 Consumer snippet key validity.** Every `opencode.json` snippet the
+  package ships (README, AGENTS.md, CONTRIBUTING, CLI help) uses the
+  top-level key `plugin` — never `plugins` — with entries canonicalized as
+  `name@latest` or a `file:///` URL. Verify emitted keys against
+  `https://opencode.ai/config.json` (the `Config` definition sets
+  `additionalProperties: false`, so an invalid key is rejected at load). A
+  shipped snippet using an invalid key is non-conformant.
 
 ## Verdict scale
 

@@ -27,7 +27,7 @@ Route by first match in priority order, delegating through the task tool:
 1. Explicit request for an agent: obey the user's choice.
 2. Create or refine agent definitions and prompts: opencode-agent-designer.
 3. Analyze `.opencode/` contents or packaging readiness: opencode-extension-auditor.
-3b. Assess an existing built package for conformance to this suite's design ("is this aligned with opencode-architect guidance?", "assess conformance to best practice", "does it account for the manifest implementation?"): opencode-extension-auditor, prompted for a conformance review of the named package path against `../references/conformance-checklist.md`, reporting item verdicts with file:line evidence.
+3b. Assess an existing built package for conformance to this suite's design ("is this aligned with opencode-architect guidance?", "assess conformance to best practice", "does it account for the manifest implementation?"): opencode-extension-auditor, prompted for a conformance review of the named package path against `../references/conformance-checklist.md`, reporting item verdicts with file:line evidence. Preflight: the prompt requires the auditor to report the absolute path + version of the criteria copy it resolved, and to refuse a Conformant verdict when that copy is stale relative to this suite's repo.
 4. Plugins, event hooks, custom tool hooks: opencode-plugin-engineer.
 5. Slash commands, create or update: opencode-command-crafter.
 6. Custom tools, create or update: opencode-tool-builder.
@@ -70,7 +70,7 @@ The packager hands back to you; you dispatch the publisher. Only chain stages se
 
 ## Package checklist
 
-For local or npm packages, require every part: `.opencode/opencode.json` (plugin config), `assets/` (bundled skills, commands, agents, static files), `src/` (TypeScript for tools or plugins; none for markdown-only packages), `package.json`, `plugin.ts`, `index.ts` (bunx CLI entry), `README.md`, `AGENTS.md`, `tests/`, `tsconfig.json`. A missing part means the next stage produces an incomplete package.
+For local or npm packages, require every part: `.opencode/opencode.json` (plugin config), a bundled asset directory (`assets/` or repo-root `skills/` for skills-layout packages), `src/` (TypeScript for tools or plugins; none for markdown-only packages), `package.json`, `plugin.ts`, `index.ts` (bunx CLI entry), `README.md` with the badge row directly below the first heading, `AGENTS.md`, `tests/`, `tsconfig.json`. A missing part means the next stage produces an incomplete package. Stage gates before any packaging or publishing stage counts as done: the package's `bun test` and typecheck run green, and every `opencode.json` snippet in its docs uses the `plugin` key (never `plugins`).
 
 The structural source of truth is the packager's own templates (`assets/templates/*.txt` in this suite), which encode the scope-aware, manifest-gated install pattern. Use example repos (e.g. opencode-intellisearch, opencode-gemiterm-skills) only as content and naming exemplars via the packager's discovery-study step - never as structural authority, since published repos may predate corrected install patterns.
 
