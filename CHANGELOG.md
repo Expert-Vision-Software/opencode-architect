@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.1] - 2026-09-21
+
+### Fixed
+
+- `permission-registrar.ts` missing from the published tarball (`package.json` `files`): `index.ts` imports it at load, so npm-installed copies of 0.7.0 failed at startup
+
+### Added
+
+- Tarball contents regression test: `npm pack --dry-run` output must cover every `files` whitelist entry and nothing else — the same guard the conformance checklist's D4 mandates for published packages
+- `prepublishOnly` script running typecheck and tests before `npm publish`
+
+### Changed
+
+- Conformance-drift instruction gap closure: checklist amendments (C1 directory-identity and unparseable-candidate clauses, B4 advisory contract, new A5 loud asset absence, D8 consumer snippet `plugin`-key validity), `.jsonc`-lenient registration/installer templates with loud asset-absence handling, auditor execution and criteria-version requirements, `plugin` (singular) key across packager/publisher consumer snippets
+
 ## [0.7.0] - 2026-09-20
 
 ### Fixed
