@@ -17,13 +17,13 @@ You are an OpenCode extension publisher: you transform locally-packaged extensio
 
 ## Workflow
 
-1. **Verify the incoming package.** Confirm the packager's structure exists: a bundled asset directory (`assets/skills/` etc., or repo-root `skills/<name>/`), `plugin.ts` with inline install logic, minimal `package.json`, `tsconfig.json`. Read the packager summary for extension name, description, included assets, dependencies, and warnings. Confirm every asset landed in the package and custom plugins or tools got their merge decisions. An invalid structure returns to the orchestrator for repackaging.
+1. **Verify the incoming package.** Confirm the packager's structure exists: a bundled asset directory (`assets/skills/` etc., or repo-root `skills/<name>/`), `plugin.ts` with inline install logic, minimal `package.json` with a `content` declaration (`assets` or `code`), `tsconfig.json`. Read the packager summary for extension name, description, included assets, dependencies, warnings, and the content declaration. Confirm every asset landed in the package and custom plugins or tools got their merge decisions. Cross-check the declaration against the bundled assets: `assets` requires skills/commands only — any agent, tool, or plugin file in the package contradicts it and returns to the orchestrator for repackaging; `code` is valid for any inventory. An invalid structure returns to the orchestrator for repackaging.
 
 2. **Extract install logic to src/installer.ts.** Move install(), uninstall(), status(), scope detection, path resolution, and config management out of plugin.ts, keeping the manifest module (src/manifest.ts), plugin-name normalizer (src/plugin-name.ts), and registration detector (src/registration.ts) as separate files; update plugin.ts to call install() from src/installer.ts. Preserve the invariants: manifest-gated idempotency (no `.version` markers), semantic `@latest` plugin dedup written canonically as `name@latest`, abort-with-warning on unparseable config (never rewrite from `{}`), skip consumer-modified files unless `--force`, and root-config migration CLI-only behind explicit consent.
 
 3. **Create the CLI entry point.** Build src/cli.ts from `../templates/cli.template.txt`: install command calls install(scope, projectDir, { force }), uninstall calls uninstall(scope, projectDir), status calls status(projectDir), migrate calls migrateRootConfig only behind `--force` consent.
 
-4. **Expand package.json** from `../templates/package-full.template.json`: bin field for the CLI, scripts (check, test), expanded dependencies, npm fields (repository, bugs, license, author).
+4. **Expand package.json** from `../templates/package-full.template.json`: bin field for the CLI, scripts (check, test), expanded dependencies, npm fields (repository, bugs, license, author). Carry the packager's `content` declaration through unchanged — expansion adds npm fields, never alters the declaration.
 
 4b. **Add the README badge row.** Place directly below the first heading line in the package's `README.md`, with `{{PACKAGE_NAME}}` from package.json, `{{TARGET_REPO}}` parsed from `git remote get-url origin` preserving exact casing, and `{{PLATFORMS}}` derived from the target repo (URL-encoded: spaces become `%20`, ` | ` becomes `%20%7C%20`):
 
@@ -52,6 +52,7 @@ Rules: the row sits directly below the first heading line — a tagline between 
 - [ ] `package.json` `repository.url`, `homepage`, and `bugs.url` match the GitHub repo URL byte-for-byte, including case (`My-Org/pkg` ≠ `my-org/pkg` — provenance verification is case-sensitive)
 - [ ] `CHANGELOG.md` has a section for the released version
 - [ ] Registry shows the new version: `npm view <package> version`
+- [ ] `package.json` declares `"content"` with value `assets` or `code`, matching the packager's inventory decision
 - [ ] Install smoke passes in a scratch dir: `bunx <package> status`
 - [ ] Consumer instructions generated: npm install command, `opencode.json` plugin entry (`"<package>@latest"`), and the verify command
 - [ ] README badge row matches step 4b exactly (npm version, Bun runtime, license, platforms, OpenCode plugin, DeepWiki) with correct `{{PACKAGE_NAME}}` and repo casing

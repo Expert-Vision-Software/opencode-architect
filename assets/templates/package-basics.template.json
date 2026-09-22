@@ -13,6 +13,12 @@ PATHS
   "skills/myextension"       → path to your skill assets
   "commands/my-command.md"   → path to your command file
 
+CONTENT DECLARATION
+  "assets"                   → keep when the package ships only skills and/or commands
+  "code"                     → replace when the package ships any agent, tool, hook, or
+                                other plugin integration (code-backed packages may also
+                                ship skills/commands)
+
 METADATA
   "Publisher Name"           → your name or organization
   "email@example.com"        → your email
@@ -22,6 +28,7 @@ METADATA
 {
   "name": "opencode-myextension",
   "version": "1.0.0",
+  "content": "assets",
   "type": "module",
   "module": "index.ts",
   "files": ["index.ts", "plugin.ts", "assets"]

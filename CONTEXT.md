@@ -123,6 +123,11 @@ The install mechanism a package's content dictates, declared in the
 package's package.json: assets-only packages copy-install by default with
 plugin install as the opt-in; code-backed packages always plugin-install.
 
+**Content declaration**:
+The `"content"` field (`assets` or `code`) in a generated package's
+package.json, derived by the packager from its asset inventory and verified
+by the publisher. It is how installers read the deployment plan.
+
 **Plugin install**:
 The mode where the package is listed in a config file's `plugin` array and
 everything registers from the package at load time; the CLI copies nothing.
