@@ -46,6 +46,7 @@
     "agent-loader.ts",
     "cli.ts",
     "installer.ts",
+    "plugin-config.ts",
     "permission-registrar.ts",
     "assets"
   ],

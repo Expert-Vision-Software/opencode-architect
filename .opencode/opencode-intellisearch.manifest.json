@@ -1,0 +1,45 @@
+{
+  "version": "0.6.0",
+  "files": [
+    {
+      "path": "skills/intellisearch/SKILL.md",
+      "hash": "add0186b3f97ab6b87cec5f403ee50f11902580467c63de5f12bbcc2b42159ca"
+    },
+    {
+      "path": "skills/intellisearch/references/google-search.md",
+      "hash": "7e2512a8fc287a25d73924db5c4eb5a3f8e51fefb4a0bce174a8570e8e58750c"
+    },
+    {
+      "path": "skills/intellisearch/references/workflow.md",
+      "hash": "5ca1b2d917aef3580eb182e0f4d439b825121fad660b2200510b66213986dd76"
+    },
+    {
+      "path": "skills/intellisearch/references/deepwiki-tools.md",
+      "hash": "477a4cf723c416de3a9951d0c52028da8ddb000dfd969197ad33279f0bee0e5d"
+    },
+    {
+      "path": "skills/intellisearch/references/search-workflow.md",
+      "hash": "28b1a88688cd474129ab87785db4df8409fa4431dce1f23f56b4a396af6664b4"
+    },
+    {
+      "path": "skills/intellisearch/references/examples.md",
+      "hash": "c26b76c700cb4d6c9f86b27b94569a128495ac78cf23ce20d173779712ee7411"
+    },
+    {
+      "path": "skills/intellisearch/references/brave-search.md",
+      "hash": "f18136e346eecc4361b86b2814bfe316bf125a7698a58142f60e7826ed5bc118"
+    },
+    {
+      "path": "skills/intellisearch/references/ddg-search.md",
+      "hash": "16c5ac55ce03971be752ff74919d370bc4ed6343d88f402129e7f9a1fefc5a33"
+    },
+    {
+      "path": "skills/intellisearch/references/gh-cli.md",
+      "hash": "c5ef2eb40580aa88541bb20efe6e2e100b44ca02016bdc4d259019feb33b9bf8"
+    },
+    {
+      "path": "commands/search-intelligently.md",
+      "hash": "d3bd05a45e8e8b6ed57b5e2575a8f6daf7e5686dea042acd80f2a4c13c966c65"
+    }
+  ]
+}
