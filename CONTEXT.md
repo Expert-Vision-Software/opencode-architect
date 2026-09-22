@@ -15,7 +15,8 @@ _Avoid_: artifact
 
 **Agent**:
 One of the ten bundled specialist subagents, each named `opencode-*` and
-defined as markdown with YAML frontmatter.
+authored as markdown with YAML frontmatter — the authoring format regardless
+of how a package deploys. A package shipping agents is code-backed.
 _Avoid_: assistant
 
 **Skill**:
@@ -89,8 +90,9 @@ and a package manifest. Contains extensions; is not itself one.
 _Avoid_: extension
 
 **Assets**:
-The static files bundled in a package (agent markdown, templates, references)
-that get copied into the consumer's `.opencode/`.
+The static files bundled in a package (skills, commands, agent markdown,
+templates, references). Skills and commands are copy-deployable; everything
+else registers from the package at load.
 
 **Distribution target**:
 Where an extension is headed: project-local only, local sharing (`file:///`),
@@ -110,25 +112,39 @@ during packaging; guided by the plugin engineer.
 The root an install writes into: the project's `.opencode/` (local scope) or
 `~/.config/opencode/` (global scope).
 
+**Code-backed**:
+Describes a package shipping any extension kind beyond skills and commands —
+agents, tools, hooks, or other plugin integrations. Code-backed packages
+require plugin install; skills and commands are the only copy-deployable
+extensions.
+
+**Deployment plan**:
+The install mechanism a package's content dictates, declared in the
+package's package.json: assets-only packages copy-install by default with
+plugin install as the opt-in; code-backed packages always plugin-install.
+
 **Plugin install**:
-The mode where the consumer lists the package in `opencode.json`'s plugin
-array; agents register from the package at load time and nothing is copied.
-Always-fresh, not user-editable.
+The mode where the package is listed in a config file's `plugin` array and
+everything registers from the package at load time; the CLI copies nothing.
+Mandatory for code-backed packages; the always-fresh opt-in for assets-only
+packages.
 
 **Copy install**:
-The mode where the CLI copies agents into the scope base's `agents/` and
-references into `opencode-architect/references/`, leaving visible, editable
-files. Mutually exclusive with plugin install in the same scope.
+The mode where the CLI copies the package's copy-deployable assets (skills
+and commands) into the scope base, leaving visible, editable files. The
+default install for assets-only packages; mutually exclusive with plugin
+install in the same scope.
 
 **Payload**:
-What a copy install places in the consumer's project: the ten agent markdown
-files plus the bundled references and templates.
+What a copy install places in the consumer's project: the package's skills
+and commands.
 
 **Manifest**:
 The JSON file an install writes at the scope base, recording the installed
-version, the installed files, and their per-file content hashes; source of
-truth for status, no-op detection, and uninstall. The suite's own copy
-install and every generated package keep one (a generated package's lives at
+version, the install mode, the plugin entry and its target config file
+(plugin mode), and the installed files with per-file content hashes (copy
+mode); source of truth for status, no-op detection, uninstall, and
+migration. Every install keeps one (a generated package's lives at
 `<scope base>/<package>.manifest.json`).
 
 **Registration scope**:
@@ -157,18 +173,14 @@ repair. Packages must detect this state at load and advise removing the
 specific cache directory; it is not a consumer-setup error.
 
 **Zero-write no-op**:
-The state where a running package version matches its scope's manifest and
-every file hash matches, so a start performs no writes at all.
+The state where the manifest matches reality — same version, file hashes
+intact, plugin entry already present — so an install or start performs no
+writes at all.
 
 **Consumer modification**:
 An installed file the consumer edited after install, detected by hash
 mismatch against the manifest. Upgrades skip modified files with a warning;
 taking ownership of them is CLI-only with an explicit force flag.
-
-**Install-time reference resolution**:
-The one-time rewriting of backticked relative reference paths in agent
-prompts into absolute paths inside the installed references and templates
-directories; the copy-install counterpart of reference resolution.
 
 ### Bundled files
 
