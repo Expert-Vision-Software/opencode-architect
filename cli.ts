@@ -1,6 +1,7 @@
 #!/usr/bin/env bun
 import { parseArgs } from "node:util";
 import { Installer, type Scope } from "./installer";
+import { clearCache, ClearCacheUsageError } from "./cache-cleaner";
 
 const VERSION = (JSON.parse(await Bun.file(`${import.meta.dirname}/package.json`).text()) as { version: string }).version;
 
@@ -10,6 +11,9 @@ async function main(): Promise<void> {
       scope: { type: "string", short: "s" },
       mode: { type: "string", short: "m" },
       force: { type: "boolean", short: "f", default: false },
+      package: { type: "string" },
+      all: { type: "boolean", default: false },
+      yes: { type: "boolean", default: false },
       help: { type: "boolean", short: "h", default: false },
       version: { type: "boolean", short: "v", default: false },
     },
@@ -84,6 +88,32 @@ async function main(): Promise<void> {
         console.log(`${scope} scope: mode=${outcome.mode} version=${version} config=${configPath}`);
         break;
       }
+      case "clear-cache": {
+        if (positionals.length > 1) {
+          console.error(`Unexpected arguments for clear-cache: ${positionals.slice(1).join(" ")}`);
+          process.exit(1);
+        }
+        let outcome;
+        try {
+          outcome = await clearCache({ packageName: values.package, all: values.all, yes: values.yes });
+        } catch (error) {
+          if (error instanceof ClearCacheUsageError) {
+            console.error(error.message);
+            process.exit(1);
+          }
+          throw error;
+        }
+        if (outcome.removed.length === 0) {
+          console.log("No cached copies found; nothing to remove.");
+        } else {
+          console.log("Removed cached copies:");
+          for (const target of outcome.removed) console.log(`  Removed: ${target}`);
+        }
+        for (const warning of outcome.warnings) {
+          console.warn(`  Warning: ${warning}`);
+        }
+        break;
+      }
       default:
         console.error(`Unknown command: ${command}`);
         printHelp();
@@ -108,12 +138,19 @@ Commands:
   install     Ensure the plugin entry and write the install manifest
   uninstall   Remove the plugin entry, the manifest, and any residual payload
   status      Show install mode, version, and the config file holding the entry
+  clear-cache Remove cached copies from OpenCode's package cache; default
+              targets this package only
 
 Options:
   -s, --scope <scope>    "local" (project) or "global" (XDG/home config); default local
   -m, --mode <mode>      "plugin" (default) or "copy"; copy is refused for this
                          code-backed package
   -f, --force            re-register and rewrite the manifest even when it is up to date
+      --package <name>   clear-cache: remove <name> and every <name>@* instead;
+                         requires --yes
+      --all              clear-cache: remove the whole OpenCode cache directory;
+                         requires --yes
+      --yes              clear-cache: confirm a destructive broad mode
   -h, --help             Show this help message
   -v, --version          Show version
 
@@ -122,6 +159,9 @@ Examples:
   opencode-architect install --scope global
   opencode-architect uninstall
   opencode-architect status
+  opencode-architect clear-cache
+  opencode-architect clear-cache --package some-pkg --yes
+  opencode-architect clear-cache --all --yes
 `);
 }
 

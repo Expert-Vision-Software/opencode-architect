@@ -113,3 +113,107 @@ describe("cli", () => {
     }
   });
 });
+
+describe("cli clear-cache", () => {
+  async function seedCache(cacheDir: string, name: string): Promise<string> {
+    const dir = path.join(cacheDir, "opencode", "packages", name);
+    await mkdir(path.join(dir, "nested"), { recursive: true });
+    await writeFile(path.join(dir, "nested", "file.txt"), "cached");
+    return dir;
+  }
+
+  test("default mode removes only this package's cache dirs", async () => {
+    const cacheDir = await mkdtemp(path.join(tmpdir(), "oa-cli-cc-"));
+    try {
+      const ours = await seedCache(cacheDir, "opencode-architect");
+      await seedCache(cacheDir, "opencode-architect@latest");
+      const other = await seedCache(cacheDir, "other-pkg");
+
+      const run = await runCli(["clear-cache"], undefined, { XDG_CACHE_HOME: cacheDir });
+
+      expect(run.exitCode).toBe(0);
+      expect(existsSync(ours)).toBe(false);
+      expect(existsSync(path.join(cacheDir, "opencode", "packages", "opencode-architect@latest"))).toBe(false);
+      expect(existsSync(other)).toBe(true);
+    } finally {
+      await rm(cacheDir, { recursive: true, force: true });
+    }
+  });
+
+  test("--package removes only that package and requires --yes", async () => {
+    const cacheDir = await mkdtemp(path.join(tmpdir(), "oa-cli-cc-"));
+    try {
+      const target = await seedCache(cacheDir, "some-pkg");
+      const ours = await seedCache(cacheDir, "opencode-architect");
+
+      const refused = await runCli(["clear-cache", "--package", "some-pkg"], undefined, { XDG_CACHE_HOME: cacheDir });
+      expect(refused.exitCode).toBe(1);
+      expect(refused.stderr).toContain("--yes");
+      expect(existsSync(target)).toBe(true);
+
+      const ok = await runCli(["clear-cache", "--package", "some-pkg", "--yes"], undefined, { XDG_CACHE_HOME: cacheDir });
+      expect(ok.exitCode).toBe(0);
+      expect(existsSync(target)).toBe(false);
+      expect(existsSync(ours)).toBe(true);
+    } finally {
+      await rm(cacheDir, { recursive: true, force: true });
+    }
+  });
+
+  test("--all removes the whole OpenCode cache dir and requires --yes", async () => {
+    const cacheDir = await mkdtemp(path.join(tmpdir(), "oa-cli-cc-"));
+    try {
+      await seedCache(cacheDir, "opencode-architect");
+
+      const refused = await runCli(["clear-cache", "--all"], undefined, { XDG_CACHE_HOME: cacheDir });
+      expect(refused.exitCode).toBe(1);
+      expect(existsSync(path.join(cacheDir, "opencode"))).toBe(true);
+
+      const ok = await runCli(["clear-cache", "--all", "--yes"], undefined, { XDG_CACHE_HOME: cacheDir });
+      expect(ok.exitCode).toBe(0);
+      expect(existsSync(path.join(cacheDir, "opencode"))).toBe(false);
+    } finally {
+      await rm(cacheDir, { recursive: true, force: true });
+    }
+  });
+
+  test("--package and --all together exit 1", async () => {
+    const run = await runCli(["clear-cache", "--package", "x", "--all", "--yes"]);
+
+    expect(run.exitCode).toBe(1);
+    expect(run.stderr).toContain("mutually exclusive");
+  });
+
+  test("traversal-y --package values exit 1 without deleting anything", async () => {
+    const cacheDir = await mkdtemp(path.join(tmpdir(), "oa-cli-cc-"));
+    try {
+      const ours = await seedCache(cacheDir, "opencode-architect");
+
+      const run = await runCli(["clear-cache", "--package", "../escape", "--yes"], undefined, { XDG_CACHE_HOME: cacheDir });
+
+      expect(run.exitCode).toBe(1);
+      expect(existsSync(ours)).toBe(true);
+    } finally {
+      await rm(cacheDir, { recursive: true, force: true });
+    }
+  });
+
+  test("running with nothing cached exits 0", async () => {
+    const cacheDir = await mkdtemp(path.join(tmpdir(), "oa-cli-cc-"));
+    try {
+      const run = await runCli(["clear-cache"], undefined, { XDG_CACHE_HOME: cacheDir });
+
+      expect(run.exitCode).toBe(0);
+      expect(run.stdout).toContain("nothing to remove");
+    } finally {
+      await rm(cacheDir, { recursive: true, force: true });
+    }
+  });
+
+  test("--help lists clear-cache", async () => {
+    const run = await runCli(["--help"]);
+
+    expect(run.exitCode).toBe(0);
+    expect(run.stdout).toContain("clear-cache");
+  });
+});
