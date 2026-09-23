@@ -21,6 +21,14 @@ interface CandidateConfig {
   writable: boolean;
 }
 
+export interface RemovePluginEntryOutcome {
+  action: "noop" | "removed" | "blocked";
+  configPath: string | null;
+  warning: string | null;
+}
+
+export type ConfigCheck = { ok: true } | { ok: false; warning: string };
+
 interface PluginArrayRange {
   bracketStart: number;
   bracketEnd: number;
@@ -73,6 +81,68 @@ export class PluginConfigEditor {
     await mkdir(path.dirname(target), { recursive: true });
     await writeFile(target, content);
     return { action: "created", configPath: target, warning: null };
+  }
+
+  public async checkParseable(options: EnsurePluginEntryOptions): Promise<ConfigCheck> {
+    for (const candidate of this.candidateConfigs(options)) {
+      if (!(await exists(candidate.path))) continue;
+      const text = await readFile(candidate.path, "utf-8");
+      if (this.parsePluginArray(text, candidate.lenient) === null) {
+        return {
+          ok: false,
+          warning:
+            `Config file ${candidate.path} could not be parsed; refusing to modify it. ` +
+            `Fix or remove the file and re-run the command.`,
+        };
+      }
+    }
+    return { ok: true };
+  }
+
+  public async findRegistration(
+    packageName: string,
+    options: EnsurePluginEntryOptions,
+  ): Promise<string | null> {
+    for (const candidate of this.candidateConfigs(options)) {
+      if (!(await exists(candidate.path))) continue;
+      const text = await readFile(candidate.path, "utf-8");
+      const plugins = this.parsePluginArray(text, candidate.lenient);
+      if (plugins === null) continue;
+      if (this.hasMatchingEntry(plugins, packageName)) return candidate.path;
+    }
+    return null;
+  }
+
+  public async removePluginEntry(
+    packageName: string,
+    options: EnsurePluginEntryOptions,
+  ): Promise<RemovePluginEntryOutcome> {
+    for (const candidate of this.candidateConfigs(options)) {
+      if (!(await exists(candidate.path)) || !candidate.writable) continue;
+      const text = await readFile(candidate.path, "utf-8");
+      const plugins = this.parsePluginArray(text, candidate.lenient);
+      if (plugins === null) {
+        return {
+          action: "blocked",
+          configPath: candidate.path,
+          warning:
+            `Config file ${candidate.path} could not be parsed; refusing to modify it. ` +
+            `Fix or remove the file and re-run the uninstall.`,
+        };
+      }
+      if (!this.hasMatchingEntry(plugins, packageName)) continue;
+      const spliced = this.spliceOutEntry(text, packageName, candidate.lenient);
+      if (spliced === null) {
+        return {
+          action: "blocked",
+          configPath: candidate.path,
+          warning: `Plugin array in ${candidate.path} could not be safely edited; file left untouched.`,
+        };
+      }
+      await writeFile(candidate.path, spliced);
+      return { action: "removed", configPath: candidate.path, warning: null };
+    }
+    return { action: "noop", configPath: null, warning: null };
   }
 
   public hasMatchingEntry(entries: string[], packageName: string): boolean {
@@ -199,6 +269,97 @@ export class PluginConfigEditor {
     const plugins = this.parsePluginArray(spliced, lenient);
     if (plugins === null || !this.hasMatchingEntry(plugins, packageName)) return null;
     return spliced;
+  }
+
+  private spliceOutEntry(text: string, packageName: string, lenient: boolean): string | null {
+    const navigable = this.blankComments(text);
+    const range = this.findPluginArrayRange(navigable);
+    if (range === null) return null;
+    const innerStart = range.bracketStart + 1;
+    const innerEnd = range.bracketEnd;
+    const elements = this.arrayElementRanges(navigable, innerStart, innerEnd);
+    const target = elements.find((element) => {
+      const raw = text.slice(element.start, element.end);
+      return this.matchesEntry(this.unquote(raw), packageName);
+    });
+    if (!target) return null;
+    const withComma = this.dropAdjacentComma(navigable, elements, target, innerStart, innerEnd);
+    const result = text.slice(0, withComma.start) + text.slice(withComma.end);
+    const plugins = this.parsePluginArray(result, lenient);
+    if (plugins === null || this.hasMatchingEntry(plugins, packageName)) return null;
+    return result;
+  }
+
+  private arrayElementRanges(
+    navigable: string,
+    innerStart: number,
+    innerEnd: number,
+  ): Array<{ start: number; end: number }> {
+    const elements: Array<{ start: number; end: number }> = [];
+    let inString = false;
+    let depth = 0;
+    let start = -1;
+    for (let i = innerStart; i < innerEnd; i++) {
+      const current = navigable[i];
+      if (inString) {
+        if (current === "\\") i++;
+        else if (current === '"') inString = false;
+        continue;
+      }
+      if (current === '"') {
+        inString = true;
+        if (start === -1) start = i;
+        continue;
+      }
+      if (current === "[" || current === "{") {
+        depth++;
+        if (start === -1) start = i;
+        continue;
+      }
+      if (current === "]" || current === "}") {
+        depth--;
+        continue;
+      }
+      if (current === "," && depth === 0) {
+        if (start !== -1) elements.push({ start, end: i });
+        start = -1;
+        continue;
+      }
+      if (!/\s/.test(current ?? "") && start === -1) start = i;
+    }
+    if (start !== -1) elements.push({ start, end: innerEnd });
+    return elements;
+  }
+
+  private dropAdjacentComma(
+    navigable: string,
+    elements: Array<{ start: number; end: number }>,
+    target: { start: number; end: number },
+    innerStart: number,
+    innerEnd: number,
+  ): { start: number; end: number } {
+    const index = elements.indexOf(target);
+    const next = elements[index + 1];
+    if (next) return { start: target.start, end: next.start };
+    const previous = elements[index - 1];
+    if (previous) {
+      let commaEnd = target.start;
+      while (commaEnd > previous.end && /\s/.test(navigable[commaEnd - 1] ?? "")) commaEnd--;
+      if ((navigable[commaEnd - 1] ?? "") === ",") return { start: previous.end, end: commaEnd };
+    }
+    let start = target.start;
+    while (start > innerStart && /\s/.test(navigable[start - 1] ?? "")) start--;
+    let end = target.end;
+    while (end < innerEnd && /\s/.test(navigable[end] ?? "")) end++;
+    return { start, end };
+  }
+
+  private unquote(raw: string): string {
+    const trimmed = raw.trim();
+    if (trimmed.length >= 2 && trimmed.startsWith('"') && trimmed.endsWith('"')) {
+      return trimmed.slice(1, -1);
+    }
+    return trimmed;
   }
 
   private spliceArrayEntry(

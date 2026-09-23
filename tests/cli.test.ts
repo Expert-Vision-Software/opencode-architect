@@ -1,4 +1,6 @@
 import { describe, expect, test } from "bun:test";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import path from "node:path";
 
 const PACKAGE_ROOT = path.resolve(import.meta.dirname, "..");
@@ -10,9 +12,9 @@ interface CliRun {
   stderr: string;
 }
 
-async function runCli(args: string[]): Promise<CliRun> {
+async function runCli(args: string[], cwd?: string): Promise<CliRun> {
   const proc = Bun.spawn([process.execPath, CLI_PATH, ...args], {
-    cwd: PACKAGE_ROOT,
+    cwd: cwd ?? PACKAGE_ROOT,
     stdout: "pipe",
     stderr: "pipe",
   });
@@ -50,5 +52,40 @@ describe("cli", () => {
 
     expect(run.exitCode).toBe(1);
     expect(run.stderr).toContain("Unknown command");
+  });
+
+  test("--mode copy is refused with an explanatory error", async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), "oa-cli-"));
+    try {
+      const run = await runCli(["install", "--mode", "copy"], dir);
+
+      expect(run.exitCode).toBe(1);
+      expect(run.stderr).toContain("code-backed");
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("install in a scratch project registers the plugin and status reports it", async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), "oa-cli-"));
+    try {
+      const installRun = await runCli(["install"], dir);
+
+      expect(installRun.exitCode).toBe(0);
+      expect(installRun.stdout).toContain("Registered");
+      expect(installRun.stdout).toContain("opencode.jsonc");
+
+      const statusRun = await runCli(["status"], dir);
+
+      expect(statusRun.exitCode).toBe(0);
+      expect(statusRun.stdout).toContain("mode=plugin");
+
+      const uninstallRun = await runCli(["uninstall"], dir);
+
+      expect(uninstallRun.exitCode).toBe(0);
+      expect(uninstallRun.stdout).toContain("Uninstalled");
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
   });
 });

@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+- **Breaking:** `install` is now a registration manager (plugin install is the only mode for this code-backed package, per [ADR-0008](docs/adr/0008-content-based-deployment-plans.md), superseding ADR-0004): the CLI ensures the `plugin` entry in the target scope's config file via the surgical editor — comments and formatting preserved, unparseable configs abort untouched — and writes a generalized manifest (version, mode, plugin entry, target config file) at the scope base. A matching manifest with the entry present is a zero-write no-op. `--mode copy` is refused with an explanatory error; `--force` now re-registers and rewrites the manifest instead of removing the entry
+- Legacy copy installs migrate automatically on install: the old manifest's file list is removed exactly, with a printed notice, before the plugin entry is added
+- `uninstall` surgically removes the plugin entry (config formatting preserved) plus the manifest and any residual copy payload — manifest-gated, or a known-filenames sweep of `agents/` and `opencode-architect/` when no manifest exists; `status` reports mode, version, and the config file holding the registration
+- Generalized manifest schema covers copy mode too, with a single `content-hash` property (folder-hash) for copy-installed payloads
+- Nothing changes at runtime: the plugin already registers the agents from the package and resolves reference paths at load
+
 ## [0.7.1] - 2026-09-21
 
 ### Fixed

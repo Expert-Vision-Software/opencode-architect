@@ -1,17 +1,11 @@
 import { describe, expect, test, beforeEach, afterEach } from "bun:test";
-import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
 import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { AGENT_FILENAMES, RELATIVE_REFERENCE_REGEX } from "../agent-loader";
-import { Installer, rewriteReferencePaths, type Manifest, type Scope } from "../installer";
+import { Installer, contentHash, type Manifest, type Scope } from "../installer";
 
 const PACKAGE_ROOT = path.resolve(import.meta.dirname, "..");
-const SOURCE_AGENTS_DIR = path.join(PACKAGE_ROOT, "assets", "agents");
-const SOURCE_REFERENCES_DIR = path.join(PACKAGE_ROOT, "assets", "references");
-const SOURCE_TEMPLATES_DIR = path.join(PACKAGE_ROOT, "assets", "templates");
-const ABSOLUTE_PATH_REGEX = /`([A-Za-z]:[\\/][^`]+|\/[^`]+)`/g;
 
 let projectDir = "";
 let homeDir = "";
@@ -57,307 +51,261 @@ async function writeJson(filePath: string, value: Record<string, unknown>): Prom
   await writeFile(filePath, JSON.stringify(value, null, 2));
 }
 
-async function sourceReferenceNames(): Promise<string[]> {
-  const entries = await readdir(SOURCE_REFERENCES_DIR);
-  return entries.filter((name) => name.endsWith(".md")).sort();
+async function writeText(filePath: string, text: string): Promise<void> {
+  await mkdir(path.dirname(filePath), { recursive: true });
+  await writeFile(filePath, text);
 }
 
-async function sourceTemplateNames(): Promise<string[]> {
-  return (await readdir(SOURCE_TEMPLATES_DIR)).sort();
-}
-
-async function sha256(filePath: string): Promise<string> {
-  return sha256Text(await readFile(filePath, "utf-8"));
-}
-
-function sha256Text(text: string): string {
-  return createHash("sha256").update(text).digest("hex");
+async function install(scope: Scope, options?: Partial<{ force: boolean; mode: "plugin" | "copy" }>) {
+  return installer.install(scope, {
+    force: options?.force ?? false,
+    mode: options?.mode ?? "plugin",
+    projectDir,
+  });
 }
 
 describe("Installer.install", () => {
-  test("local install lays out agents, references, and manifest", async () => {
-    const outcome = await installer.install("local", { force: false, projectDir });
+  test("registers the plugin entry and writes a plugin-mode manifest", async () => {
+    const configPath = path.join(scopeBase("local"), "opencode.json");
+    await writeJson(configPath, { theme: "dark" });
+
+    const outcome = await install("local");
 
     expect(outcome.action).toBe("installed");
-    expect(outcome.scope).toBe("local");
-    expect(outcome.agentsDir).toBe(path.join(scopeBase("local"), "agents"));
-    expect(outcome.referencesDir).toBe(
-      path.join(scopeBase("local"), "opencode-architect", "references"),
-    );
-    expect(outcome.templatesDir).toBe(
-      path.join(scopeBase("local"), "opencode-architect", "templates"),
-    );
+    expect(outcome.configPath).toBe(configPath);
     expect(outcome.manifestPath).toBe(manifestPath("local"));
 
-    const installedAgents = (await readdir(outcome.agentsDir)).sort();
-    expect(installedAgents).toEqual([...AGENT_FILENAMES].sort());
-
-    const installedReferences = (await readdir(outcome.referencesDir)).sort();
-    expect(installedReferences).toEqual(await sourceReferenceNames());
-
-    const installedTemplates = (await readdir(outcome.templatesDir)).sort();
-    expect(installedTemplates).toEqual(await sourceTemplateNames());
+    const config = await readJson(configPath);
+    expect(config.plugin).toEqual(["opencode-architect"]);
+    expect(config.theme).toBe("dark");
 
     const manifest = (await readJson(manifestPath("local"))) as unknown as Manifest;
     expect(manifest.version).toBe(await readPackageVersion());
-    expect(manifest.agentFiles.sort()).toEqual([...AGENT_FILENAMES].sort());
-    expect(manifest.referencesDir).toBe(outcome.referencesDir);
-    expect(manifest.templatesDir).toBe(outcome.templatesDir);
-
-    const hashedPaths = manifest.hashes.map((entry) => entry.path).sort();
-    const expectedPaths = [
-      ...AGENT_FILENAMES.map((name) => path.join("agents", name)),
-      ...installedReferences.map((name) => path.join("opencode-architect", "references", name)),
-      ...installedTemplates.map((name) => path.join("opencode-architect", "templates", name)),
-    ].sort();
-    expect(hashedPaths).toEqual(expectedPaths);
-
-    for (const entry of manifest.hashes) {
-      const installedPath = path.join(scopeBase("local"), entry.path);
-      expect(await sha256(installedPath)).toBe(entry.hash);
-    }
+    expect(manifest.mode).toBe("plugin");
+    expect(manifest.entry).toBe("opencode-architect");
+    expect(manifest.configPath).toBe(configPath);
+    expect(manifest["content-hash"]).toBeNull();
   });
 
-  test("payload separates templates into their own directory", async () => {
-    const outcome = await installer.install("local", { force: false, projectDir });
+  test("global install registers in the XDG config base", async () => {
+    const outcome = await install("global");
 
-    for (const name of await readdir(outcome.agentsDir)) {
-      expect(name.includes("template")).toBe(false);
-    }
-    for (const name of await readdir(outcome.referencesDir)) {
-      expect(name.includes("template")).toBe(false);
-    }
-    expect((await readdir(outcome.templatesDir)).sort()).toEqual(await sourceTemplateNames());
+    expect(outcome.configPath).toBe(path.join(scopeBase("global"), "opencode.jsonc"));
+    expect(existsSync(manifestPath("global"))).toBe(true);
+
+    const text = await readFile(outcome.configPath as string, "utf-8");
+    expect(text).toContain("opencode-architect");
   });
 
-  test("global install respects XDG_CONFIG_HOME", async () => {
-    const outcome = await installer.install("global", { force: false, projectDir });
-
-    expect(outcome.scope).toBe("global");
-    expect(outcome.agentsDir).toBe(path.join(scopeBase("global"), "agents"));
-    expect(existsSync(path.join(scopeBase("global"), "opencode-architect.json"))).toBe(true);
-    expect((await readdir(outcome.agentsDir)).sort()).toEqual([...AGENT_FILENAMES].sort());
-  });
-
-  test("rewrites relative references to absolute installed paths", async () => {
-    const outcome = await installer.install("local", { force: false, projectDir });
-    const agentPath = path.join(outcome.agentsDir, "opencode-architect.md");
-    const content = await readFile(agentPath, "utf-8");
-
-    const leftoverRelative = [...content.matchAll(RELATIVE_REFERENCE_REGEX)].map((m) => m[1] ?? "");
-    expect(leftoverRelative).toEqual([]);
-
-    const absolutePaths = [...content.matchAll(ABSOLUTE_PATH_REGEX)].map((m) => m[1] ?? "");
-    const referencePaths = absolutePaths.filter((candidate) => /\.md$/.test(candidate));
-    expect(referencePaths.length).toBeGreaterThanOrEqual(9);
-
-    const normalizedReferencesDir = outcome.referencesDir.replaceAll("\\", "/");
-    for (const referencePath of referencePaths) {
-      expect(existsSync(referencePath), `missing rewritten path ${referencePath}`).toBe(true);
-      expect(referencePath.startsWith(normalizedReferencesDir)).toBe(true);
-    }
-  });
-
-  test("rewrites template references to absolute installed paths", async () => {
-    const outcome = await installer.install("local", { force: false, projectDir });
-    const agentPath = path.join(outcome.agentsDir, "opencode-packager.md");
-    const content = await readFile(agentPath, "utf-8");
-
-    const leftoverRelative = [...content.matchAll(RELATIVE_REFERENCE_REGEX)].map((m) => m[1] ?? "");
-    expect(leftoverRelative).toEqual([]);
-
-    const absolutePaths = [...content.matchAll(ABSOLUTE_PATH_REGEX)].map((m) => m[1] ?? "");
-    const templatePaths = absolutePaths.filter((candidate) => /\.(txt|json|md)$/.test(candidate));
-    expect(templatePaths.length).toBeGreaterThanOrEqual(5);
-
-    const normalizedTemplatesDir = outcome.templatesDir.replaceAll("\\", "/");
-    for (const templatePath of templatePaths) {
-      expect(existsSync(templatePath), `missing rewritten path ${templatePath}`).toBe(true);
-      expect(templatePath.startsWith(normalizedTemplatesDir)).toBe(true);
-    }
-  });
-
-  test("same-version re-run is a no-op", async () => {
-    await installer.install("local", { force: false, projectDir });
-
-    const agentPath = path.join(scopeBase("local"), "agents", "opencode-architect.md");
-    const tampered = await readFile(agentPath, "utf-8") + "\ntampered";
-    await writeFile(agentPath, tampered);
+  test("re-running with a matching manifest and entry is a zero-write no-op", async () => {
+    const configPath = path.join(scopeBase("local"), "opencode.json");
+    await writeJson(configPath, {});
+    await install("local");
     const manifestBefore = await readFile(manifestPath("local"), "utf-8");
+    const configBefore = await readFile(configPath, "utf-8");
 
-    const outcome = await installer.install("local", { force: false, projectDir });
+    const outcome = await install("local");
 
     expect(outcome.action).toBe("noop");
-    expect(outcome.copied).toEqual([]);
-    expect(outcome.skipped).toEqual([]);
-    expect(outcome.overwritten).toEqual([]);
-    expect(await readFile(agentPath, "utf-8")).toBe(tampered);
     expect(await readFile(manifestPath("local"), "utf-8")).toBe(manifestBefore);
+    expect(await readFile(configPath, "utf-8")).toBe(configBefore);
   });
 
-  test("upgrade re-copies untouched files and skips locally modified ones", async () => {
-    await installer.install("local", { force: false, projectDir });
-
-    const fakeManifest = (await readJson(manifestPath("local"))) as unknown as Manifest;
-    fakeManifest.version = "0.0.1";
-    await writeFile(manifestPath("local"), JSON.stringify(fakeManifest, null, 2));
-
-    const untouchedPath = path.join(scopeBase("local"), "agents", "opencode-architect.md");
-    const untouchedInstalled = await readFile(untouchedPath, "utf-8");
-    const doctored = untouchedInstalled + "\ndoctored but hash updated";
-    await writeFile(untouchedPath, doctored);
-    fakeManifest.hashes = fakeManifest.hashes.map((entry) =>
-      entry.path === path.join("agents", "opencode-architect.md")
-        ? { path: entry.path, hash: createHash("sha256").update(doctored).digest("hex") }
-        : entry,
+  test("an existing entry with a version spec matches semantically without a write", async () => {
+    const configPath = path.join(scopeBase("local"), "opencode.jsonc");
+    await writeText(
+      configPath,
+      `{\n  // keep this comment\n  "plugin": ["other", "opencode-architect@latest"],\n}\n`,
     );
-    await writeFile(manifestPath("local"), JSON.stringify(fakeManifest, null, 2));
+    const before = await readFile(configPath, "utf-8");
 
-    const modifiedName = "opencode-skill-creator.md";
-    const modifiedPath = path.join(scopeBase("local"), "agents", modifiedName);
-    const modifiedSource = await readFile(path.join(SOURCE_AGENTS_DIR, modifiedName), "utf-8");
-    await writeFile(modifiedPath, modifiedSource + "\nlocally modified");
+    const outcome = await install("local");
 
-    const outcome = await installer.install("local", { force: false, projectDir });
-
-    expect(outcome.action).toBe("upgraded");
-    expect(outcome.skipped).toEqual([path.join("agents", modifiedName)]);
-    expect(outcome.copied).toContain(path.join("agents", "opencode-architect.md"));
-    expect(await readFile(untouchedPath, "utf-8")).toBe(untouchedInstalled);
-    expect(await readFile(modifiedPath, "utf-8")).toBe(modifiedSource + "\nlocally modified");
-    expect((await readJson(manifestPath("local")) as unknown as Manifest).version).toBe(
-      await readPackageVersion(),
-    );
-
-    const manifestAfterUpgrade = (await readJson(manifestPath("local"))) as unknown as Manifest;
-    const modifiedEntry = manifestAfterUpgrade.hashes.find(
-      (entry) => entry.path === path.join("agents", modifiedName),
-    );
-    const reinstalledSource = rewriteReferencePaths(modifiedSource, outcome.referencesDir, outcome.templatesDir);
-    expect(modifiedEntry?.hash).toBe(sha256Text(reinstalledSource));
-
-    manifestAfterUpgrade.version = "0.0.2";
-    await writeFile(manifestPath("local"), JSON.stringify(manifestAfterUpgrade, null, 2));
-    const secondUpgrade = await installer.install("local", { force: false, projectDir });
-    expect(secondUpgrade.skipped).toEqual([path.join("agents", modifiedName)]);
-    expect(await readFile(modifiedPath, "utf-8")).toBe(modifiedSource + "\nlocally modified");
-  });
-
-  test("upgrade with force overwrites locally modified files", async () => {
-    await installer.install("local", { force: false, projectDir });
-
-    const fakeManifest = (await readJson(manifestPath("local"))) as unknown as Manifest;
-    fakeManifest.version = "0.0.1";
-    await writeFile(manifestPath("local"), JSON.stringify(fakeManifest, null, 2));
-
-    const modifiedName = "opencode-skill-creator.md";
-    const modifiedPath = path.join(scopeBase("local"), "agents", modifiedName);
-    const modifiedSource = await readFile(path.join(SOURCE_AGENTS_DIR, modifiedName), "utf-8");
-    await writeFile(modifiedPath, modifiedSource + "\nlocally modified");
-
-    const outcome = await installer.install("local", { force: true, projectDir });
-
-    expect(outcome.action).toBe("upgraded");
-    expect(outcome.overwritten).toContain(path.join("agents", modifiedName));
-    expect(await readFile(modifiedPath, "utf-8")).toBe(
-      rewriteReferencePaths(modifiedSource, outcome.referencesDir, outcome.templatesDir),
-    );
-  });
-
-  test("refuses while the plugin entry exists", async () => {
-    await writeJson(path.join(scopeBase("local"), "opencode.json"), {
-      plugin: ["opencode-architect"],
-    });
-
-    expect(installer.install("local", { force: false, projectDir })).rejects.toThrow(/--force/);
-
-    expect(existsSync(path.join(scopeBase("local"), "agents"))).toBe(false);
-  });
-
-  test("refuses and force-removes a versioned plugin entry", async () => {
-    await writeJson(path.join(scopeBase("local"), "opencode.json"), {
-      plugin: ["opencode-architect@^0.3.0"],
-    });
-
-    expect(installer.install("local", { force: false, projectDir })).rejects.toThrow(/--force/);
-    expect(existsSync(path.join(scopeBase("local"), "agents"))).toBe(false);
-
-    const outcome = await installer.install("local", { force: true, projectDir });
-
+    expect(outcome.configPath).toBe(configPath);
+    expect(outcome.configAction).toBe("noop");
+    expect(await readFile(configPath, "utf-8")).toBe(before);
     expect(outcome.action).toBe("installed");
-    expect(outcome.pluginRemoved).toBe(true);
-    expect((await readJson(path.join(scopeBase("local"), "opencode.json"))).plugin).toBeUndefined();
-    expect(existsSync(outcome.manifestPath)).toBe(true);
   });
 
-  test("force removes the plugin entry and switches to copy mode", async () => {
-    await writeJson(path.join(scopeBase("local"), "opencode.json"), {
-      plugin: ["other-extension", "opencode-architect"],
-    });
+  test("splicing preserves comments and formatting byte-for-byte outside the array", async () => {
+    const configPath = path.join(scopeBase("local"), "opencode.jsonc");
+    const original = [
+      "{",
+      "  // my precious comment",
+      '  "$schema": "https://opencode.ai/config.json",',
+      '  "plugin": [',
+      '    // plugin note',
+      '    "other-extension",',
+      "  ],",
+      '  "theme": "dark",',
+      "}",
+      "",
+    ].join("\n");
+    await writeText(configPath, original);
 
-    const outcome = await installer.install("local", { force: true, projectDir });
+    await install("local");
 
-    expect(outcome.action).toBe("installed");
-    expect(outcome.pluginRemoved).toBe(true);
-    expect(existsSync(outcome.manifestPath)).toBe(true);
-    expect((await readdir(outcome.agentsDir)).sort()).toEqual([...AGENT_FILENAMES].sort());
+    const after = await readFile(configPath, "utf-8");
+    expect(after).toContain("// my precious comment");
+    expect(after).toContain("// plugin note");
+    expect(after.indexOf("opencode-architect")).toBeLessThan(after.indexOf("other-extension"));
+    const withoutEntry = after.replace(`\n    "opencode-architect",`, "");
+    expect(withoutEntry).toBe(original);
+  });
+
+  test("an unparseable config aborts with nothing written", async () => {
+    const configPath = path.join(scopeBase("local"), "opencode.json");
+    const broken = "{ not json ]";
+    await writeText(configPath, broken);
+
+    await expect(install("local")).rejects.toThrow(/could not be parsed/);
+
+    expect(await readFile(configPath, "utf-8")).toBe(broken);
+    expect(existsSync(manifestPath("local"))).toBe(false);
+  });
+
+  test("no config anywhere creates a default config with the entry", async () => {
+    const outcome = await install("local");
+
+    expect(outcome.configAction).toBe("created");
+    expect(outcome.configPath).toBe(path.join(projectDir, "opencode.jsonc"));
+    const text = await readFile(path.join(projectDir, "opencode.jsonc"), "utf-8");
+    expect(text).toContain('"plugin": ["opencode-architect"]');
+  });
+
+  test("refuses copy mode with an explanatory error", async () => {
+    await expect(install("local", { mode: "copy" })).rejects.toThrow(/code-backed/);
+    expect(existsSync(manifestPath("local"))).toBe(false);
+  });
+
+  test("migrates a legacy copy install: payload removed per manifest, entry added", async () => {
+    const configPath = path.join(scopeBase("local"), "opencode.json");
+    await writeJson(configPath, {});
+    const legacy = {
+      version: "0.0.1",
+      agentFiles: ["opencode-architect.md"],
+      referencesDir: path.join(scopeBase("local"), "opencode-architect", "references"),
+      templatesDir: path.join(scopeBase("local"), "opencode-architect", "templates"),
+      hashes: [
+        { path: path.join("agents", "opencode-architect.md"), hash: "deadbeef" },
+        {
+          path: path.join("opencode-architect", "references", "agents.md"),
+          hash: "feedface",
+        },
+      ],
+    };
+    await writeJson(manifestPath("local"), legacy);
+    await mkdir(path.join(scopeBase("local"), "agents"), { recursive: true });
+    await writeText(path.join(scopeBase("local"), "agents", "opencode-architect.md"), "old agent");
+    await mkdir(path.join(scopeBase("local"), "opencode-architect", "references"), { recursive: true });
+    await writeText(path.join(scopeBase("local"), "opencode-architect", "references", "agents.md"), "old ref");
+    const consumerAgent = path.join(scopeBase("local"), "agents", "consumer-own.md");
+    await writeText(consumerAgent, "# consumer's own");
+
+    const outcome = await install("local");
+
+    expect(outcome.action).toBe("migrated");
+    expect(outcome.removedPayload).toContain(path.join(scopeBase("local"), "agents", "opencode-architect.md"));
+    expect(outcome.removedPayload).toContain(
+      path.join(scopeBase("local"), "opencode-architect", "references", "agents.md"),
+    );
+    expect(existsSync(path.join(scopeBase("local"), "agents", "opencode-architect.md"))).toBe(false);
+    expect(existsSync(consumerAgent)).toBe(true);
+    expect(existsSync(path.join(scopeBase("local"), "opencode-architect"))).toBe(false);
 
     const config = await readJson(path.join(scopeBase("local"), "opencode.json"));
-    expect(config.plugin).toEqual(["other-extension"]);
+    expect(config.plugin).toEqual(["opencode-architect"]);
+    const manifest = (await readJson(manifestPath("local"))) as unknown as Manifest;
+    expect(manifest.mode).toBe("plugin");
+  });
+
+  test("migration aborts with the payload intact when a config is unparseable", async () => {
+    const legacy = {
+      version: "0.0.1",
+      hashes: [{ path: path.join("agents", "opencode-architect.md"), hash: "deadbeef" }],
+    };
+    await writeJson(manifestPath("local"), legacy);
+    await mkdir(path.join(scopeBase("local"), "agents"), { recursive: true });
+    await writeText(path.join(scopeBase("local"), "agents", "opencode-architect.md"), "old agent");
+    const configPath = path.join(scopeBase("local"), "opencode.json");
+    await writeText(configPath, "{ broken ]");
+
+    await expect(install("local")).rejects.toThrow(/could not be parsed/);
+
+    expect(existsSync(path.join(scopeBase("local"), "agents", "opencode-architect.md"))).toBe(true);
+    expect(existsSync(manifestPath("local"))).toBe(true);
+  });
+
+  test("force re-registers and rewrites an up-to-date manifest", async () => {
+    await install("local");
+    const manifest = (await readJson(manifestPath("local"))) as unknown as Manifest;
+    manifest.version = "0.0.1";
+    await writeFile(manifestPath("local"), JSON.stringify(manifest, null, 2));
+
+    const outcome = await install("local", { force: true });
+
+    expect(outcome.action).toBe("upgraded");
+    expect(((await readJson(manifestPath("local"))) as unknown as Manifest).version).toBe(
+      await readPackageVersion(),
+    );
   });
 });
 
 describe("Installer.uninstall", () => {
-  test("copy mode removes exactly the manifest files and keeps consumer files", async () => {
-    await installer.install("local", { force: false, projectDir });
-
-    const consumerAgentPath = path.join(scopeBase("local"), "agents", "consumer-own-agent.md");
-    await writeFile(consumerAgentPath, "# consumer's own agent");
-    const consumerRefPath = path.join(
-      scopeBase("local"),
-      "opencode-architect",
-      "references",
-      "consumer-note.md",
-    );
-    await writeFile(consumerRefPath, "consumer note");
-
-    const outcome = await installer.uninstall("local", projectDir);
-
-    expect(outcome.mode).toBe("copy");
-    expect(outcome.removed).toContain(path.join(scopeBase("local"), "agents", "opencode-architect.md"));
-    expect(outcome.removed).toContain(
-      path.join(scopeBase("local"), "opencode-architect", "references", "agents.md"),
-    );
-    expect(outcome.removed).toContain(manifestPath("local"));
-    expect(existsSync(manifestPath("local"))).toBe(false);
-    expect(existsSync(path.join(scopeBase("local"), "agents", "opencode-architect.md"))).toBe(false);
-    expect(existsSync(consumerAgentPath)).toBe(true);
-    expect(existsSync(consumerRefPath)).toBe(true);
-    expect(await readFile(consumerAgentPath, "utf-8")).toBe("# consumer's own agent");
-  });
-
-  test("copy uninstall removes emptied directories", async () => {
-    await installer.install("local", { force: false, projectDir });
-
-    await installer.uninstall("local", projectDir);
-
-    expect(existsSync(path.join(scopeBase("local"), "agents"))).toBe(false);
-    expect(existsSync(path.join(scopeBase("local"), "opencode-architect"))).toBe(false);
-  });
-
-  test("plugin mode removes only the plugin entry", async () => {
-    await writeJson(path.join(scopeBase("local"), "opencode.json"), {
-      plugin: ["opencode-architect", "other-extension"],
-    });
+  test("plugin mode removes the entry and the manifest", async () => {
+    const configPath = path.join(scopeBase("local"), "opencode.json");
+    await writeJson(configPath, {});
+    await install("local");
+    const before = await readFile(configPath, "utf-8");
 
     const outcome = await installer.uninstall("local", projectDir);
 
     expect(outcome.mode).toBe("plugin");
     expect(outcome.pluginRemoved).toBe(true);
-    expect(outcome.removed).toEqual([]);
+    expect(outcome.configPath).toBe(configPath);
+    expect(existsSync(manifestPath("local"))).toBe(false);
+    const config = await readJson(configPath);
+    expect(config.plugin).toEqual([]);
+    expect((await readFile(configPath, "utf-8")).length).toBeLessThan(before.length);
+  });
 
-    const config = await readJson(path.join(scopeBase("local"), "opencode.json"));
-    expect(config.plugin).toEqual(["other-extension"]);
+  test("legacy copy uninstall removes exactly the manifest files and keeps consumer files", async () => {
+    const legacy = {
+      version: "0.0.1",
+      agentFiles: [],
+      referencesDir: "",
+      templatesDir: "",
+      hashes: [{ path: path.join("agents", "opencode-architect.md"), hash: "deadbeef" }],
+    };
+    await writeJson(manifestPath("local"), legacy);
+    await mkdir(path.join(scopeBase("local"), "agents"), { recursive: true });
+    await writeText(path.join(scopeBase("local"), "agents", "opencode-architect.md"), "old agent");
+    const consumerAgent = path.join(scopeBase("local"), "agents", "consumer-own.md");
+    await writeText(consumerAgent, "# consumer's own");
+
+    const outcome = await installer.uninstall("local", projectDir);
+
+    expect(outcome.mode).toBe("copy");
+    expect(outcome.removed).toContain(path.join(scopeBase("local"), "agents", "opencode-architect.md"));
+    expect(outcome.removed).toContain(manifestPath("local"));
+    expect(existsSync(consumerAgent)).toBe(true);
+  });
+
+  test("uninstall without a manifest sweeps residual legacy payload and keeps consumer files", async () => {
+    await mkdir(path.join(scopeBase("local"), "agents"), { recursive: true });
+    await writeText(path.join(scopeBase("local"), "agents", "opencode-architect.md"), "old agent");
+    const consumerAgent = path.join(scopeBase("local"), "agents", "consumer-own.md");
+    await writeText(consumerAgent, "# consumer's own");
+    const packageDir = path.join(scopeBase("local"), "opencode-architect", "references");
+    await mkdir(packageDir, { recursive: true });
+    await writeText(path.join(packageDir, "agents.md"), "old ref");
+
+    const outcome = await installer.uninstall("local", projectDir);
+
+    expect(outcome.removed).toContain(path.join(scopeBase("local"), "agents", "opencode-architect.md"));
+    expect(outcome.removed).toContain(path.join(scopeBase("local"), "opencode-architect"));
+    expect(existsSync(consumerAgent)).toBe(true);
+    expect(existsSync(path.join(scopeBase("local"), "opencode-architect"))).toBe(false);
   });
 
   test("uninstall with nothing installed is a no-op", async () => {
@@ -367,6 +315,26 @@ describe("Installer.uninstall", () => {
     expect(outcome.removed).toEqual([]);
     expect(outcome.pluginRemoved).toBe(false);
   });
+
+  test("uninstall aborts untouched on an unparseable config with the entry", async () => {
+    const configPath = path.join(scopeBase("local"), "opencode.json");
+    await writeText(configPath, "{ plugin: [broken");
+    const legacy = {
+      version: "0.0.1",
+      agentFiles: [],
+      referencesDir: "",
+      templatesDir: "",
+      hashes: [{ path: path.join("agents", "opencode-architect.md"), hash: "deadbeef" }],
+    };
+    await writeJson(manifestPath("local"), legacy);
+    await mkdir(path.join(scopeBase("local"), "agents"), { recursive: true });
+    await writeText(path.join(scopeBase("local"), "agents", "opencode-architect.md"), "old agent");
+
+    await expect(installer.uninstall("local", projectDir)).rejects.toThrow(/could not be parsed/);
+
+    expect(existsSync(manifestPath("local"))).toBe(true);
+    expect(existsSync(path.join(scopeBase("local"), "agents", "opencode-architect.md"))).toBe(true);
+  });
 });
 
 describe("Installer.status", () => {
@@ -375,18 +343,22 @@ describe("Installer.status", () => {
 
     expect(outcome.mode).toBe("none");
     expect(outcome.version).toBeNull();
+    expect(outcome.configPath).toBeNull();
   });
 
-  test("reports copy with the manifest version", async () => {
-    await installer.install("local", { force: false, projectDir });
+  test("reports plugin mode with version and registration file", async () => {
+    const configPath = path.join(scopeBase("local"), "opencode.json");
+    await writeJson(configPath, {});
+    await install("local");
 
     const outcome = await installer.status("local", projectDir);
 
-    expect(outcome.mode).toBe("copy");
+    expect(outcome.mode).toBe("plugin");
     expect(outcome.version).toBe(await readPackageVersion());
+    expect(outcome.configPath).toBe(configPath);
   });
 
-  test("reports plugin when only the entry exists", async () => {
+  test("detects a registration without a manifest", async () => {
     await writeJson(path.join(scopeBase("local"), "opencode.json"), {
       plugin: ["opencode-architect"],
     });
@@ -395,17 +367,20 @@ describe("Installer.status", () => {
 
     expect(outcome.mode).toBe("plugin");
     expect(outcome.version).toBeNull();
+    expect(outcome.configPath).toBe(path.join(scopeBase("local"), "opencode.json"));
   });
+});
 
-  test("prefers copy when the manifest and the plugin entry both exist", async () => {
-    await installer.install("local", { force: false, projectDir });
-    await writeJson(path.join(scopeBase("local"), "opencode.json"), {
-      plugin: ["opencode-architect"],
-    });
+describe("contentHash", () => {
+  test("produces a stable hex digest for a directory", async () => {
+    const dir = path.join(projectDir, "payload");
+    await mkdir(dir);
+    await writeFile(path.join(dir, "a.txt"), "hello");
 
-    const outcome = await installer.status("local", projectDir);
+    const first = await contentHash(dir);
+    const second = await contentHash(dir);
 
-    expect(outcome.mode).toBe("copy");
-    expect(outcome.version).toBe(await readPackageVersion());
+    expect(first).toMatch(/^[0-9a-f]+$/);
+    expect(first).toBe(second);
   });
 });

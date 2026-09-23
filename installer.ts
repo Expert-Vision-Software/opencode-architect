@@ -1,12 +1,14 @@
-import { createHash } from "node:crypto";
-import { copyFile, exists, mkdir, readdir, readFile, rm, rmdir, writeFile } from "node:fs/promises";
+import { exists, mkdir, readFile, readdir, rm, rmdir, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import path from "node:path";
-import { AGENT_FILENAMES, RELATIVE_REFERENCE_REGEX } from "./agent-loader";
+import { hashElement } from "folder-hash";
+import { AGENT_FILENAMES } from "./agent-loader";
+import { PluginConfigEditor } from "./plugin-config";
 
 export type Scope = "local" | "global";
 export type InstallMode = "none" | "copy" | "plugin";
-export type InstallAction = "installed" | "upgraded" | "noop";
+export type ManifestMode = "copy" | "plugin";
+export type InstallAction = "installed" | "upgraded" | "noop" | "migrated";
 
 export interface ManifestHashEntry {
   path: string;
@@ -15,28 +17,26 @@ export interface ManifestHashEntry {
 
 export interface Manifest {
   version: string;
-  agentFiles: string[];
-  referencesDir: string;
-  templatesDir: string;
-  hashes: ManifestHashEntry[];
+  mode: ManifestMode;
+  entry: string | null;
+  configPath: string | null;
+  "content-hash": string | null;
+  hashes: ManifestHashEntry[] | null;
 }
 
 export interface InstallOptions {
   force: boolean;
+  mode: "plugin" | "copy";
   projectDir: string;
 }
 
 export interface InstallOutcome {
   action: InstallAction;
   scope: Scope;
-  agentsDir: string;
-  referencesDir: string;
-  templatesDir: string;
   manifestPath: string;
-  copied: string[];
-  skipped: string[];
-  overwritten: string[];
-  pluginRemoved: boolean;
+  configPath: string | null;
+  configAction: "noop" | "updated" | "created" | "blocked";
+  removedPayload: string[];
 }
 
 export interface UninstallOutcome {
@@ -44,244 +44,202 @@ export interface UninstallOutcome {
   mode: InstallMode;
   removed: string[];
   pluginRemoved: boolean;
+  configPath: string | null;
 }
 
 export interface StatusOutcome {
   scope: Scope;
   mode: InstallMode;
   version: string | null;
+  configPath: string | null;
 }
 
 const PACKAGE_NAME = "opencode-architect";
 const MANIFEST_NAME = "opencode-architect.json";
-const ASSETS_AGENTS_DIR = path.join(import.meta.dirname, "assets", "agents");
-const ASSETS_REFERENCES_DIR = path.join(import.meta.dirname, "assets", "references");
-const ASSETS_TEMPLATES_DIR = path.join(import.meta.dirname, "assets", "templates");
 
 export class Installer {
+  private readonly editor = new PluginConfigEditor();
+
   public async install(scope: Scope, options: InstallOptions): Promise<InstallOutcome> {
+    if (options.mode === "copy") {
+      throw new Error(
+        `${PACKAGE_NAME} is a code-backed package: it ships agents, which only work through ` +
+          `plugin registration. Copy install cannot express that. Run without --mode copy.`,
+      );
+    }
+
     const base = this.scopeBase(scope, options.projectDir);
-    const configPath = path.join(base, "opencode.json");
     const manifestPath = path.join(base, MANIFEST_NAME);
-    const agentsDir = path.join(base, "agents");
-    const referencesDir = path.join(base, "opencode-architect", "references");
-    const templatesDir = path.join(base, "opencode-architect", "templates");
     const version = await this.getPackageVersion();
+    const existing = await this.readManifest(manifestPath);
 
-    let pluginRemoved = false;
-    if (await this.hasPluginEntry(configPath)) {
-      if (!options.force) {
-        throw new Error(
-          `The "${PACKAGE_NAME}" plugin entry in ${configPath} must be removed before a copy install ` +
-            `(copied agents would silently shadow the plugin's agents). Re-run with --force to remove ` +
-            `the entry and switch this scope to copy install.`,
-        );
-      }
-      await this.removePluginEntry(configPath);
-      pluginRemoved = true;
+    let removedPayload: string[] = [];
+    let action: InstallAction;
+    if (existing !== null && existing.mode === "copy") {
+      const check = await this.editor.checkParseable({ scope, projectDir: options.projectDir });
+      if (!check.ok) throw new Error(check.warning);
+      removedPayload = await this.removePayloadPerManifest(base, existing.hashes ?? []);
+      action = "migrated";
+    } else {
+      action = "installed";
     }
 
-    const existingManifest = await this.readManifest(manifestPath);
-    if (existingManifest !== null && existingManifest.version === version) {
-      return {
-        action: "noop",
-        scope,
-        agentsDir,
-        referencesDir,
-        templatesDir,
-        manifestPath,
-        copied: [],
-        skipped: [],
-        overwritten: [],
-        pluginRemoved,
+    const registration = await this.editor.ensurePluginEntry(PACKAGE_NAME, {
+      scope,
+      projectDir: options.projectDir,
+    });
+    if (registration.action === "blocked") {
+      throw new Error(registration.warning ?? "Config registration was blocked.");
+    }
+
+    if (existing !== null && existing.mode === "plugin") {
+      action = existing.version === version && registration.action === "noop" ? "noop" : "upgraded";
+    }
+
+    if (action !== "noop" || options.force) {
+      const manifest: Manifest = {
+        version,
+        mode: "plugin",
+        entry: PACKAGE_NAME,
+        configPath: registration.configPath,
+        "content-hash": null,
+        hashes: null,
       };
+      await mkdir(base, { recursive: true });
+      await writeFile(manifestPath, JSON.stringify(manifest, null, 2) + "\n");
     }
 
-    const action: InstallAction = existingManifest === null ? "installed" : "upgraded";
-    const copied: string[] = [];
-    const skipped: string[] = [];
-    const overwritten: string[] = [];
-    const hashes: ManifestHashEntry[] = [];
-
-    await mkdir(agentsDir, { recursive: true });
-    await mkdir(referencesDir, { recursive: true });
-    await mkdir(templatesDir, { recursive: true });
-
-    for (const filename of AGENT_FILENAMES) {
-      const relativePath = path.join("agents", filename);
-      const { action: fileAction, priorHash } = await this.disposition(
-        existingManifest,
-        base,
-        relativePath,
-        options.force,
-      );
-      if (fileAction === "skip") {
-        skipped.push(relativePath);
-        hashes.push({ path: relativePath, hash: priorHash as string });
-        continue;
-      }
-      const source = await readFile(path.join(ASSETS_AGENTS_DIR, filename), "utf-8");
-      await writeFile(path.join(base, relativePath), rewriteReferencePaths(source, referencesDir, templatesDir));
-      hashes.push({ path: relativePath, hash: await this.sha256File(path.join(base, relativePath)) });
-      if (fileAction === "overwrite") overwritten.push(relativePath);
-      else copied.push(relativePath);
-    }
-
-    for (const entry of await readdir(ASSETS_REFERENCES_DIR)) {
-      const relativePath = path.join("opencode-architect", "references", entry);
-      const { action: fileAction, priorHash } = await this.disposition(
-        existingManifest,
-        base,
-        relativePath,
-        options.force,
-      );
-      if (fileAction === "skip") {
-        skipped.push(relativePath);
-        hashes.push({ path: relativePath, hash: priorHash as string });
-        continue;
-      }
-      await copyFile(path.join(ASSETS_REFERENCES_DIR, entry), path.join(base, relativePath));
-      hashes.push({ path: relativePath, hash: await this.sha256File(path.join(base, relativePath)) });
-      if (fileAction === "overwrite") overwritten.push(relativePath);
-      else copied.push(relativePath);
-    }
-
-    for (const entry of await readdir(ASSETS_TEMPLATES_DIR)) {
-      const relativePath = path.join("opencode-architect", "templates", entry);
-      const { action: fileAction, priorHash } = await this.disposition(
-        existingManifest,
-        base,
-        relativePath,
-        options.force,
-      );
-      if (fileAction === "skip") {
-        skipped.push(relativePath);
-        hashes.push({ path: relativePath, hash: priorHash as string });
-        continue;
-      }
-      await copyFile(path.join(ASSETS_TEMPLATES_DIR, entry), path.join(base, relativePath));
-      hashes.push({ path: relativePath, hash: await this.sha256File(path.join(base, relativePath)) });
-      if (fileAction === "overwrite") overwritten.push(relativePath);
-      else copied.push(relativePath);
-    }
-
-    const manifest: Manifest = { version, agentFiles: [...AGENT_FILENAMES], referencesDir, templatesDir, hashes };
-    await writeFile(manifestPath, JSON.stringify(manifest, null, 2) + "\n");
-
-    return { action, scope, agentsDir, referencesDir, templatesDir, manifestPath, copied, skipped, overwritten, pluginRemoved };
+    return {
+      action,
+      scope,
+      manifestPath,
+      configPath: registration.configPath,
+      configAction: registration.action,
+      removedPayload,
+    };
   }
 
   public async uninstall(scope: Scope, projectDir: string): Promise<UninstallOutcome> {
     const base = this.scopeBase(scope, projectDir);
-    const configPath = path.join(base, "opencode.json");
     const manifestPath = path.join(base, MANIFEST_NAME);
     const manifest = await this.readManifest(manifestPath);
-    const hadPluginEntry = await this.hasPluginEntry(configPath);
     const removed: string[] = [];
 
-    if (manifest !== null) {
-      for (const entry of manifest.hashes) {
-        const target = path.join(base, entry.path);
+    const removal = await this.editor.removePluginEntry(PACKAGE_NAME, { scope, projectDir });
+    if (removal.action === "blocked") {
+      throw new Error(removal.warning ?? "Config cleanup was blocked.");
+    }
+    const pluginRemoved = removal.action === "removed";
+
+    if (manifest !== null && manifest.mode === "copy") {
+      removed.push(...(await this.removePayloadPerManifest(base, manifest.hashes ?? [])));
+      await rm(manifestPath);
+      removed.push(manifestPath);
+    }
+
+    if (manifest !== null && manifest.mode === "plugin") {
+      await rm(manifestPath);
+      removed.push(manifestPath);
+    }
+
+    if (manifest === null) {
+      removed.push(...(await this.removeResidualPayload(base)));
+    }
+
+    const mode: InstallMode =
+      manifest !== null ? manifest.mode : pluginRemoved ? "plugin" : "none";
+    return { scope, mode, removed, pluginRemoved, configPath: removal.configPath };
+  }
+
+  private async removeResidualPayload(base: string): Promise<string[]> {
+    const removed: string[] = [];
+    const agentsDir = path.join(base, "agents");
+    if (await exists(agentsDir)) {
+      for (const filename of AGENT_FILENAMES) {
+        const target = path.join(agentsDir, filename);
         if (await exists(target)) {
           await rm(target);
           removed.push(target);
         }
       }
-      await rm(manifestPath);
-      removed.push(manifestPath);
-      await this.removeIfEmpty(path.join(base, "opencode-architect", "templates"));
-      await this.removeIfEmpty(path.join(base, "opencode-architect", "references"));
-      await this.removeIfEmpty(path.join(base, "opencode-architect"));
-      await this.removeIfEmpty(path.join(base, "agents"));
+      await this.removeIfEmpty(agentsDir);
     }
-
-    let pluginRemoved = false;
-    if (hadPluginEntry) {
-      await this.removePluginEntry(configPath);
-      pluginRemoved = true;
+    const packageDir = path.join(base, PACKAGE_NAME);
+    if (await exists(packageDir)) {
+      await rm(packageDir, { recursive: true });
+      removed.push(packageDir);
     }
-
-    const mode: InstallMode = manifest !== null ? "copy" : hadPluginEntry ? "plugin" : "none";
-    return { scope, mode, removed, pluginRemoved };
+    await this.removeIfEmpty(base);
+    return removed;
   }
 
   public async status(scope: Scope, projectDir: string): Promise<StatusOutcome> {
     const base = this.scopeBase(scope, projectDir);
     const manifest = await this.readManifest(path.join(base, MANIFEST_NAME));
-
     if (manifest !== null) {
-      return { scope, mode: "copy", version: manifest.version };
+      return { scope, mode: manifest.mode, version: manifest.version, configPath: manifest.configPath };
     }
-    if (await this.hasPluginEntry(path.join(base, "opencode.json"))) {
-      return { scope, mode: "plugin", version: null };
+    const registrationPath = await this.editor.findRegistration(PACKAGE_NAME, { scope, projectDir });
+    if (registrationPath !== null) {
+      return { scope, mode: "plugin", version: null, configPath: registrationPath };
     }
-    return { scope, mode: "none", version: null };
+    return { scope, mode: "none", version: null, configPath: null };
   }
 
-  private async disposition(
-    manifest: Manifest | null,
+  private async removePayloadPerManifest(
     base: string,
-    relativePath: string,
-    force: boolean,
-  ): Promise<{ action: "copy" | "overwrite" | "skip"; priorHash: string | null }> {
-    if (manifest === null) return { action: "copy", priorHash: null };
-    const priorHash = manifest.hashes.find((entry) => entry.path === relativePath)?.hash ?? null;
-    if (priorHash === null) return { action: "copy", priorHash };
-    const installedPath = path.join(base, relativePath);
-    if (!(await exists(installedPath))) return { action: "copy", priorHash };
-    if ((await this.sha256File(installedPath)) === priorHash) return { action: "copy", priorHash };
-    return { action: force ? "overwrite" : "skip", priorHash };
+    hashes: ManifestHashEntry[],
+  ): Promise<string[]> {
+    const removed: string[] = [];
+    for (const entry of hashes) {
+      const target = path.join(base, entry.path);
+      if (await exists(target)) {
+        await rm(target);
+        removed.push(target);
+      }
+    }
+    await this.prunePayloadDirs(base);
+    return removed;
   }
 
-  private async sha256File(filePath: string): Promise<string> {
-    return createHash("sha256").update(await readFile(filePath)).digest("hex");
+  private async prunePayloadDirs(base: string): Promise<void> {
+    await this.removeIfEmpty(path.join(base, "opencode-architect", "templates"));
+    await this.removeIfEmpty(path.join(base, "opencode-architect", "references"));
+    await this.removeIfEmpty(path.join(base, "opencode-architect"));
+    await this.removeIfEmpty(path.join(base, "agents"));
   }
 
-  private scopeBase(scope: Scope, projectDir: string): string {
-    if (scope === "local") return path.join(projectDir, ".opencode");
-    const xdgConfigHome = process.env.XDG_CONFIG_HOME;
-    if (xdgConfigHome) return path.join(xdgConfigHome, "opencode");
-    return path.join(homedir(), ".config", "opencode");
+  private async removeIfEmpty(directory: string): Promise<void> {
+    if (!(await exists(directory))) return;
+    const contents = await readdir(directory);
+    if (contents.length === 0) await rmdir(directory);
   }
 
   private async readManifest(manifestPath: string): Promise<Manifest | null> {
     try {
-      return JSON.parse(await readFile(manifestPath, "utf-8")) as Manifest;
+      const parsed = JSON.parse(await readFile(manifestPath, "utf-8")) as Partial<Manifest>;
+      if (typeof parsed.version !== "string") return null;
+      if (typeof parsed.mode !== "string") {
+        if (!Array.isArray(parsed.hashes)) return null;
+        return {
+          version: parsed.version,
+          mode: "copy",
+          entry: null,
+          configPath: null,
+          "content-hash": null,
+          hashes: parsed.hashes as ManifestHashEntry[],
+        };
+      }
+      return {
+        version: parsed.version,
+        mode: parsed.mode,
+        entry: parsed.entry ?? null,
+        configPath: parsed.configPath ?? null,
+        "content-hash": parsed["content-hash"] ?? null,
+        hashes: parsed.hashes ?? null,
+      };
     } catch {
       return null;
-    }
-  }
-
-  private async hasPluginEntry(configPath: string): Promise<boolean> {
-    const plugins = await this.readPluginArray(configPath);
-    return plugins.some((name) => this.isPluginEntry(name));
-  }
-
-  private async removePluginEntry(configPath: string): Promise<void> {
-    const plugins = await this.readPluginArray(configPath);
-    const remaining = plugins.filter((name) => !this.isPluginEntry(name));
-    const config = await this.readConfig(configPath);
-    if (remaining.length === 0) delete config.plugin;
-    else config.plugin = remaining;
-    await mkdir(path.dirname(configPath), { recursive: true });
-    await writeFile(configPath, JSON.stringify(config, null, 2) + "\n");
-  }
-
-  private isPluginEntry(name: string): boolean {
-    return name === PACKAGE_NAME || name.startsWith(`${PACKAGE_NAME}@`);
-  }
-
-  private async readPluginArray(configPath: string): Promise<string[]> {
-    const config = await this.readConfig(configPath);
-    const plugins = config.plugin;
-    return Array.isArray(plugins) ? plugins.filter((name): name is string => typeof name === "string") : [];
-  }
-
-  private async readConfig(configPath: string): Promise<Record<string, unknown>> {
-    try {
-      return JSON.parse(await readFile(configPath, "utf-8")) as Record<string, unknown>;
-    } catch {
-      return {};
     }
   }
 
@@ -290,30 +248,15 @@ export class Installer {
     return (JSON.parse(content) as { version: string }).version;
   }
 
-  private async removeIfEmpty(directory: string): Promise<void> {
-    if (!(await exists(directory))) return;
-    const contents = await readdir(directory);
-    if (contents.length === 0) await rmdir(directory);
+  private scopeBase(scope: Scope, projectDir: string): string {
+    if (scope === "local") return path.join(projectDir, ".opencode");
+    const xdgConfigHome = process.env.XDG_CONFIG_HOME;
+    if (xdgConfigHome) return path.join(xdgConfigHome, "opencode");
+    return path.join(homedir(), ".config", "opencode");
   }
 }
 
-export function rewriteReferencePaths(content: string, referencesDir: string, templatesDir: string): string {
-  return content.replace(
-    RELATIVE_REFERENCE_REGEX,
-    (token: string, relativePath: string): string => {
-      const normalized = relativePath.replaceAll("\\", "/");
-      const packagedPath = path.resolve(ASSETS_AGENTS_DIR, normalized);
-      const withinReferences = path.relative(ASSETS_REFERENCES_DIR, packagedPath);
-      if (!withinReferences.startsWith("..")) {
-        const installedPath = path.resolve(referencesDir, withinReferences).replaceAll("\\", "/");
-        return `\`${installedPath}\``;
-      }
-      const withinTemplates = path.relative(ASSETS_TEMPLATES_DIR, packagedPath);
-      if (!withinTemplates.startsWith("..")) {
-        const installedPath = path.resolve(templatesDir, withinTemplates).replaceAll("\\", "/");
-        return `\`${installedPath}\``;
-      }
-      return token;
-    },
-  );
+export async function contentHash(directory: string): Promise<string> {
+  const result = await hashElement(directory, { encoding: "hex" });
+  return result.hash;
 }

@@ -51,12 +51,14 @@
     "assets"
   ],
   "dependencies": {
-    "yaml": "^2.7.1",
-    "@opencode-ai/plugin": "*"
+    "@opencode-ai/plugin": "*",
+    "folder-hash": "^4.1.3",
+    "yaml": "^2.7.1"
   },
   "devDependencies": {
     "@opencode-ai/sdk": "latest",
     "@types/bun": "latest",
+    "@types/folder-hash": "^4.0.4",
     "@types/node": "latest",
     "typescript": "latest"
   }
