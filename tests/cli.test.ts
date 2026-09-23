@@ -3,6 +3,7 @@ import { existsSync } from "node:fs";
 import { chmod, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { seedCachedPackage } from "./test-helpers";
 
 const PACKAGE_ROOT = path.resolve(import.meta.dirname, "..");
 const CLI_PATH = path.join(PACKAGE_ROOT, "cli.ts");
@@ -115,19 +116,15 @@ describe("cli", () => {
 });
 
 describe("cli clear-cache", () => {
-  async function seedCache(cacheDir: string, name: string): Promise<string> {
-    const dir = path.join(cacheDir, "opencode", "packages", name);
-    await mkdir(path.join(dir, "nested"), { recursive: true });
-    await writeFile(path.join(dir, "nested", "file.txt"), "cached");
-    return dir;
-  }
+  const packagesDir = (cacheDir: string) => path.join(cacheDir, "opencode", "packages");
+  const seedCache = seedCachedPackage;
 
   test("default mode removes only this package's cache dirs", async () => {
     const cacheDir = await mkdtemp(path.join(tmpdir(), "oa-cli-cc-"));
     try {
-      const ours = await seedCache(cacheDir, "opencode-architect");
-      await seedCache(cacheDir, "opencode-architect@latest");
-      const other = await seedCache(cacheDir, "other-pkg");
+      const ours = await seedCache(packagesDir(cacheDir), "opencode-architect");
+      await seedCache(packagesDir(cacheDir), "opencode-architect@latest");
+      const other = await seedCache(packagesDir(cacheDir), "other-pkg");
 
       const run = await runCli(["clear-cache"], undefined, { XDG_CACHE_HOME: cacheDir });
 
@@ -143,8 +140,8 @@ describe("cli clear-cache", () => {
   test("--package removes only that package and requires --yes", async () => {
     const cacheDir = await mkdtemp(path.join(tmpdir(), "oa-cli-cc-"));
     try {
-      const target = await seedCache(cacheDir, "some-pkg");
-      const ours = await seedCache(cacheDir, "opencode-architect");
+      const target = await seedCache(packagesDir(cacheDir), "some-pkg");
+      const ours = await seedCache(packagesDir(cacheDir), "opencode-architect");
 
       const refused = await runCli(["clear-cache", "--package", "some-pkg"], undefined, { XDG_CACHE_HOME: cacheDir });
       expect(refused.exitCode).toBe(1);
@@ -163,7 +160,7 @@ describe("cli clear-cache", () => {
   test("--all removes the whole OpenCode cache dir and requires --yes", async () => {
     const cacheDir = await mkdtemp(path.join(tmpdir(), "oa-cli-cc-"));
     try {
-      await seedCache(cacheDir, "opencode-architect");
+      await seedCache(packagesDir(cacheDir), "opencode-architect");
 
       const refused = await runCli(["clear-cache", "--all"], undefined, { XDG_CACHE_HOME: cacheDir });
       expect(refused.exitCode).toBe(1);
@@ -187,7 +184,7 @@ describe("cli clear-cache", () => {
   test("traversal-y --package values exit 1 without deleting anything", async () => {
     const cacheDir = await mkdtemp(path.join(tmpdir(), "oa-cli-cc-"));
     try {
-      const ours = await seedCache(cacheDir, "opencode-architect");
+      const ours = await seedCache(packagesDir(cacheDir), "opencode-architect");
 
       const run = await runCli(["clear-cache", "--package", "../escape", "--yes"], undefined, { XDG_CACHE_HOME: cacheDir });
 

@@ -1,7 +1,8 @@
 #!/usr/bin/env bun
 import { parseArgs } from "node:util";
 import { Installer, type Scope } from "./installer";
-import { clearCache, ClearCacheUsageError } from "./cache-cleaner";
+import { CacheCleaner } from "./cache-cleaner";
+import { ClearCacheUsageError } from "./clear-cache-usage-error";
 
 const VERSION = (JSON.parse(await Bun.file(`${import.meta.dirname}/package.json`).text()) as { version: string }).version;
 
@@ -95,7 +96,7 @@ async function main(): Promise<void> {
         }
         let outcome;
         try {
-          outcome = await clearCache({ packageName: values.package, all: values.all, yes: values.yes });
+          outcome = await new CacheCleaner().clear({ packageName: values.package ?? null, all: values.all, yes: values.yes });
         } catch (error) {
           if (error instanceof ClearCacheUsageError) {
             console.error(error.message);

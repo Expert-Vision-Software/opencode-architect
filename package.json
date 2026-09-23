@@ -45,6 +45,7 @@
     "index.ts",
     "agent-loader.ts",
     "cache-cleaner.ts",
+    "clear-cache-usage-error.ts",
     "cli.ts",
     "installer.ts",
     "plugin-config.ts",

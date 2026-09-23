@@ -1,17 +1,20 @@
 import { describe, expect, test, beforeEach, afterEach } from "bun:test";
 import { existsSync } from "node:fs";
-import { chmod, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { clearCache, ClearCacheUsageError, isUnsafePackageName, packagesCacheRoot, opencodeCacheRoot } from "../cache-cleaner";
+import { CacheCleaner } from "../cache-cleaner";
+import { seedCachedPackage, expectClearCacheUsageError } from "./test-helpers";
 
 let cacheDir = "";
 let originalXdgCache: string | undefined;
+let cleaner = new CacheCleaner();
 
 beforeEach(async () => {
   cacheDir = await mkdtemp(path.join(tmpdir(), "oa-clear-cache-"));
   originalXdgCache = process.env.XDG_CACHE_HOME;
   process.env.XDG_CACHE_HOME = cacheDir;
+  cleaner = new CacheCleaner();
 });
 
 afterEach(async () => {
@@ -21,24 +24,17 @@ afterEach(async () => {
 });
 
 function cacheRoot(): string {
-  return packagesCacheRoot();
-}
-
-async function seedPackage(name: string): Promise<string> {
-  const dir = path.join(cacheRoot(), name);
-  await mkdir(path.join(dir, "nested"), { recursive: true });
-  await writeFile(path.join(dir, "nested", "file.txt"), "cached");
-  return dir;
+  return cleaner.packagesCacheRoot();
 }
 
 describe("clearCache default mode", () => {
   test("removes opencode-architect and every opencode-architect@* copy", async () => {
-    const plain = await seedPackage("opencode-architect");
-    const latest = await seedPackage("opencode-architect@latest");
-    const versioned = await seedPackage("opencode-architect@0.7.1");
-    const other = await seedPackage("other-package");
+    const plain = await seedCachedPackage(cacheRoot(), "opencode-architect");
+    const latest = await seedCachedPackage(cacheRoot(), "opencode-architect@latest");
+    const versioned = await seedCachedPackage(cacheRoot(), "opencode-architect@0.7.1");
+    const other = await seedCachedPackage(cacheRoot(), "other-package");
 
-    const outcome = await clearCache();
+    const outcome = await cleaner.clear({ packageName: null, all: false, yes: false });
 
     expect(outcome.warnings).toEqual([]);
     expect(outcome.removed.sort()).toEqual([plain, latest, versioned].sort());
@@ -48,15 +44,15 @@ describe("clearCache default mode", () => {
     expect(existsSync(other)).toBe(true);
   });
 
-  test("exits successfully with nothing cached", async () => {
-    const outcome = await clearCache();
+  test("succeeds with nothing cached", async () => {
+    const outcome = await cleaner.clear({ packageName: null, all: false, yes: false });
 
     expect(outcome.removed).toEqual([]);
     expect(outcome.warnings).toEqual([]);
   });
 
   test("succeeds when the packages directory does not exist at all", async () => {
-    const outcome = await clearCache();
+    const outcome = await cleaner.clear({ packageName: null, all: false, yes: false });
 
     expect(outcome.removed).toEqual([]);
     expect(outcome.warnings).toEqual([]);
@@ -65,11 +61,11 @@ describe("clearCache default mode", () => {
 
 describe("clearCache --package mode", () => {
   test("removes only that package's cache dirs", async () => {
-    const target = await seedPackage("some-pkg");
-    await seedPackage("some-pkg@1.0.0");
-    const ours = await seedPackage("opencode-architect");
+    const target = await seedCachedPackage(cacheRoot(), "some-pkg");
+    await seedCachedPackage(cacheRoot(), "some-pkg@1.0.0");
+    const ours = await seedCachedPackage(cacheRoot(), "opencode-architect");
 
-    const outcome = await clearCache({ packageName: "some-pkg", yes: true });
+    const outcome = await cleaner.clear({ packageName: "some-pkg", all: false, yes: true });
 
     expect(outcome.warnings).toEqual([]);
     expect(existsSync(target)).toBe(false);
@@ -78,71 +74,54 @@ describe("clearCache --package mode", () => {
   });
 
   test("requires --yes and deletes nothing without it", async () => {
-    const dir = await seedPackage("some-pkg");
+    const dir = await seedCachedPackage(cacheRoot(), "some-pkg");
 
-    expect(() => clearCache({ packageName: "some-pkg" })).toThrow(ClearCacheUsageError);
-    try {
-      await clearCache({ packageName: "some-pkg" });
-    } catch {
-      // expected
-    }
+    await expectClearCacheUsageError(cleaner.clear({ packageName: "some-pkg", all: false, yes: false }));
     expect(existsSync(dir)).toBe(true);
   });
 
   test("rejects unsafe package names", async () => {
-    for (const name of ["../escape", "foo/bar", "foo\\bar", "..", "."]) {
-      expect(() => clearCache({ packageName: name, yes: true })).toThrow(ClearCacheUsageError);
-      expect(isUnsafePackageName(name)).toBe(true);
+    for (const name of ["../escape", "foo/bar", "foo\\bar", "..", "foo..bar", "."]) {
+      expect(cleaner.isUnsafePackageName(name)).toBe(true);
+      await expectClearCacheUsageError(cleaner.clear({ packageName: name, all: false, yes: true }));
     }
   });
 });
 
 describe("clearCache --all mode", () => {
   test("removes the entire opencode cache directory", async () => {
-    await seedPackage("opencode-architect");
-    const unrelated = path.join(opencodeCacheRoot(), "other-tool");
-    await mkdir(unrelated, { recursive: true });
-    await writeFile(path.join(unrelated, "data"), "x");
+    await seedCachedPackage(cacheRoot(), "opencode-architect");
+    const unrelated = path.join(cleaner.opencodeCacheRoot(), "other-tool");
+    await seedCachedPackage(unrelated, "data");
 
-    const outcome = await clearCache({ all: true, yes: true });
+    const outcome = await cleaner.clear({ packageName: null, all: true, yes: true });
 
     expect(outcome.warnings).toEqual([]);
-    expect(existsSync(opencodeCacheRoot())).toBe(false);
+    expect(existsSync(cleaner.opencodeCacheRoot())).toBe(false);
   });
 
   test("requires --yes and deletes nothing without it", async () => {
-    await seedPackage("opencode-architect");
+    await seedCachedPackage(cacheRoot(), "opencode-architect");
 
-    try {
-      await clearCache({ all: true });
-      throw new Error("should have thrown");
-    } catch (error) {
-      expect(error).toBeInstanceOf(ClearCacheUsageError);
-    }
+    await expectClearCacheUsageError(cleaner.clear({ packageName: null, all: true, yes: false }));
     expect(existsSync(path.join(cacheRoot(), "opencode-architect"))).toBe(true);
   });
 });
 
 describe("clearCache argument validation", () => {
-  test("--package together with --all exits with a usage error", async () => {
-    try {
-      await clearCache({ packageName: "some-pkg", all: true, yes: true });
-      throw new Error("should have thrown");
-    } catch (error) {
-      expect(error).toBeInstanceOf(ClearCacheUsageError);
-      expect((error as Error).message).toContain("mutually exclusive");
-    }
+  test("--package together with --all rejects with a usage error", async () => {
+    await expectClearCacheUsageError(cleaner.clear({ packageName: "some-pkg", all: true, yes: true }));
   });
 });
 
 describe("clearCache failure tolerance", () => {
   test("warns and continues when a removal fails", async () => {
-    const kept = await seedPackage("opencode-architect");
-    const removed = await seedPackage("opencode-architect@0.1.0");
+    const kept = await seedCachedPackage(cacheRoot(), "opencode-architect");
+    const removed = await seedCachedPackage(cacheRoot(), "opencode-architect@0.1.0");
     await chmod(kept, 0o500);
 
     try {
-      const outcome = await clearCache();
+      const outcome = await cleaner.clear({ packageName: null, all: false, yes: false });
 
       expect(outcome.removed).toContain(removed);
       expect(existsSync(removed)).toBe(false);
