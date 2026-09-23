@@ -33,6 +33,7 @@
     "email": "support@expertvision.software"
   },
   "scripts": {
+    "start": "bun test",
     "check": "tsc --noEmit",
     "test": "bun test",
     "prepublishOnly": "npm run check && npm test",
