@@ -1,20 +1,24 @@
 # OpenCode config — fundamentals
 
-OpenCode is configured with `opencode.json` (or `.jsonc`). Schema: `https://opencode.ai/config.json`. TUI settings live in a separate `tui.json` (`https://opencode.ai/tui.json`).
+OpenCode is configured with `opencode.json` or `opencode.jsonc`; the global config may also be `config.json`. Schema: `https://opencode.ai/config.json`. TUI settings live in a separate `tui.json` (`https://opencode.ai/tui.json`).
 
 ## Locations and precedence
 
 Configs are **merged, not replaced**; later sources override earlier ones only for conflicting keys:
 
 1. Remote config (`.well-known/opencode`, organizational defaults)
-2. Global config (`~/.config/opencode/opencode.json`)
+2. Global config (`~/.config/opencode/`: `opencode.json`, `opencode.jsonc`, or `config.json`)
 3. Custom config (`OPENCODE_CONFIG` env var)
-4. Project config (`opencode.json` at project root, searched up to the git root)
+4. Project config (`opencode.json`/`opencode.jsonc` at project root, searched up to the git root)
 5. `.opencode/` directories (agents, commands, plugins, skills, tools)
 6. Inline config (`OPENCODE_CONFIG_CONTENT` env var)
 7. Managed files (`/etc/opencode/`, `%ProgramData%\opencode`, macOS app support) and macOS MDM preferences — highest, not user-overridable
 
 So: defaults/remote < global < project; managed settings override everything.
+
+## Editing configs programmatically
+
+When a tool adds a `plugin` entry (e.g. a plugin package's installer): check both `.json`/`.jsonc` extensions at every base plus global `config.json`; when no config exists at a base, create a repo-root `opencode.jsonc`; edit by text splice into the `plugin` array only, leaving every other byte untouched, and write nothing when a semantically matching entry already exists. See the plugins reference ("Editing consumer configs") for the full rule set.
 
 ## Key schema options
 

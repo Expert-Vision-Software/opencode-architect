@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Conformance checklist items for the content-based deployment plan (ADR-0008): surgical config writes (B5), zero-write registration no-op (B6), content declaration present and consistent (E1), and binary mode enforcement (E2); E1–E2 and B5–B6 join the hard non-conformance set and the auditor's conformance review covers section E
+- Plugins and config references document the allowed config patterns (including global `config.json`), the repo-root `opencode.jsonc` create-default, and the surgical-writer rule
+
 ### Changed
 
 - **Breaking:** `install` is now a registration manager (plugin install is the only mode for this code-backed package, per [ADR-0008](docs/adr/0008-content-based-deployment-plans.md), superseding ADR-0004): the CLI ensures the `plugin` entry in the target scope's config file via the surgical editor — comments and formatting preserved, unparseable configs abort untouched — and writes a generalized manifest (version, mode, plugin entry, target config file) at the scope base. A matching manifest with the entry present is a zero-write no-op. `--mode copy` is refused with an explanatory error; `--force` now re-registers and rewrites the manifest instead of removing the entry

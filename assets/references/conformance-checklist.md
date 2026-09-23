@@ -64,6 +64,20 @@ finding.
   never deletes the cache (deletion races OpenCode's in-flight installs);
   it instructs only.
 
+- **B5 Surgical config writes.** Every registration write to a consumer
+  config file is a text splice into the `plugin` array with every other
+  byte untouched — indentation, comments, trailing commas, key order, and
+  unrelated keys all preserved. A parse-then-reserialize of the whole file
+  (which reformats or drops comments) is non-conformant. The splice never
+  touches anything outside the array, and a file that cannot be spliced is
+  reported, not rewritten.
+- **B6 Zero-write registration no-op.** When a semantically matching entry
+  (`name`, `name@latest`, `name@x.y.z`) already exists in a candidate
+  config, registration for that config is a no-op: zero bytes written, even
+  when the entry's spelling differs from the canonical form. Conversely, a
+  plugin-mode up-to-date check requires the recorded entry to still be
+  present — a version match alone is not enough when the entry was removed.
+
 ## C. Scope discipline
 
 - **C1 Read-only, config-based scope detection.** Registration scope is
@@ -140,12 +154,28 @@ finding.
   `name@latest` or a `file:///` URL. Verify emitted keys against
   `https://opencode.ai/config.json` (the `Config` definition sets
   `additionalProperties: false`, so an invalid key is rejected at load). A
-  shipped snippet using an invalid key is non-conformant.
+   shipped snippet using an invalid key is non-conformant.
+
+## E. Deployment plan (ADR-0008)
+
+- **E1 Content declaration present and consistent.** `package.json` carries
+  a `"content"` field (`"assets"` or `"code"`), and it matches what the
+  package actually ships: any package containing agents, tools, hooks, or
+  other plugin integrations declares `"code"`; an assets-only package
+  declares `"assets"`. A missing declaration, or one contradicting the
+  payload (e.g. `"assets"` on a package shipping a `plugin.ts` hook) is
+  non-conformant.
+- **E2 Binary mode enforcement.** The deployment plan is binary and
+  content-decided: assets-only packages copy-install by default (`--mode
+  plugin` opts into registration); code-backed packages always register and
+  `--mode copy` is a hard, explanatory error (`CopyModeUnsupportedError`),
+  never a hybrid copy-plus-register. A per-scope mode choice, a mixed
+  copy-and-register install, or a silent mode fallback is non-conformant.
 
 ## Verdict scale
 
 - **Conformant** — every item evidenced.
 - **Partially conformant** — violations are latent (dead code, fallback
   paths not yet exercised); list item IDs with evidence.
-- **Non-conformant** — any A1–A4, B1, B4, C1–C3 violation on a live code path;
-  these are the historically destructive patterns.
+- **Non-conformant** — any A1–A4, B1, B4–B6, C1–C3, E1–E2 violation on a
+  live code path; these are the historically destructive patterns.
