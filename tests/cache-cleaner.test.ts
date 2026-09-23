@@ -34,7 +34,7 @@ describe("clearCache default mode", () => {
     const versioned = await seedCachedPackage(cacheRoot(), "opencode-architect@0.7.1");
     const other = await seedCachedPackage(cacheRoot(), "other-package");
 
-    const outcome = await cleaner.clear({ packageName: null, all: false, yes: false });
+    const outcome = await cleaner.clear({ packageName: null, all: false, yes: false, dryRun: false });
 
     expect(outcome.warnings).toEqual([]);
     expect(outcome.removed.sort()).toEqual([plain, latest, versioned].sort());
@@ -45,14 +45,14 @@ describe("clearCache default mode", () => {
   });
 
   test("succeeds with nothing cached", async () => {
-    const outcome = await cleaner.clear({ packageName: null, all: false, yes: false });
+    const outcome = await cleaner.clear({ packageName: null, all: false, yes: false, dryRun: false });
 
     expect(outcome.removed).toEqual([]);
     expect(outcome.warnings).toEqual([]);
   });
 
   test("succeeds when the packages directory does not exist at all", async () => {
-    const outcome = await cleaner.clear({ packageName: null, all: false, yes: false });
+    const outcome = await cleaner.clear({ packageName: null, all: false, yes: false, dryRun: false });
 
     expect(outcome.removed).toEqual([]);
     expect(outcome.warnings).toEqual([]);
@@ -65,7 +65,7 @@ describe("clearCache --package mode", () => {
     await seedCachedPackage(cacheRoot(), "some-pkg@1.0.0");
     const ours = await seedCachedPackage(cacheRoot(), "opencode-architect");
 
-    const outcome = await cleaner.clear({ packageName: "some-pkg", all: false, yes: true });
+    const outcome = await cleaner.clear({ packageName: "some-pkg", all: false, yes: true, dryRun: false });
 
     expect(outcome.warnings).toEqual([]);
     expect(existsSync(target)).toBe(false);
@@ -76,14 +76,14 @@ describe("clearCache --package mode", () => {
   test("requires --yes and deletes nothing without it", async () => {
     const dir = await seedCachedPackage(cacheRoot(), "some-pkg");
 
-    await expectClearCacheUsageError(cleaner.clear({ packageName: "some-pkg", all: false, yes: false }));
+    await expectClearCacheUsageError(cleaner.clear({ packageName: "some-pkg", all: false, yes: false, dryRun: false }));
     expect(existsSync(dir)).toBe(true);
   });
 
   test("rejects unsafe package names", async () => {
     for (const name of ["../escape", "foo/bar", "foo\\bar", "..", "foo..bar", "."]) {
       expect(cleaner.isUnsafePackageName(name)).toBe(true);
-      await expectClearCacheUsageError(cleaner.clear({ packageName: name, all: false, yes: true }));
+      await expectClearCacheUsageError(cleaner.clear({ packageName: name, all: false, yes: true, dryRun: false }));
     }
   });
 });
@@ -94,7 +94,7 @@ describe("clearCache --all mode", () => {
     const unrelated = path.join(cleaner.opencodeCacheRoot(), "other-tool");
     await seedCachedPackage(unrelated, "data");
 
-    const outcome = await cleaner.clear({ packageName: null, all: true, yes: true });
+    const outcome = await cleaner.clear({ packageName: null, all: true, yes: true, dryRun: false });
 
     expect(outcome.warnings).toEqual([]);
     expect(existsSync(cleaner.opencodeCacheRoot())).toBe(false);
@@ -103,14 +103,66 @@ describe("clearCache --all mode", () => {
   test("requires --yes and deletes nothing without it", async () => {
     await seedCachedPackage(cacheRoot(), "opencode-architect");
 
-    await expectClearCacheUsageError(cleaner.clear({ packageName: null, all: true, yes: false }));
+    await expectClearCacheUsageError(cleaner.clear({ packageName: null, all: true, yes: false, dryRun: false }));
     expect(existsSync(path.join(cacheRoot(), "opencode-architect"))).toBe(true);
   });
 });
 
 describe("clearCache argument validation", () => {
   test("--package together with --all rejects with a usage error", async () => {
-    await expectClearCacheUsageError(cleaner.clear({ packageName: "some-pkg", all: true, yes: true }));
+    await expectClearCacheUsageError(cleaner.clear({ packageName: "some-pkg", all: true, yes: true, dryRun: false }));
+  });
+});
+
+describe("clearCache dry-run", () => {
+  test("default mode lists this package's copies without deleting", async () => {
+    const plain = await seedCachedPackage(cacheRoot(), "opencode-architect");
+    const latest = await seedCachedPackage(cacheRoot(), "opencode-architect@latest");
+    const other = await seedCachedPackage(cacheRoot(), "other-package");
+
+    const outcome = await cleaner.clear({ packageName: null, all: false, yes: false, dryRun: true });
+
+    expect(outcome.dryRun).toBe(true);
+    expect(outcome.warnings).toEqual([]);
+    expect(outcome.removed.sort()).toEqual([plain, latest].sort());
+    expect(existsSync(plain)).toBe(true);
+    expect(existsSync(latest)).toBe(true);
+    expect(existsSync(other)).toBe(true);
+  });
+
+  test("--package lists only that package's copies without deleting", async () => {
+    const target = await seedCachedPackage(cacheRoot(), "some-pkg");
+    await seedCachedPackage(cacheRoot(), "some-pkg@1.0.0");
+    const ours = await seedCachedPackage(cacheRoot(), "opencode-architect");
+
+    const outcome = await cleaner.clear({ packageName: "some-pkg", all: false, yes: false, dryRun: true });
+
+    expect(outcome.dryRun).toBe(true);
+    expect(existsSync(target)).toBe(true);
+    expect(existsSync(path.join(cacheRoot(), "some-pkg@1.0.0"))).toBe(true);
+    expect(existsSync(ours)).toBe(true);
+  });
+
+  test("--all lists the whole opencode cache dir without deleting", async () => {
+    await seedCachedPackage(cacheRoot(), "opencode-architect");
+
+    const outcome = await cleaner.clear({ packageName: null, all: true, yes: false, dryRun: true });
+
+    expect(outcome.dryRun).toBe(true);
+    expect(outcome.removed).toEqual([cleaner.opencodeCacheRoot()]);
+    expect(existsSync(cleaner.opencodeCacheRoot())).toBe(true);
+  });
+
+  test("with nothing cached lists nothing and succeeds", async () => {
+    const outcome = await cleaner.clear({ packageName: null, all: false, yes: false, dryRun: true });
+
+    expect(outcome.removed).toEqual([]);
+    expect(outcome.warnings).toEqual([]);
+  });
+
+  test("still rejects mutual exclusion and unsafe names", async () => {
+    await expectClearCacheUsageError(cleaner.clear({ packageName: "some-pkg", all: true, yes: false, dryRun: true }));
+    await expectClearCacheUsageError(cleaner.clear({ packageName: "../escape", all: false, yes: false, dryRun: true }));
   });
 });
 
@@ -121,7 +173,7 @@ describe("clearCache failure tolerance", () => {
     await chmod(kept, 0o500);
 
     try {
-      const outcome = await cleaner.clear({ packageName: null, all: false, yes: false });
+      const outcome = await cleaner.clear({ packageName: null, all: false, yes: false, dryRun: false });
 
       expect(outcome.removed).toContain(removed);
       expect(existsSync(removed)).toBe(false);

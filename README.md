@@ -43,6 +43,7 @@ bunx opencode-architect status                  # show mode, version, and the co
 bunx opencode-architect uninstall               # remove the plugin entry, the manifest, and any residual payload
 bunx opencode-architect clear-cache             # remove cached copies of this package from OpenCode's package cache
 bunx opencode-architect clear-cache --all --yes # remove the whole OpenCode cache directory (destructive)
+bunx opencode-architect clear-cache --dry-run   # preview what clear-cache would remove without deleting
 bunx opencode-architect install --force         # re-register and rewrite the manifest even when up to date
 bunx opencode-architect --help                  # full usage
 ```
@@ -53,7 +54,7 @@ Every install — including a no-op — also clears this package's stale copies 
 
 **Upgrading from a copy install (pre-0.8):** if a previous version copied agents into your scope base, install detects the old manifest, removes exactly the files it lists, prints a notice, and switches the scope to plugin registration in one step. Locally modified files are tracked by hash; uninstall and migration only remove what the manifest recorded.
 
-`clear-cache` is a manual-only command (never invoked at load time) for removing cached copies from OpenCode's package cache (`$XDG_CACHE_HOME/opencode/packages`, falling back to `~/.cache/opencode/packages`). With no flags it removes `opencode-architect` and every `opencode-architect@*` copy. `--package <name>` removes `<name>` and every `<name>@*`; `--all` removes the whole OpenCode cache directory (`$XDG_CACHE_HOME/opencode`, falling back to `~/.cache/opencode`). Both broad modes require `--yes` to confirm, are mutually exclusive, and package names containing path separators or `..` are rejected. The command is idempotent — running with nothing cached succeeds — and removal failures warn without changing the exit code.
+`clear-cache` is a manual-only command (never invoked at load time) for removing cached copies from OpenCode's package cache (`$XDG_CACHE_HOME/opencode/packages`, falling back to `~/.cache/opencode/packages`). With no flags it removes `opencode-architect` and every `opencode-architect@*` copy. `--package <name>` removes `<name>` and every `<name>@*`; `--all` removes the whole OpenCode cache directory (`$XDG_CACHE_HOME/opencode`, falling back to `~/.cache/opencode`). `--dry-run` lists what any mode would remove without deleting anything, and previews broad modes without `--yes`. Both broad modes require `--yes` to confirm, are mutually exclusive, and package names containing path separators or `..` are rejected. The command is idempotent — running with nothing cached succeeds — and removal failures warn without changing the exit code.
 
 ## What you get: ten specialist OpenCode agents
 

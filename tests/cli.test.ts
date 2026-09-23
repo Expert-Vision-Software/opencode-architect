@@ -195,6 +195,44 @@ describe("cli clear-cache", () => {
     }
   });
 
+  test("dry-run lists what would be removed without deleting, in every mode", async () => {
+    const cacheDir = await mkdtemp(path.join(tmpdir(), "oa-cli-cc-"));
+    try {
+      const ours = await seedCache(packagesDir(cacheDir), "opencode-architect");
+      const other = await seedCache(packagesDir(cacheDir), "some-pkg");
+
+      const defaultRun = await runCli(["clear-cache", "--dry-run"], undefined, { XDG_CACHE_HOME: cacheDir });
+      expect(defaultRun.exitCode).toBe(0);
+      expect(defaultRun.stdout).toContain("Would remove");
+      expect(defaultRun.stdout).toContain(ours);
+      expect(defaultRun.stdout).not.toContain(other);
+      expect(existsSync(ours)).toBe(true);
+      expect(existsSync(other)).toBe(true);
+
+      const packageRun = await runCli(["clear-cache", "--package", "some-pkg", "--dry-run"], undefined, { XDG_CACHE_HOME: cacheDir });
+      expect(packageRun.exitCode).toBe(0);
+      expect(packageRun.stdout).toContain(other);
+      expect(packageRun.stdout).not.toContain(ours);
+      expect(existsSync(other)).toBe(true);
+
+      const allRun = await runCli(["clear-cache", "--all", "--dry-run"], undefined, { XDG_CACHE_HOME: cacheDir });
+      expect(allRun.exitCode).toBe(0);
+      expect(allRun.stdout).toContain(path.join(cacheDir, "opencode"));
+      expect(existsSync(path.join(cacheDir, "opencode"))).toBe(true);
+
+      const emptyDir = await mkdtemp(path.join(tmpdir(), "oa-cli-cc-"));
+      try {
+        const emptyRun = await runCli(["clear-cache", "--dry-run"], undefined, { XDG_CACHE_HOME: emptyDir });
+        expect(emptyRun.exitCode).toBe(0);
+        expect(emptyRun.stdout).toContain("nothing to remove");
+      } finally {
+        await rm(emptyDir, { recursive: true, force: true });
+      }
+    } finally {
+      await rm(cacheDir, { recursive: true, force: true });
+    }
+  });
+
   test("running with nothing cached exits 0", async () => {
     const cacheDir = await mkdtemp(path.join(tmpdir(), "oa-cli-cc-"));
     try {

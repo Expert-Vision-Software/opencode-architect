@@ -1,4 +1,4 @@
-import { readdir, rm } from "node:fs/promises";
+import { exists, readdir, rm } from "node:fs/promises";
 import { homedir } from "node:os";
 import path from "node:path";
 import { ClearCacheUsageError } from "./clear-cache-usage-error";
@@ -9,11 +9,13 @@ export interface ClearCacheOptions {
   packageName: string | null;
   all: boolean;
   yes: boolean;
+  dryRun: boolean;
 }
 
 export interface ClearCacheOutcome {
   removed: string[];
   warnings: string[];
+  dryRun: boolean;
 }
 
 export class CacheCleaner {
@@ -32,15 +34,16 @@ export class CacheCleaner {
   }
 
   public async clear(options: ClearCacheOptions): Promise<ClearCacheOutcome> {
-    const { packageName = null, all = false, yes = false } = options;
+    const { packageName = null, all = false, yes = false, dryRun = false } = options;
+    const dryRunOutcome = (removed: string[], warnings: string[]): ClearCacheOutcome => ({ removed, warnings, dryRun });
 
     if (packageName !== null && all) {
       throw new ClearCacheUsageError("--package and --all are mutually exclusive.");
     }
-    if (packageName !== null && !yes) {
+    if (packageName !== null && !yes && !dryRun) {
       throw new ClearCacheUsageError(`--package requires --yes to confirm deletion. Re-run with: clear-cache --package ${packageName} --yes`);
     }
-    if (all && !yes) {
+    if (all && !yes && !dryRun) {
       throw new ClearCacheUsageError("--all requires --yes to confirm deletion. Re-run with: clear-cache --all --yes");
     }
     if (packageName !== null && this.isUnsafePackageName(packageName)) {
@@ -51,8 +54,13 @@ export class CacheCleaner {
     const warnings: string[] = [];
 
     if (all) {
-      await this.removeTarget(this.opencodeCacheRoot(), removed, warnings, true);
-      return { removed, warnings };
+      const target = this.opencodeCacheRoot();
+      if (dryRun) {
+        if (await exists(target)) removed.push(target);
+        return dryRunOutcome(removed, warnings);
+      }
+      await this.removeTarget(target, removed, warnings, true);
+      return { removed, warnings, dryRun };
     }
 
     const name = packageName ?? PACKAGE_NAME;
@@ -61,7 +69,7 @@ export class CacheCleaner {
     try {
       entries = await readdir(packagesRoot);
     } catch (error) {
-      if ((error as NodeJS.ErrnoException)?.code === "ENOENT") return { removed, warnings };
+      if ((error as NodeJS.ErrnoException)?.code === "ENOENT") return { removed, warnings, dryRun };
       throw error;
     }
 
@@ -71,10 +79,15 @@ export class CacheCleaner {
       .sort()
       .map((entry) => path.join(packagesRoot, entry));
 
+    if (dryRun) {
+      removed.push(...targets);
+      return dryRunOutcome(removed, warnings);
+    }
+
     for (const target of targets) {
       await this.removeTarget(target, removed, warnings, false);
     }
-    return { removed, warnings };
+    return { removed, warnings, dryRun };
   }
 
   private async removeTarget(target: string, removed: string[], warnings: string[], force: boolean): Promise<void> {

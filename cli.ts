@@ -15,6 +15,7 @@ async function main(): Promise<void> {
       package: { type: "string" },
       all: { type: "boolean", default: false },
       yes: { type: "boolean", default: false },
+      "dry-run": { type: "boolean", default: false },
       help: { type: "boolean", short: "h", default: false },
       version: { type: "boolean", short: "v", default: false },
     },
@@ -96,7 +97,7 @@ async function main(): Promise<void> {
         }
         let outcome;
         try {
-          outcome = await new CacheCleaner().clear({ packageName: values.package ?? null, all: values.all, yes: values.yes });
+          outcome = await new CacheCleaner().clear({ packageName: values.package ?? null, all: values.all, yes: values.yes, dryRun: values["dry-run"] });
         } catch (error) {
           if (error instanceof ClearCacheUsageError) {
             console.error(error.message);
@@ -106,6 +107,9 @@ async function main(): Promise<void> {
         }
         if (outcome.removed.length === 0) {
           console.log("No cached copies found; nothing to remove.");
+        } else if (outcome.dryRun) {
+          console.log("Dry run; would remove:");
+          for (const target of outcome.removed) console.log(`  Would remove: ${target}`);
         } else {
           console.log("Removed cached copies:");
           for (const target of outcome.removed) console.log(`  Removed: ${target}`);
@@ -152,6 +156,7 @@ Options:
       --all              clear-cache: remove the whole OpenCode cache directory;
                          requires --yes
       --yes              clear-cache: confirm a destructive broad mode
+      --dry-run          clear-cache: list what would be removed without deleting
   -h, --help             Show this help message
   -v, --version          Show version
 
@@ -163,6 +168,7 @@ Examples:
   opencode-architect clear-cache
   opencode-architect clear-cache --package some-pkg --yes
   opencode-architect clear-cache --all --yes
+  opencode-architect clear-cache --dry-run
 `);
 }
 
