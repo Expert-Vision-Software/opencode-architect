@@ -1,0 +1,497 @@
+# Inputs
+
+None — emit as-is as src/plugin-config.ts.
+
+**Load-bearing — do not simplify:** the editor is a surgical text splice into the `plugin` array with every other byte of the config untouched — never a parse-then-reserialize (comments, key order, and formatting survive); candidates are consulted in priority order: for local scope the nested `.opencode/opencode.json` then `opencode.jsonc`, then the repo-root `opencode.json` then `opencode.jsonc`; for global scope the same pair in the global scope base; and finally the global `config.json` which is read-only (detection only, never written); a config that fails to parse blocks the edit — never rewrite config from `{}`; `.jsonc` parses leniently (comments blanked string-aware so `$schema` URLs and escaped quotes survive, trailing commas removed) and `.json` stays strict; matching is semantic via `PluginNameNormalizer` (`name`, `name@latest`, `name@x.y.z` are the same package); an existing semantically matching entry is a zero-write no-op; when no config exists a minimal `opencode.jsonc` is created; every splice re-parses the result and aborts untouched if the entry is not present after the edit.
+
+---
+import { exists, mkdir, readFile, writeFile } from "node:fs/promises";
+import { homedir } from "node:os";
+import path from "node:path";
+import { PluginNameNormalizer } from "./plugin-name.ts";
+
+export type ConfigScope = "local" | "global";
+
+export interface EnsurePluginEntryOptions {
+  scope: ConfigScope;
+  projectDir: string;
+}
+
+export interface EnsurePluginEntryOutcome {
+  action: "noop" | "updated" | "created" | "blocked";
+  configPath: string | null;
+  warning: string | null;
+}
+
+export interface RemovePluginEntryOutcome {
+  action: "noop" | "removed" | "blocked";
+  configPath: string | null;
+  warning: string | null;
+}
+
+interface CandidateConfig {
+  path: string;
+  lenient: boolean;
+  writable: boolean;
+}
+
+export type ConfigCheck = { ok: true } | { ok: false; warning: string };
+
+interface PluginArrayRange {
+  bracketStart: number;
+  bracketEnd: number;
+}
+
+const DEFAULT_CONFIG_TEMPLATE = `{
+  // OpenCode configuration
+  "$schema": "https://opencode.ai/config.json",
+  "plugin": ["__PACKAGE_NAME__"]
+}
+`;
+
+export class PluginConfigEditor {
+  public async ensurePluginEntry(
+    packageName: string,
+    options: EnsurePluginEntryOptions,
+  ): Promise<EnsurePluginEntryOutcome> {
+    for (const candidate of this.candidateConfigs(options)) {
+      if (!(await exists(candidate.path))) continue;
+      const text = await readFile(candidate.path, "utf-8");
+      const plugins = this.parsePluginArray(text, candidate.lenient);
+      if (plugins === null) {
+        return {
+          action: "blocked",
+          configPath: candidate.path,
+          warning:
+            `Config file ${candidate.path} could not be parsed; refusing to modify it. ` +
+            `Fix or remove the file and re-run the install.`,
+        };
+      }
+      if (this.hasMatchingEntry(plugins, packageName)) {
+        return { action: "noop", configPath: candidate.path, warning: null };
+      }
+      if (!candidate.writable) continue;
+      const spliced = this.spliceEntry(text, packageName, candidate.lenient);
+      if (spliced === null) {
+        return {
+          action: "blocked",
+          configPath: candidate.path,
+          warning: `Plugin array in ${candidate.path} could not be safely edited; file left untouched.`,
+        };
+      }
+      await mkdir(path.dirname(candidate.path), { recursive: true });
+      await writeFile(candidate.path, spliced);
+      return { action: "updated", configPath: candidate.path, warning: null };
+    }
+
+    const target = this.defaultConfigPath(options);
+    const content = DEFAULT_CONFIG_TEMPLATE.replace("__PACKAGE_NAME__", packageName);
+    await mkdir(path.dirname(target), { recursive: true });
+    await writeFile(target, content);
+    return { action: "created", configPath: target, warning: null };
+  }
+
+  public async checkParseable(options: EnsurePluginEntryOptions): Promise<ConfigCheck> {
+    for (const candidate of this.candidateConfigs(options)) {
+      if (!(await exists(candidate.path))) continue;
+      const text = await readFile(candidate.path, "utf-8");
+      if (this.parsePluginArray(text, candidate.lenient) === null) {
+        return {
+          ok: false,
+          warning:
+            `Config file ${candidate.path} could not be parsed; refusing to modify it. ` +
+            `Fix or remove the file and re-run the command.`,
+        };
+      }
+    }
+    return { ok: true };
+  }
+
+  public async findRegistration(
+    packageName: string,
+    options: EnsurePluginEntryOptions,
+  ): Promise<string | null> {
+    for (const candidate of this.candidateConfigs(options)) {
+      if (!(await exists(candidate.path))) continue;
+      const text = await readFile(candidate.path, "utf-8");
+      const plugins = this.parsePluginArray(text, candidate.lenient);
+      if (plugins === null) continue;
+      if (this.hasMatchingEntry(plugins, packageName)) return candidate.path;
+    }
+    return null;
+  }
+
+  public async removePluginEntry(
+    packageName: string,
+    options: EnsurePluginEntryOptions,
+  ): Promise<RemovePluginEntryOutcome> {
+    for (const candidate of this.candidateConfigs(options)) {
+      if (!(await exists(candidate.path)) || !candidate.writable) continue;
+      const text = await readFile(candidate.path, "utf-8");
+      const plugins = this.parsePluginArray(text, candidate.lenient);
+      if (plugins === null) {
+        return {
+          action: "blocked",
+          configPath: candidate.path,
+          warning:
+            `Config file ${candidate.path} could not be parsed; refusing to modify it. ` +
+            `Fix or remove the file and re-run the uninstall.`,
+        };
+      }
+      if (!this.hasMatchingEntry(plugins, packageName)) continue;
+      const spliced = this.spliceOutEntry(text, packageName, candidate.lenient);
+      if (spliced === null) {
+        return {
+          action: "blocked",
+          configPath: candidate.path,
+          warning: `Plugin array in ${candidate.path} could not be safely edited; file left untouched.`,
+        };
+      }
+      await writeFile(candidate.path, spliced);
+      return { action: "removed", configPath: candidate.path, warning: null };
+    }
+    return { action: "noop", configPath: null, warning: null };
+  }
+
+  public hasMatchingEntry(entries: string[], packageName: string): boolean {
+    return entries.some((entry) => this.matchesEntry(entry, packageName));
+  }
+
+  private matchesEntry(entry: string, packageName: string): boolean {
+    const specIndex = entry.lastIndexOf("@");
+    const name = specIndex > 0 ? entry.slice(0, specIndex) : entry;
+    return name === packageName;
+  }
+
+  private candidateConfigs(options: EnsurePluginEntryOptions): CandidateConfig[] {
+    const scopeBase = this.scopeBase(options.scope, options.projectDir);
+    const repoRoot = options.projectDir;
+    const configs: CandidateConfig[] = [];
+    if (options.scope === "local") {
+      for (const root of [scopeBase, repoRoot]) {
+        configs.push({ path: path.join(root, "opencode.json"), lenient: false, writable: true });
+        configs.push({ path: path.join(root, "opencode.jsonc"), lenient: true, writable: true });
+      }
+    } else {
+      for (const file of ["opencode.json", "opencode.jsonc"]) {
+        configs.push({ path: path.join(scopeBase, file), lenient: file.endsWith(".jsonc"), writable: true });
+      }
+    }
+    configs.push({ path: path.join(scopeBase, "config.json"), lenient: false, writable: false });
+    return configs;
+  }
+
+  private defaultConfigPath(options: EnsurePluginEntryOptions): string {
+    if (options.scope === "global") {
+      return path.join(this.scopeBase("global", options.projectDir), "opencode.jsonc");
+    }
+    return path.join(options.projectDir, "opencode.jsonc");
+  }
+
+  private scopeBase(scope: ConfigScope, projectDir: string): string {
+    if (scope === "local") return path.join(projectDir, ".opencode");
+    const xdgConfigHome = process.env.XDG_CONFIG_HOME;
+    if (xdgConfigHome) return path.join(xdgConfigHome, "opencode");
+    return path.join(homedir(), ".config", "opencode");
+  }
+
+  private parsePluginArray(text: string, lenient: boolean): string[] | null {
+    const config = this.parseConfig(text, lenient);
+    if (config === null) return null;
+    const plugins = config.plugin;
+    if (!Array.isArray(plugins)) return [];
+    return plugins.filter((entry): entry is string => typeof entry === "string");
+  }
+
+  private parseConfig(text: string, lenient: boolean): Record<string, unknown> | null {
+    const parseable = lenient ? this.blankComments(text).replace(/,(\s*[}\]])/g, "$1") : text;
+    try {
+      return JSON.parse(parseable) as Record<string, unknown>;
+    } catch {
+      return null;
+    }
+  }
+
+  private blankComments(text: string): string {
+    const chars = text.split("");
+    let inString = false;
+    let inLineComment = false;
+    let inBlockComment = false;
+    for (let i = 0; i < chars.length; i++) {
+      const current = chars[i];
+      const next = i + 1 < chars.length ? chars[i + 1] : "";
+      if (inLineComment) {
+        if (current === "\n") inLineComment = false;
+        else chars[i] = " ";
+        continue;
+      }
+      if (inBlockComment) {
+        if (current === "*" && next === "/") {
+          chars[i] = " ";
+          chars[i + 1] = " ";
+          i++;
+          inBlockComment = false;
+        } else {
+          chars[i] = " ";
+        }
+        continue;
+      }
+      if (inString) {
+        if (current === "\\") {
+          i++;
+          continue;
+        }
+        if (current === '"') inString = false;
+        continue;
+      }
+      if (current === '"') {
+        inString = true;
+        continue;
+      }
+      if (current === "/" && next === "/") {
+        chars[i] = " ";
+        chars[i + 1] = " ";
+        inLineComment = true;
+        continue;
+      }
+      if (current === "/" && next === "*") {
+        chars[i] = " ";
+        chars[i + 1] = " ";
+        inBlockComment = true;
+        continue;
+      }
+    }
+    return chars.join("");
+  }
+
+  private spliceEntry(text: string, packageName: string, lenient: boolean): string | null {
+    const navigable = this.blankComments(text);
+    const range = this.findPluginArrayRange(navigable);
+    const spliced =
+      range === null
+        ? this.splicePluginKey(text, navigable, packageName)
+        : this.spliceArrayEntry(text, navigable, range, packageName);
+    if (spliced === null) return null;
+    const plugins = this.parsePluginArray(spliced, lenient);
+    if (plugins === null || !this.hasMatchingEntry(plugins, packageName)) return null;
+    return spliced;
+  }
+
+  private spliceOutEntry(text: string, packageName: string, lenient: boolean): string | null {
+    const navigable = this.blankComments(text);
+    const range = this.findPluginArrayRange(navigable);
+    if (range === null) return null;
+    const innerStart = range.bracketStart + 1;
+    const innerEnd = range.bracketEnd;
+    const elements = this.arrayElementRanges(navigable, innerStart, innerEnd);
+    const target = elements.find((element) => {
+      const raw = text.slice(element.start, element.end);
+      return this.matchesEntry(this.unquote(raw), packageName);
+    });
+    if (!target) return null;
+    const withComma = this.dropAdjacentComma(navigable, elements, target, innerStart, innerEnd);
+    const result = text.slice(0, withComma.start) + text.slice(withComma.end);
+    const plugins = this.parsePluginArray(result, lenient);
+    if (plugins === null || this.hasMatchingEntry(plugins, packageName)) return null;
+    return result;
+  }
+
+  private arrayElementRanges(
+    navigable: string,
+    innerStart: number,
+    innerEnd: number,
+  ): Array<{ start: number; end: number }> {
+    const elements: Array<{ start: number; end: number }> = [];
+    let inString = false;
+    let depth = 0;
+    let start = -1;
+    for (let i = innerStart; i < innerEnd; i++) {
+      const current = navigable[i];
+      if (inString) {
+        if (current === "\\") i++;
+        else if (current === '"') inString = false;
+        continue;
+      }
+      if (current === '"') {
+        inString = true;
+        if (start === -1) start = i;
+        continue;
+      }
+      if (current === "[" || current === "{") {
+        depth++;
+        if (start === -1) start = i;
+        continue;
+      }
+      if (current === "]" || current === "}") {
+        depth--;
+        continue;
+      }
+      if (current === "," && depth === 0) {
+        if (start !== -1) elements.push({ start, end: i });
+        start = -1;
+        continue;
+      }
+      if (!/\s/.test(current ?? "") && start === -1) start = i;
+    }
+    if (start !== -1) elements.push({ start, end: innerEnd });
+    return elements;
+  }
+
+  private dropAdjacentComma(
+    navigable: string,
+    elements: Array<{ start: number; end: number }>,
+    target: { start: number; end: number },
+    innerStart: number,
+    innerEnd: number,
+  ): { start: number; end: number } {
+    const index = elements.indexOf(target);
+    const next = elements[index + 1];
+    if (next) return { start: target.start, end: next.start };
+    const previous = elements[index - 1];
+    if (previous) {
+      let commaEnd = target.start;
+      while (commaEnd > previous.end && /\s/.test(navigable[commaEnd - 1] ?? "")) commaEnd--;
+      if ((navigable[commaEnd - 1] ?? "") === ",") return { start: previous.end, end: commaEnd };
+    }
+    let start = target.start;
+    while (start > innerStart && /\s/.test(navigable[start - 1] ?? "")) start--;
+    let end = target.end;
+    while (end < innerEnd && /\s/.test(navigable[end] ?? "")) end++;
+    return { start, end };
+  }
+
+  private unquote(raw: string): string {
+    const trimmed = raw.trim();
+    if (trimmed.length >= 2 && trimmed.startsWith('"') && trimmed.endsWith('"')) {
+      return trimmed.slice(1, -1);
+    }
+    return trimmed;
+  }
+
+  private spliceArrayEntry(
+    text: string,
+    navigable: string,
+    range: PluginArrayRange,
+    packageName: string,
+  ): string | null {
+    const innerStart = range.bracketStart + 1;
+    const inner = text.slice(innerStart, range.bracketEnd);
+    const firstElementOffset = inner.search(/\S/);
+    if (firstElementOffset === -1) {
+      return text.slice(0, innerStart) + `"${packageName}"` + text.slice(range.bracketEnd);
+    }
+    const insertAt = innerStart + firstElementOffset;
+    const leadingWhitespace = inner.slice(0, firstElementOffset);
+    return text.slice(0, insertAt) + leadingWhitespace + `"${packageName}",` + text.slice(insertAt);
+  }
+
+  private splicePluginKey(text: string, navigable: string, packageName: string): string | null {
+    const objectStart = this.firstStructuralChar(navigable, "{");
+    if (objectStart === -1) return null;
+    const rest = text.slice(objectStart + 1);
+    const nextContentOffset = rest.search(/\S/);
+    if (nextContentOffset === -1) return null;
+    const insertAt = objectStart + 1 + nextContentOffset;
+    const isClosingBrace = rest[nextContentOffset] === "}";
+    const entry = isClosingBrace ? `"plugin": ["${packageName}"]` : `"plugin": ["${packageName}"],`;
+    const leadingWhitespace = nextContentOffset > 0 ? rest.slice(0, nextContentOffset) : "";
+    return text.slice(0, insertAt) + leadingWhitespace + entry + text.slice(insertAt);
+  }
+
+  private findPluginArrayRange(navigable: string): PluginArrayRange | null {
+    let searchFrom = 0;
+    while (searchFrom < navigable.length) {
+      const keyIndex = navigable.indexOf('"plugin"', searchFrom);
+      if (keyIndex === -1) return null;
+      if (this.precededByStructuralChar(navigable, keyIndex, ["{", ","])) {
+        const colonIndex = this.nextOutsideString(navigable, keyIndex + 8, ":");
+        if (colonIndex !== -1) {
+          const bracketStart = this.nextOutsideString(navigable, colonIndex + 1, "[");
+          if (bracketStart !== -1) {
+            const bracketEnd = this.matchingBracket(navigable, bracketStart);
+            if (bracketEnd !== null) return { bracketStart, bracketEnd };
+          }
+        }
+      }
+      searchFrom = keyIndex + 1;
+    }
+    return null;
+  }
+
+  private precededByStructuralChar(text: string, index: number, allowed: string[]): boolean {
+    for (let i = index - 1; i >= 0; i--) {
+      const current: string = text[i] ?? "";
+      if (/\s/.test(current)) continue;
+      return allowed.includes(current);
+    }
+    return false;
+  }
+
+  private firstStructuralChar(text: string, target: string): number {
+    let inString = false;
+    for (let i = 0; i < text.length; i++) {
+      const current = text[i];
+      if (inString) {
+        if (current === "\\") {
+          i++;
+          continue;
+        }
+        if (current === '"') inString = false;
+        continue;
+      }
+      if (current === '"') {
+        inString = true;
+        continue;
+      }
+      if (current === target) return i;
+    }
+    return -1;
+  }
+
+  private nextOutsideString(text: string, from: number, target: string): number {
+    let inString = false;
+    for (let i = from; i < text.length; i++) {
+      const current = text[i];
+      if (inString) {
+        if (current === "\\") {
+          i++;
+          continue;
+        }
+        if (current === '"') inString = false;
+        continue;
+      }
+      if (current === '"') {
+        inString = true;
+        continue;
+      }
+      if (current === target) return i;
+    }
+    return -1;
+  }
+
+  private matchingBracket(text: string, bracketStart: number): number | null {
+    let depth = 0;
+    let inString = false;
+    for (let i = bracketStart; i < text.length; i++) {
+      const current = text[i];
+      if (inString) {
+        if (current === "\\") {
+          i++;
+          continue;
+        }
+        if (current === '"') inString = false;
+        continue;
+      }
+      if (current === '"') {
+        inString = true;
+        continue;
+      }
+      if (current === "[") depth++;
+      else if (current === "]") {
+        depth--;
+        if (depth === 0) return i;
+      }
+    }
+    return null;
+  }
+}

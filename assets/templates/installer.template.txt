@@ -7,39 +7,40 @@
 | `COMMAND NAME` → "my-command.md" | Yes | Command file name in assets/commands/ | — |
 | `PACKAGE NAME` → "opencode-myextension" | Yes | npm package name; also the manifest file base | — |
 
-**Load-bearing — do not simplify:** manifest-gated idempotency (never `.version` markers); `readJsonConfig` returns `null` on parse errors and every writer aborts — never rewrite config from `{}`; config reading consults both `opencode.json` and `opencode.jsonc` per base, with `.jsonc` parsed leniently (comments + trailing commas) and `.json` strict; every unparseable candidate is warned about; plugin dedup is semantic with canonical `name@latest` output; bundled assets resolve through `ASSET_LAYOUT_DIR` (packages shipping repo-root `skills/` instead of `assets/` set it to `"."`), and a missing or empty asset source is a hard error naming the path, package name+version, cache dir, and install command — never a silent skip, and a manifest is never written when zero files were written; `migrateRootConfig` deletes nothing without a consent callback and is never called from `install()`.
+**Load-bearing — do not simplify:** the deployment plan is content-based (ADR-0008): the content declaration (`"content"` in package.json, `"assets"` or `"code"`) decides the install modes — assets-only packages copy-install by default with `--mode plugin` as the opt-in, code-backed packages always plugin-register and `--mode copy` throws `CopyModeUnsupportedError`; copy install touches no config file at all — no permission blocks, no MCP entries, no plugin array edits; the `plugin` array is edited only by the surgical `PluginConfigEditor` (text splice, every other byte untouched, never a parse-then-reserialize, never rewrite config from `{}`, existing entry is a zero-write no-op); manifest-gated idempotency (never `.version` markers), the plugin-mode zero-write no-op includes a present entry (version match alone is not enough), and payload idempotency requires a recorded, hash-matching payload — a plugin-mode manifest with an empty file map means the load-time hook has not ensured assets yet, so the ensure path runs and records the payload hashes while preserving the recorded mode, entry, and target config file; config reading consults both `opencode.json` and `opencode.jsonc` per base, with `.jsonc` parsed leniently and `.json` strict, and every unparseable candidate is warned about; bundled assets resolve through `ASSET_LAYOUT_DIR` (packages shipping repo-root `skills/` instead of `assets/` set it to `"."`), and a missing or empty asset source is a hard error naming the path, package name+version, cache dir, and install command — never a silent skip, and a manifest is never written when zero files were written; the manifest hashes the whole payload relative to the config base (skills and commands), and `migrateRootConfig` deletes nothing without a consent callback and is never called from `install()`. Every function here is scope-parameterized: the exact same logic serves the local scope base (`<project>/.opencode/`) and the global scope base (`~/.config/opencode/` or `$XDG_CONFIG_HOME/opencode/`), so a global install and a project install differ only in the base path — never in behavior.
 
 ---
 import { exists, mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { join, relative } from "node:path";
 import { PluginNameNormalizer } from "./plugin-name.ts";
 import { parseJsonc } from "./registration.ts";
-import { InstallManifest, listFilesRecursive } from "./manifest.ts";
+import { PluginConfigEditor } from "./plugin-config.ts";
+import { InstallManifest, listFilesRecursive, sha256, type InstallMode, type ManifestData } from "./manifest.ts";
+
+export type { InstallMode } from "./manifest.ts";
 
 export type Scope = "local" | "global";
 
 export interface InstallOptions {
-  configurePermission?: boolean;
-  configureMcp?: boolean;
-  addPluginConfig?: boolean;
+  mode?: InstallMode;
   force?: boolean;
 }
 
 export interface InstallResult {
   scope: Scope;
+  mode: InstallMode;
   skillPath: string;
   commandPath: string;
-  configPath: string;
-  permissionConfigured: boolean;
-  mcpConfigured: boolean;
-  pluginAdded: boolean;
+  entry: string | null;
+  entryConfigPath: string | null;
   skippedModified: string[];
   upToDate: boolean;
 }
 
 export interface UninstallResult {
   scope: Scope;
+  mode: InstallMode | null;
   removed: string[];
   pluginRemoved: boolean;
 }
@@ -47,6 +48,9 @@ export interface UninstallResult {
 export interface ScopeStatus {
   installed: boolean;
   version: string | null;
+  mode: InstallMode | null;
+  entry: string | null;
+  entryConfigPath: string | null;
   pluginInConfig: boolean;
 }
 
@@ -61,6 +65,16 @@ const PLUGIN_NAME = "opencode-myextension";
 const ASSET_LAYOUT_DIR = "assets";
 
 const normalizer = new PluginNameNormalizer();
+const editor = new PluginConfigEditor();
+
+export class CopyModeUnsupportedError extends Error {
+  constructor() {
+    super(
+      `${PLUGIN_NAME} is code-backed (agents, tools, or plugin integrations) and cannot be installed in copy mode. ` +
+        `Code-backed packages register as a plugin: run without --mode, or with --mode plugin.`
+    );
+  }
+}
 
 class AssetSourceMissingError extends Error {
   constructor(missingPath: string, cacheDir: string) {
@@ -82,6 +96,19 @@ export async function getPackageName(): Promise<string> {
   return JSON.parse(content).name;
 }
 
+export async function getContentDeclaration(): Promise<"assets" | "code"> {
+  const content = await Bun.file(`${import.meta.dirname}/../package.json`).text();
+  return JSON.parse(content).content === "code" ? "code" : "assets";
+}
+
+export async function resolveMode(requested: InstallMode | undefined): Promise<InstallMode> {
+  if ((await getContentDeclaration()) === "code") {
+    if (requested === "copy") throw new CopyModeUnsupportedError();
+    return "plugin";
+  }
+  return requested ?? "copy";
+}
+
 function getPackageDir(): string {
   return join(import.meta.dirname, "..");
 }
@@ -98,14 +125,20 @@ export function getLocalConfigPath(projectDir: string): string {
   return join(projectDir, ".opencode");
 }
 
-async function copyDir(src: string, dest: string): Promise<number> {
+function scopeBase(scope: Scope, projectDir: string): string {
+  return scope === "global" ? getGlobalConfigPath() : getLocalConfigPath(projectDir);
+}
+
+async function copyDir(src: string, dest: string, skip: Set<string> = new Set()): Promise<number> {
   await mkdir(dest, { recursive: true });
+  if (skip.has(dest)) return 0;
   let written = 0;
   for (const entry of await readdir(src, { withFileTypes: true })) {
     const s = join(src, entry.name);
     const d = join(dest, entry.name);
+    if (skip.has(d)) continue;
     if (entry.isDirectory()) {
-      written += await copyDir(s, d);
+      written += await copyDir(s, d, skip);
     } else {
       await Bun.write(d, Bun.file(s));
       written++;
@@ -121,46 +154,25 @@ async function requireAssetDir(path: string): Promise<string> {
   return path;
 }
 
-function parseConfig(raw: string, path: string): unknown {
-  return path.endsWith(".jsonc") ? parseJsonc(raw) : JSON.parse(raw);
+async function payloadPaths(configBase: string): Promise<{ skillPath: string; commandPath: string }> {
+  return {
+    skillPath: join(configBase, "skills", SKILL_NAME),
+    commandPath: join(configBase, "commands", COMMAND_NAME),
+  };
 }
 
-async function readJsonConfig(path: string): Promise<Record<string, unknown> | null> {
-  if (!(await exists(path))) return {};
-  try {
-    return parseConfig(await readFile(path, "utf-8"), path);
-  } catch {
-    console.warn(`Warning: ${path} is not valid JSON; refusing to modify it.`);
-    return null;
-  }
-}
-
-function configCandidates(configBase: string): string[] {
-  return [join(configBase, "opencode.json"), join(configBase, "opencode.jsonc")];
-}
-
-async function isPluginInConfigBase(configBase: string): Promise<boolean> {
-  for (const path of configCandidates(configBase)) {
-    if (await isPluginInConfig(path)) return true;
-  }
-  return false;
-}
-
-async function writeJsonConfig(path: string, config: Record<string, unknown>): Promise<void> {
-  await mkdir(join(path, ".."), { recursive: true });
-  await writeFile(path, JSON.stringify(config, null, 2));
-}
-
-async function ensureSkillFiles(scope: Scope, projectDir: string, force: boolean): Promise<{ upToDate: boolean; skippedModified: string[] }> {
+async function ensurePayload(scope: Scope, projectDir: string, force: boolean): Promise<{ upToDate: boolean; skippedModified: string[] }> {
   const version = await getPackageVersion();
-  const configBase = scope === "global" ? getGlobalConfigPath() : getLocalConfigPath(projectDir);
-  const skillPath = join(configBase, "skills", SKILL_NAME);
+  const configBase = scopeBase(scope, projectDir);
+  const { skillPath } = await payloadPaths(configBase);
   const manifest = new InstallManifest(configBase, PLUGIN_NAME);
-  if (await manifest.isUpToDate(version, skillPath)) {
+  const existing = await manifest.read();
+  const payloadRecorded = existing !== null && Object.keys(existing.files).length > 0;
+  if (payloadRecorded && (await manifest.isUpToDate(version, configBase))) {
     return { upToDate: true, skippedModified: [] };
   }
   const skippedModified: string[] = [];
-  const modified = await manifest.findConsumerModified(version, skillPath);
+  const modified = await manifest.findConsumerModified(configBase);
   if (!force && modified.length > 0) {
     for (const file of modified) {
       console.warn(`Warning: skipping consumer-modified file ${file} (use --force to overwrite).`);
@@ -168,70 +180,67 @@ async function ensureSkillFiles(scope: Scope, projectDir: string, force: boolean
     skippedModified.push(...modified);
   }
   const packagedSkillDir = await requireAssetDir(join(getPackageDir(), ASSET_LAYOUT_DIR, "skills", SKILL_NAME));
-  const written = await copyDir(packagedSkillDir, skillPath);
-  if (written === 0) throw new AssetSourceMissingError(packagedSkillDir, getPackageDir());
-  await manifest.write(version, skillPath, await listFilesRecursive(skillPath));
+  const written = await copyDir(packagedSkillDir, skillPath, new Set(skippedModified));
+  if (written === 0 && skippedModified.length === 0) throw new AssetSourceMissingError(packagedSkillDir, getPackageDir());
+  const { commandPath } = await payloadPaths(configBase);
+  const commandSource = await requireAssetDir(join(getPackageDir(), ASSET_LAYOUT_DIR, "commands"));
+  await mkdir(join(configBase, "commands"), { recursive: true });
+  await Bun.write(commandPath, Bun.file(join(commandSource, COMMAND_NAME)));
+  const skipped = new Set(skippedModified);
+  const hashes: Record<string, string> = {};
+  for (const file of [...(await listFilesRecursive(skillPath)), commandPath]) {
+    const rel = relative(configBase, file).replaceAll("\\", "/");
+    const packagedCounterpart = file.startsWith(skillPath)
+      ? join(packagedSkillDir, relative(skillPath, file))
+      : join(commandSource, COMMAND_NAME);
+    hashes[rel] = await sha256(skipped.has(file) ? packagedCounterpart : file);
+  }
+  await manifest.write({
+    version,
+    mode: existing?.mode ?? "copy",
+    entry: existing?.entry ?? null,
+    entryConfigPath: existing?.entryConfigPath ?? null,
+    rootDir: null,
+    files: null,
+    hashes,
+  });
   return { upToDate: false, skippedModified };
 }
 
-async function ensureSkillPermission(configPath: string): Promise<void> {
-  const config = await readJsonConfig(configPath);
-  if (config === null) return;
-  if (!config.permission) config.permission = {};
-  const permission = config.permission as Record<string, unknown>;
-  if (!permission.skill) permission.skill = {};
-  const skillPerms = permission.skill as Record<string, unknown>;
-  if (skillPerms[SKILL_NAME] !== "allow") {
-    skillPerms[SKILL_NAME] = "allow";
-    await writeJsonConfig(configPath, config);
+export async function ensureAssets(scope: Scope, projectDir: string, force: boolean): Promise<void> {
+  await ensurePayload(scope, projectDir, force);
+}
+
+async function registerPlugin(scope: Scope, projectDir: string): Promise<{ upToDate: boolean; entry: string | null; entryConfigPath: string | null }> {
+  const version = await getPackageVersion();
+  const configBase = scopeBase(scope, projectDir);
+  const entry = normalizer.normalize(PLUGIN_NAME) ?? PLUGIN_NAME;
+  const manifest = new InstallManifest(configBase, PLUGIN_NAME);
+  const existing = await manifest.read();
+  const entryPresent = existing?.mode === "plugin" && existing.entryConfigPath
+    ? (await editor.findRegistration(PLUGIN_NAME, { scope, projectDir })) !== null
+    : false;
+  if (existing?.version === version && entryPresent) {
+    return { upToDate: true, entry: existing.entry, entryConfigPath: existing.entryConfigPath };
   }
-}
-
-async function removeSkillPermission(configPath: string): Promise<void> {
-  const config = await readJsonConfig(configPath);
-  if (config === null || !config.permission) return;
-  const permission = config.permission as Record<string, unknown>;
-  if (!permission.skill) return;
-  const skillPerms = permission.skill as Record<string, unknown>;
-  delete skillPerms[SKILL_NAME];
-  if (Object.keys(skillPerms).length === 0) delete permission.skill;
-  if (Object.keys(permission).length === 0) delete config.permission;
-  await writeJsonConfig(configPath, config);
-}
-
-async function addPluginToConfig(configPath: string): Promise<boolean> {
-  const config = await readJsonConfig(configPath);
-  if (config === null) return false;
-  if (!config.plugin) config.plugin = [];
-  const plugins = config.plugin as string[];
-  if (plugins.some(entry => normalizer.matches(entry, PLUGIN_NAME))) return false;
-  plugins.push(normalizer.normalize(PLUGIN_NAME) as string);
-  config.plugin = plugins;
-  await writeJsonConfig(configPath, config);
-  return true;
-}
-
-async function removePluginFromConfig(configPath: string): Promise<boolean> {
-  const config = await readJsonConfig(configPath);
-  if (config === null || !config.plugin) return false;
-  const plugins = config.plugin as string[];
-  const index = plugins.findIndex(entry => normalizer.matches(entry, PLUGIN_NAME));
-  if (index === -1) return false;
-  plugins.splice(index, 1);
-  if (plugins.length === 0) delete config.plugin;
-  else config.plugin = plugins;
-  await writeJsonConfig(configPath, config);
-  return true;
-}
-
-async function isPluginInConfig(configPath: string): Promise<boolean> {
-  const config = await readJsonConfig(configPath);
-  if (config === null || !config.plugin) return false;
-  return (config.plugin as string[]).some(entry => normalizer.matches(entry, PLUGIN_NAME));
-}
-
-async function addMcpServer(configPath: string): Promise<boolean> {
-  return false;
+  const outcome = await editor.ensurePluginEntry(PLUGIN_NAME, { scope, projectDir });
+  if (outcome.action === "blocked" && outcome.warning) {
+    console.warn(`Warning: ${outcome.warning}`);
+    return { upToDate: false, entry: null, entryConfigPath: null };
+  }
+  if (outcome.action !== "noop" && outcome.action !== "updated" && outcome.action !== "created") {
+    return { upToDate: false, entry: null, entryConfigPath: null };
+  }
+  await manifest.write({
+    version,
+    mode: "plugin",
+    entry,
+    entryConfigPath: outcome.configPath,
+    rootDir: null,
+    files: null,
+    hashes: existing?.files ?? null,
+  });
+  return { upToDate: false, entry, entryConfigPath: outcome.configPath };
 }
 
 export async function checkMigrationNeeded(projectDir: string): Promise<{
@@ -274,74 +283,98 @@ export async function install(
   projectDir: string = process.cwd(),
   options: InstallOptions = {}
 ): Promise<InstallResult> {
-  const { configurePermission = true, configureMcp = true, addPluginConfig = true, force = false } = options;
-  const configBase = scope === "global" ? getGlobalConfigPath() : getLocalConfigPath(projectDir);
-  const skillPath = join(configBase, "skills", SKILL_NAME);
-  const commandPath = join(configBase, "commands", COMMAND_NAME);
-  const configPath = join(configBase, "opencode.json");
-  const { upToDate, skippedModified } = await ensureSkillFiles(scope, projectDir, force);
-  await mkdir(join(configBase, "commands"), { recursive: true });
-  const commandSource = await requireAssetDir(join(getPackageDir(), ASSET_LAYOUT_DIR, "commands"));
-  await Bun.write(commandPath, Bun.file(join(commandSource, COMMAND_NAME)));
-  let permissionConfigured = false;
-  if (configurePermission) { await ensureSkillPermission(configPath); permissionConfigured = true; }
-  let mcpConfigured = false;
-  if (configureMcp) mcpConfigured = await addMcpServer(configPath);
-  let pluginAdded = false;
-  if (addPluginConfig) pluginAdded = await addPluginToConfig(configPath);
-  return { scope, skillPath, commandPath, configPath, permissionConfigured, mcpConfigured, pluginAdded, skippedModified, upToDate };
+  const { mode: requested, force = false } = options;
+  const mode = await resolveMode(requested);
+  const configBase = scopeBase(scope, projectDir);
+  const { skillPath, commandPath } = await payloadPaths(configBase);
+  if (mode === "copy") {
+    const { upToDate, skippedModified } = await ensurePayload(scope, projectDir, force);
+    return { scope, mode, skillPath, commandPath, entry: null, entryConfigPath: null, skippedModified, upToDate };
+  }
+  const { upToDate, entry, entryConfigPath } = await registerPlugin(scope, projectDir);
+  return { scope, mode, skillPath, commandPath, entry, entryConfigPath, skippedModified: [], upToDate };
 }
 
 export async function uninstall(scope: Scope, projectDir: string = process.cwd()): Promise<UninstallResult> {
-  const configBase = scope === "global" ? getGlobalConfigPath() : getLocalConfigPath(projectDir);
-  const skillPath = join(configBase, "skills", SKILL_NAME);
-  const commandPath = join(configBase, "commands", COMMAND_NAME);
-  const configPath = join(configBase, "opencode.json");
+  const configBase = scopeBase(scope, projectDir);
+  const { skillPath, commandPath } = await payloadPaths(configBase);
+  const manifest = new InstallManifest(configBase, PLUGIN_NAME);
+  const manifestData = await manifest.read();
   const removed: string[] = [];
+  let pluginRemoved = false;
+  if (manifestData?.mode === "plugin") {
+    const outcome = await editor.removePluginEntry(PLUGIN_NAME, { scope, projectDir });
+    if (outcome.action === "blocked" && outcome.warning) console.warn(`Warning: ${outcome.warning}`);
+    pluginRemoved = outcome.action === "removed";
+  }
   if (await exists(skillPath)) { await rm(skillPath, { recursive: true }); removed.push(skillPath); }
   if (await exists(commandPath)) { await rm(commandPath); removed.push(commandPath); }
-  const manifest = new InstallManifest(configBase, PLUGIN_NAME);
-  if (await manifest.read() !== null) { await rm(join(configBase, `${PLUGIN_NAME}.manifest.json`)); removed.push(join(configBase, `${PLUGIN_NAME}.manifest.json`)); }
-  let pluginRemoved = false;
-  if (await exists(configPath)) { await removeSkillPermission(configPath); pluginRemoved = await removePluginFromConfig(configPath); }
+  if (manifestData !== null) { await rm(join(configBase, `${PLUGIN_NAME}.manifest.json`)); removed.push(join(configBase, `${PLUGIN_NAME}.manifest.json`)); }
   const skillsDir = join(configBase, "skills");
   const commandsDir = join(configBase, "commands");
   try { const skillsContents = await readdir(skillsDir); if (skillsContents.length === 0) await rm(skillsDir, { recursive: true }); } catch {}
   try { const commandsContents = await readdir(commandsDir); if (commandsContents.length === 0) await rm(commandsDir, { recursive: true }); } catch {}
-  return { scope, removed, pluginRemoved };
+  return { scope, mode: manifestData?.mode ?? null, removed, pluginRemoved };
+}
+
+async function isPluginInConfigScope(scope: Scope, projectDir: string): Promise<boolean> {
+  return (await editor.findRegistration(PLUGIN_NAME, { scope, projectDir })) !== null;
 }
 
 export async function status(projectDir: string = process.cwd()): Promise<StatusResult> {
-  const configBases: Array<[Scope, string]> = [
+  const scopes: Array<[Scope, string]> = [
     ["local", getLocalConfigPath(projectDir)],
     ["global", getGlobalConfigPath()],
   ];
   const result: StatusResult = { local: null, global: null };
-  for (const [scope, configBase] of configBases) {
-    const skillPath = join(configBase, "skills", SKILL_NAME);
-    const skillFiles = await exists(skillPath) ? await readdir(skillPath) : [];
+  for (const [scope, configBase] of scopes) {
+    const { skillPath } = await payloadPaths(configBase);
     const manifest = new InstallManifest(configBase, PLUGIN_NAME);
-    const manifestData = await manifest.read();
-    if (skillFiles.length === 0 || manifestData === null) continue;
-    const installedVersion = manifestData.version;
+    const manifestData: ManifestData | null = await manifest.read();
+    const pluginInConfig = await isPluginInConfigScope(scope, projectDir);
+    if (manifestData === null && !pluginInConfig) continue;
     result[scope] = {
       installed: true,
-      version: installedVersion,
-      pluginInConfig: await isPluginInConfigBase(configBase),
+      version: manifestData?.version ?? null,
+      mode: manifestData?.mode ?? null,
+      entry: manifestData?.entry ?? null,
+      entryConfigPath: manifestData?.entryConfigPath ?? null,
+      pluginInConfig,
     };
   }
   return result;
 }
 
-export async function isUpToDateAnywhere(projectDir: string = process.cwd()): Promise<boolean> {
+export async function isInstalledAnywhere(projectDir: string = process.cwd()): Promise<boolean> {
   const version = await getPackageVersion();
-  for (const configBase of [getGlobalConfigPath(), getLocalConfigPath(projectDir)]) {
-    const skillPath = join(configBase, "skills", SKILL_NAME);
-    const skillFiles = await exists(skillPath) ? await readdir(skillPath) : [];
-    if (skillFiles.length === 0) continue;
-    if (await new InstallManifest(configBase, PLUGIN_NAME).isUpToDate(version, skillPath)) {
-      return true;
+  for (const scope of ["global", "local"] as const) {
+    const manifest = new InstallManifest(scopeBase(scope, projectDir), PLUGIN_NAME);
+    const data = await manifest.read();
+    if (data === null) continue;
+    if (data.mode === "plugin" && data.entryConfigPath) {
+      if ((await editor.findRegistration(PLUGIN_NAME, { scope, projectDir })) !== null) return true;
+      continue;
     }
+    if (data.version === version) return true;
   }
   return false;
+}
+
+function parseConfig(raw: string, path: string): unknown {
+  return path.endsWith(".jsonc") ? parseJsonc(raw) : JSON.parse(raw);
+}
+
+async function readJsonConfig(path: string): Promise<Record<string, unknown> | null> {
+  if (!(await exists(path))) return {};
+  try {
+    return parseConfig(await readFile(path, "utf-8"), path) as Record<string, unknown>;
+  } catch {
+    console.warn(`Warning: ${path} is not valid JSON; refusing to modify it.`);
+    return null;
+  }
+}
+
+async function writeJsonConfig(path: string, config: Record<string, unknown>): Promise<void> {
+  await mkdir(join(path, ".."), { recursive: true });
+  await writeFile(path, JSON.stringify(config, null, 2));
 }

@@ -15,14 +15,10 @@ export async function confirmOverwrite(message: string): Promise<boolean> {
   return confirm({ message, default: false });
 }
 
-export async function confirmPermissionConfig(): Promise<boolean> {
-  return confirm({ message: "Configure skill permission (allow myextension)?", default: true });
-}
-
-export async function confirmMcpConfig(): Promise<boolean> {
-  return confirm({ message: "Configure MCP server?", default: true });
-}
-
-export async function confirmPluginConfig(): Promise<boolean> {
-  return confirm({ message: "Add plugin to opencode.json config?", default: true });
+export async function confirmInstallMode(message: string): Promise<"copy" | "plugin"> {
+  const asPlugin = await confirm({
+    message: message || "Register as a plugin (always fresh) instead of copying files? Choose No to copy editable files.",
+    default: false,
+  });
+  return asPlugin ? "plugin" : "copy";
 }

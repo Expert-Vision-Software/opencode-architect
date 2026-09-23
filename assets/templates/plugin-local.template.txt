@@ -7,13 +7,12 @@
 | `COMMAND NAME` → "my-command.md" | Yes | Command file name in assets/commands/ | — |
 | `PACKAGE NAME` → "opencode-myextension" | Yes | npm package name; must match package.json | — |
 
-**Load-bearing — do not simplify:** scope detection is read-only config inspection (both `opencode.json` and `opencode.jsonc`, global and project), never launch-directory checks and never any directory-identity comparison (`import.meta.dirname`, `process.cwd()`, realpath) — a maintainer's own checkout is served by that repo's own config registration; the hook passes `addPluginConfig: false`, `configurePermission: false`, `configureMcp: false` to `install()` — it never edits `plugin` arrays or permission/MCP config; writes stay inside the detected scope(s) only; the **entire hook body** (detection, installs, advisory) is wrapped in try/catch so a failure degrades to a warning and OpenCode still launches — hooks must never throw; the failure advisory names both the remediation command (`bunx <package> install --scope global`) and the package-qualified cache dir (`~/.cache/opencode/packages/<package>@<version>`), is built inside its own try/catch with a static fallback, and each emitter swallows independently; the failure advisory and the not-installed advisory carry **separate** once-guards so neither suppresses the other; the hook never deletes the cache — it instructs only.
+**Load-bearing — do not simplify:** scope detection is read-only config inspection (both `opencode.json` and `opencode.jsonc`, global and project, plus global `config.json` via the detector), never launch-directory checks and never any directory-identity comparison (`import.meta.dirname`, `process.cwd()`, realpath) — a maintainer's own checkout is served by that repo's own config registration; the hook calls only `ensureAssets` — it never resolves an install mode, never edits `plugin` arrays, permission, or any config file, and writes stay inside the detected registration scope(s) only; assets-only and code-backed packages share this hook unchanged: assets are ensured in registered scopes either way, and code-backed assets resolve from the package at load; the **entire hook body** (detection, ensures, advisory) is wrapped in try/catch so a failure degrades to a warning and OpenCode still launches — hooks must never throw; the failure advisory names both the remediation command (`bunx <package> install --scope global`) and the package-qualified cache dir (`~/.cache/opencode/packages/<package>@<version>`), is built inside its own try/catch with a static fallback, and each emitter swallows independently; the failure advisory and the not-installed advisory carry **separate** once-guards so neither suppresses the other; the zero-write no-op covers a fully matching manifest **and** a present plugin entry (an up-to-date manifest alone is not enough for plugin installs), so a healthy startup performs no writes at all; the hook never deletes the cache — it instructs only.
 
 ---
 import type { Plugin } from "@opencode-ai/plugin";
-import { install, isUpToDateAnywhere } from "./src/installer.ts";
+import { ensureAssets, isInstalledAnywhere } from "./src/installer.ts";
 import { RegistrationDetector, type RegistrationScope } from "./src/registration.ts";
-import { join } from "node:path";
 
 const PACKAGE_NAME = "opencode-myextension";
 
@@ -55,12 +54,12 @@ const plugin: Plugin = async ({ directory }) => ({
         return;
       }
       if (scope === "global" || scope === "both") {
-        await install("global", directory, { force: false });
+        await ensureAssets("global", directory, false);
       }
       if (scope === "repo-local" || scope === "both") {
-        await install("local", directory, { force: false });
+        await ensureAssets("local", directory, false);
       }
-      if (await isUpToDateAnywhere(directory)) return;
+      if (await isInstalledAnywhere(directory)) return;
       await adviseNotInstalledOnce();
     } catch (error) {
       await adviseFailureOnce(error instanceof Error ? error.message : String(error));

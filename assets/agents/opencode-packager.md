@@ -39,7 +39,7 @@ opencode-myextension/
 └── tsconfig.json
 ```
 
-6. **Create plugin.ts** from `../templates/plugin-local.template.txt`, plus `src/plugin-name.ts` from `../templates/plugin-name.template.txt`, `src/manifest.ts` from `../templates/manifest.template.txt`, and `src/registration.ts` from `../templates/registration.template.txt`: the load hook performs read-only registration-scope detection, then ensures skills, commands, and agents only for the scopes where the plugin is registered, gated by the per-scope install manifest (version + per-file sha256). Never write outside the detected scopes, never edit `plugin` arrays or root configs at load, and never rewrite a config that fails to parse.
+6. **Create plugin.ts** from `../templates/plugin-local.template.txt`, plus `src/plugin-name.ts` from `../templates/plugin-name.template.txt`, `src/manifest.ts` from `../templates/manifest.template.txt`, `src/registration.ts` from `../templates/registration.template.txt`, and `src/plugin-config.ts` from `../templates/plugin-config.template.txt`: the load hook performs read-only registration-scope detection, then ensures skills, commands, and agents only for the scopes where the plugin is registered, gated by the per-scope install manifest (version, mode, registration, per-file sha256). Never write outside the detected scopes, never edit `plugin` arrays or root configs at load, and never rewrite a config that fails to parse. The install logic is content-based (ADR-0008): the same installer serves both the global scope base and the project scope base with identical behavior — copy install touches no config, plugin registration goes through the surgical editor, and code-backed packages refuse `--mode copy`.
 
 7. **Create package.json** from `../templates/package-basics.template.json` and tsconfig.json from `../templates/tsconfig.template.json`. The template ships with `"content": "assets"`; the asset inventory is the source of truth for the declaration (ADR-0008): keep `"assets"` only when the package ships skills and/or commands alone; set `"code"` when the source contained any agent, tool, plugin, hook, or other plugin integration — code-backed packages may also ship skills and commands. Report the decision: "Content declaration: code (1 agent, 2 tools found)" or "Content declaration: assets (skills and commands only)".
 
@@ -55,6 +55,7 @@ Done when the target tree matches step 5 and the plugin performs a zero-write no
 - `../templates/plugin-name.template.txt`
 - `../templates/manifest.template.txt`
 - `../templates/registration.template.txt`
+- `../templates/plugin-config.template.txt`
 - `../templates/tsconfig.template.json`
 - `../templates/skill-structure.template.md`
 

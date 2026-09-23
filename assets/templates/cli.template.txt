@@ -7,12 +7,12 @@
 | `COMMANDS` | Yes | install / uninstall / status / migrate subcommands | — |
 | `SCOPE` → "local" | Yes | Default scope when `--scope` is not specified | `local` |
 
-**Load-bearing — do not simplify:** `migrate` refuses to run without `--force` (root-config deletion is consent-gated and CLI-only); `install` forwards `force` so consumer-modified files are skipped without it; the module lives at `src/cli.ts` and imports `./installer.ts`.
+**Load-bearing — do not simplify:** the deployment plan is content-based, so `install` resolves the mode through `resolveMode` and never forces one: assets-only packages default to copy and accept `--mode plugin`; code-backed packages always register and `--mode copy` surfaces the `CopyModeUnsupportedError` as a hard, explanatory exit-1 error; `install` forwards `force` so consumer-modified files are skipped without it; `status` reports mode, version, entry, entry config file, and registration presence per scope; `migrate` refuses to run without `--force` (root-config deletion is consent-gated and CLI-only); the module lives at `src/cli.ts` and imports `./installer.ts`.
 
 ---
 #!/usr/bin/env bun
 import { parseArgs } from "node:util";
-import { install, uninstall, status, migrateRootConfig, type Scope } from "./installer.ts";
+import { install, uninstall, status, migrateRootConfig, CopyModeUnsupportedError, type Scope, type InstallMode } from "./installer.ts";
 
 const VERSION = JSON.parse(
   await Bun.file(`${import.meta.dirname}/../package.json`).text()
@@ -23,13 +23,14 @@ function printHelp(): void {
 opencode-myextension v${VERSION}
 
 Commands:
-  install     Install the myextension skill and command
-  uninstall   Remove the myextension skill and command
-  status      Check installation status
+  install     Install myextension (copy by default; plugin registration with --mode plugin)
+  uninstall   Remove myextension (payload files and/or plugin registration, per manifest)
+  status      Check installation status per scope
   migrate     Migrate root opencode.json into .opencode/ (asks for --force consent)
 
 Options:
-  -s, --scope <scope>    Installation scope: "local" or "global"
+  -s, --scope <scope>    Installation scope: "local" or "global" (default: local)
+  -m, --mode <mode>      Install mode: "copy" (default for assets-only) or "plugin" (mandatory for code-backed)
   -f, --force           Overwrite consumer-modified files / consent to migration
   -h, --help            Show this help message
   -v, --version         Show version
@@ -37,16 +38,22 @@ Options:
 Examples:
   opencode-myextension install
   opencode-myextension install --scope global
+  opencode-myextension install --mode plugin
   opencode-myextension uninstall --scope local
   opencode-myextension status
   opencode-myextension migrate --force
 `);
 }
 
+function isInstallMode(value: string): value is InstallMode {
+  return value === "copy" || value === "plugin";
+}
+
 async function main(): Promise<void> {
   const { positionals, values } = parseArgs({
     options: {
       scope: { type: "string", short: "s" },
+      mode: { type: "string", short: "m" },
       force: { type: "boolean", short: "f", default: false },
       help: { type: "boolean", short: "h", default: false },
       version: { type: "boolean", short: "v", default: false },
@@ -60,10 +67,16 @@ async function main(): Promise<void> {
 
   const command = positionals[0];
   const scope: Scope | undefined = values.scope as Scope | undefined;
+  const mode: InstallMode | undefined =
+    values.mode === undefined ? undefined : isInstallMode(values.mode) ? values.mode : ("invalid" as InstallMode);
   const force: boolean = values.force;
 
   if (scope && scope !== "local" && scope !== "global") {
     console.error(`Invalid scope: ${scope}. Must be "local" or "global".`);
+    process.exit(1);
+  }
+  if (mode === ("invalid" as InstallMode)) {
+    console.error(`Invalid mode: ${values.mode}. Must be "copy" or "plugin".`);
     process.exit(1);
   }
 
@@ -71,27 +84,39 @@ async function main(): Promise<void> {
     switch (command) {
       case "install": {
         const installScope = scope || "local";
-        const result = await install(installScope, process.cwd(), { force });
-        console.log(`Installed ${installScope}${result.upToDate ? " (already up to date)" : ""}:`);
-        console.log(`  Skill: ${result.skillPath}`);
-        console.log(`  Command: ${result.commandPath}`);
-        for (const skipped of result.skippedModified) {
-          console.log(`  Skipped consumer-modified: ${skipped} (use --force to overwrite)`);
+        const result = await install(installScope, process.cwd(), { mode, force });
+        console.log(`Installed ${installScope} (mode: ${result.mode})${result.upToDate ? " (already up to date)" : ""}:`);
+        if (result.mode === "copy") {
+          console.log(`  Skill: ${result.skillPath}`);
+          console.log(`  Command: ${result.commandPath}`);
+          for (const skipped of result.skippedModified) {
+            console.log(`  Skipped consumer-modified: ${skipped} (use --force to overwrite)`);
+          }
+        } else {
+          console.log(`  Plugin entry: ${result.entry} in ${result.entryConfigPath}`);
         }
         break;
       }
       case "uninstall": {
         const uninstallScope = scope || "local";
         const result = await uninstall(uninstallScope, process.cwd());
-        console.log(`Uninstalled ${uninstallScope}:`);
-        console.log(`  Removed: ${result.removed.join(", ")}`);
+        console.log(`Uninstalled ${uninstallScope}${result.mode ? ` (mode: ${result.mode})` : ""}:`);
+        if (result.removed.length > 0) console.log(`  Removed: ${result.removed.join(", ")}`);
+        if (result.pluginRemoved) console.log(`  Removed plugin registration`);
         break;
       }
       case "status": {
         const result = await status(process.cwd());
         console.log("Status:");
-        if (result.local) console.log(`  Local: installed=${result.local.installed}, version=${result.local.version ?? "no manifest"}, pluginInConfig=${result.local.pluginInConfig}`);
-        if (result.global) console.log(`  Global: installed=${result.global.installed}, version=${result.global.version ?? "no manifest"}, pluginInConfig=${result.global.pluginInConfig}`);
+        for (const [label, scopeStatus] of [["Local", result.local], ["Global", result.global]] as const) {
+          if (!scopeStatus) continue;
+          console.log(
+            `  ${label}: installed=${scopeStatus.installed}, version=${scopeStatus.version ?? "unknown"}, ` +
+              `mode=${scopeStatus.mode ?? "unknown"}, ` +
+              `entry=${scopeStatus.entry ?? "none"} (${scopeStatus.entryConfigPath ?? "no config file"}), ` +
+              `pluginInConfig=${scopeStatus.pluginInConfig}`
+          );
+        }
         break;
       }
       case "migrate": {
@@ -106,6 +131,10 @@ async function main(): Promise<void> {
       default: console.error(`Unknown command: ${command}`); printHelp(); process.exit(1);
     }
   } catch (error) {
+    if (error instanceof CopyModeUnsupportedError) {
+      console.error(`Error: ${error.message}`);
+      process.exit(1);
+    }
     const message = error instanceof Error ? error.message : String(error);
     console.error(`Error: ${message}`);
     process.exit(1);
