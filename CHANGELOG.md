@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `install` prunes this package's stale copies from OpenCode's package cache (`$XDG_CACHE_HOME/opencode/packages`, falling back to `~/.cache/opencode/packages`): `opencode-architect`, `opencode-architect@latest`, and `opencode-architect@<installed version>` are removed on every install invocation, including no-ops, so OpenCode re-fetches the just-installed version on next start. Pinned versions and other packages' cache dirs are preserved; removal failures warn without failing the install, and cleared paths are reported
 - Conformance checklist items for the content-based deployment plan (ADR-0008): surgical config writes (B5), zero-write registration no-op (B6), content declaration present and consistent (E1), and binary mode enforcement (E2); E1–E2 and B5–B6 join the hard non-conformance set and the auditor's conformance review covers section E
 - Plugins and config references document the allowed config patterns (including global `config.json`), the repo-root `opencode.jsonc` create-default, and the surgical-writer rule
 

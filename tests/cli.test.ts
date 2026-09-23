@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { mkdtemp, rm } from "node:fs/promises";
+import { existsSync } from "node:fs";
+import { chmod, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
@@ -12,11 +13,12 @@ interface CliRun {
   stderr: string;
 }
 
-async function runCli(args: string[], cwd?: string): Promise<CliRun> {
+async function runCli(args: string[], cwd?: string, env?: Record<string, string>): Promise<CliRun> {
   const proc = Bun.spawn([process.execPath, CLI_PATH, ...args], {
     cwd: cwd ?? PACKAGE_ROOT,
     stdout: "pipe",
     stderr: "pipe",
+    env: env ? { ...process.env, ...env } : undefined,
   });
   const [stdout, stderr, exitCode] = await Promise.all([
     new Response(proc.stdout).text(),
@@ -86,6 +88,28 @@ describe("cli", () => {
       expect(uninstallRun.stdout).toContain("Uninstalled");
     } finally {
       await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("a cache-clearing failure warns but install exits 0", async () => {
+    if (process.getuid?.() === 0) return;
+    const dir = await mkdtemp(path.join(tmpdir(), "oa-cli-"));
+    const cacheDir = await mkdtemp(path.join(tmpdir(), "oa-cli-cache-"));
+    const blocked = path.join(cacheDir, "opencode", "packages", "opencode-architect@latest", "nested");
+    await mkdir(blocked, { recursive: true });
+    await writeFile(path.join(blocked, "file.txt"), "cached");
+    await chmod(blocked, 0o500);
+    try {
+      const run = await runCli(["install"], dir, { XDG_CACHE_HOME: cacheDir });
+
+      expect(run.exitCode).toBe(0);
+      expect(run.stdout).toContain("Registered");
+      expect(run.stderr).toContain(`Could not clear cached package ${path.join(cacheDir, "opencode", "packages", "opencode-architect@latest")}`);
+      expect(existsSync(path.join(cacheDir, "opencode", "packages", "opencode-architect"))).toBe(false);
+    } finally {
+      await chmod(blocked, 0o700);
+      await rm(dir, { recursive: true, force: true });
+      await rm(cacheDir, { recursive: true, force: true });
     }
   });
 });

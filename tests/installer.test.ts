@@ -1,6 +1,6 @@
 import { describe, expect, test, beforeEach, afterEach } from "bun:test";
 import { existsSync } from "node:fs";
-import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { Installer, contentHash, type Manifest, type Scope } from "../installer";
@@ -9,24 +9,35 @@ const PACKAGE_ROOT = path.resolve(import.meta.dirname, "..");
 
 let projectDir = "";
 let homeDir = "";
-let originalXdg: string | undefined;
+let cacheDir = "";
+let originalXdgConfig: string | undefined;
+let originalXdgCache: string | undefined;
 const installer = new Installer();
 
 beforeEach(async () => {
   projectDir = await mkdtemp(path.join(tmpdir(), "oa-installer-project-"));
   homeDir = await mkdtemp(path.join(tmpdir(), "oa-installer-home-"));
-  originalXdg = process.env.XDG_CONFIG_HOME;
+  cacheDir = await mkdtemp(path.join(tmpdir(), "oa-installer-cache-"));
+  originalXdgConfig = process.env.XDG_CONFIG_HOME;
+  originalXdgCache = process.env.XDG_CACHE_HOME;
   process.env.XDG_CONFIG_HOME = homeDir;
+  process.env.XDG_CACHE_HOME = cacheDir;
 });
 
 afterEach(async () => {
-  if (originalXdg === undefined) {
+  if (originalXdgConfig === undefined) {
     delete process.env.XDG_CONFIG_HOME;
   } else {
-    process.env.XDG_CONFIG_HOME = originalXdg;
+    process.env.XDG_CONFIG_HOME = originalXdgConfig;
+  }
+  if (originalXdgCache === undefined) {
+    delete process.env.XDG_CACHE_HOME;
+  } else {
+    process.env.XDG_CACHE_HOME = originalXdgCache;
   }
   await rm(projectDir, { recursive: true, force: true });
   await rm(homeDir, { recursive: true, force: true });
+  await rm(cacheDir, { recursive: true, force: true });
 });
 
 function scopeBase(scope: Scope): string {
@@ -248,6 +259,87 @@ describe("Installer.install", () => {
     expect(((await readJson(manifestPath("local"))) as unknown as Manifest).version).toBe(
       await readPackageVersion(),
     );
+  });
+});
+
+describe("Installer.install cache pruning", () => {
+  function cacheRoot(): string {
+    return path.join(cacheDir, "opencode", "packages");
+  }
+
+  async function seedCache(): Promise<void> {
+    const version = await readPackageVersion();
+    for (const name of [
+      "opencode-architect",
+      "opencode-architect@latest",
+      `opencode-architect@${version}`,
+      "opencode-architect@0.6.0",
+      "other-package",
+    ]) {
+      await mkdir(path.join(cacheRoot(), name, "nested"), { recursive: true });
+      await writeFile(path.join(cacheRoot(), name, "nested", "file.txt"), "cached");
+    }
+  }
+
+  test("removes stale non-pinned copies and preserves pinned and foreign dirs", async () => {
+    await seedCache();
+    const version = await readPackageVersion();
+
+    const outcome = await install("local");
+
+    expect(outcome.clearedCache).toEqual([
+      path.join(cacheRoot(), "opencode-architect"),
+      path.join(cacheRoot(), "opencode-architect@latest"),
+      path.join(cacheRoot(), `opencode-architect@${version}`),
+    ]);
+    expect(outcome.cacheWarnings).toEqual([]);
+    expect(existsSync(path.join(cacheRoot(), "opencode-architect"))).toBe(false);
+    expect(existsSync(path.join(cacheRoot(), "opencode-architect@latest"))).toBe(false);
+    expect(existsSync(path.join(cacheRoot(), `opencode-architect@${version}`))).toBe(false);
+    expect(existsSync(path.join(cacheRoot(), "opencode-architect@0.6.0"))).toBe(true);
+    expect(existsSync(path.join(cacheRoot(), "other-package"))).toBe(true);
+  });
+
+  test("prunes even when the install is a no-op", async () => {
+    await install("local");
+    await seedCache();
+    const version = await readPackageVersion();
+
+    const outcome = await install("local");
+
+    expect(outcome.action).toBe("noop");
+    expect(outcome.clearedCache).toEqual([
+      path.join(cacheRoot(), "opencode-architect"),
+      path.join(cacheRoot(), "opencode-architect@latest"),
+      path.join(cacheRoot(), `opencode-architect@${version}`),
+    ]);
+    expect(await readdir(cacheRoot())).toEqual(
+      expect.arrayContaining(["opencode-architect@0.6.0", "other-package"]),
+    );
+    expect(await readdir(cacheRoot())).toHaveLength(2);
+  });
+
+  test("removal failure warns but the install still succeeds", async () => {
+    await seedCache();
+    const blocked = path.join(cacheRoot(), "opencode-architect@latest", "nested");
+    await chmod(blocked, 0o500);
+    try {
+      const outcome = await install("local");
+
+      expect(outcome.action).toBe("installed");
+      expect(outcome.cacheWarnings).toHaveLength(1);
+      expect(outcome.cacheWarnings[0]).toContain(path.join(cacheRoot(), "opencode-architect@latest"));
+      expect(existsSync(path.join(cacheRoot(), "opencode-architect"))).toBe(false);
+      expect(existsSync(path.join(cacheRoot(), "opencode-architect@latest"))).toBe(true);
+    } finally {
+      await chmod(blocked, 0o700);
+    }
+  });
+
+  test("cache root honors XDG_CACHE_HOME with no cache present", async () => {
+    const outcome = await install("local");
+    expect(outcome.clearedCache).toEqual([]);
+    expect(outcome.cacheWarnings).toEqual([]);
   });
 });
 

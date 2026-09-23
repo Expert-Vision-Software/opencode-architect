@@ -47,6 +47,8 @@ bunx opencode-architect --help                  # full usage
 
 Re-running install when the manifest matches reality is a zero-write no-op. `--mode copy` is refused with an explanatory error: this package is code-backed (it ships agents), and copying cannot express plugin registration.
 
+Every install — including a no-op — also clears this package's stale copies from OpenCode's package cache (`$XDG_CACHE_HOME/opencode/packages`, falling back to `~/.cache/opencode/packages`): `opencode-architect`, `opencode-architect@latest`, and `opencode-architect@<installed version>`. Pinned copies like `opencode-architect@0.6.0` and other packages' cache dirs are left untouched. This makes OpenCode re-fetch the just-installed version on next start instead of reusing a stale or partial extraction. Removal is best-effort: a failure prints a warning but the install still succeeds.
+
 **Upgrading from a copy install (pre-0.8):** if a previous version copied agents into your scope base, install detects the old manifest, removes exactly the files it lists, prints a notice, and switches the scope to plugin registration in one step. Locally modified files are tracked by hash; uninstall and migration only remove what the manifest recorded.
 
 ## What you get: ten specialist OpenCode agents

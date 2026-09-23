@@ -56,6 +56,12 @@ async function main(): Promise<void> {
           console.log(`  Plugin entry: ${outcome.configPath}`);
         }
         console.log(`  Manifest:     ${outcome.manifestPath}`);
+        for (const cachePath of outcome.clearedCache) {
+          console.log(`  Cleared cache: ${cachePath}`);
+        }
+        for (const warning of outcome.cacheWarnings) {
+          console.warn(`  Warning: ${warning}`);
+        }
         break;
       }
       case "uninstall": {

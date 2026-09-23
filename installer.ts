@@ -37,6 +37,8 @@ export interface InstallOutcome {
   configPath: string | null;
   configAction: "noop" | "updated" | "created" | "blocked";
   removedPayload: string[];
+  clearedCache: string[];
+  cacheWarnings: string[];
 }
 
 export interface UninstallOutcome {
@@ -109,6 +111,8 @@ export class Installer {
       await writeFile(manifestPath, JSON.stringify(manifest, null, 2) + "\n");
     }
 
+    const cache = await this.prunePackageCache(version);
+
     return {
       action,
       scope,
@@ -116,7 +120,36 @@ export class Installer {
       configPath: registration.configPath,
       configAction: registration.action,
       removedPayload,
+      clearedCache: cache.removed,
+      cacheWarnings: cache.warnings,
     };
+  }
+
+  private async prunePackageCache(version: string): Promise<{ removed: string[]; warnings: string[] }> {
+    const removed: string[] = [];
+    const warnings: string[] = [];
+    const targets = [
+      PACKAGE_NAME,
+      `${PACKAGE_NAME}@latest`,
+      `${PACKAGE_NAME}@${version}`,
+    ].map((name) => path.join(this.packageCacheRoot(), name));
+    for (const target of targets) {
+      if (!(await exists(target))) continue;
+      try {
+        await rm(target, { recursive: true });
+        removed.push(target);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        warnings.push(`Could not clear cached package ${target}: ${message}`);
+      }
+    }
+    return { removed, warnings };
+  }
+
+  private packageCacheRoot(): string {
+    const xdgCacheHome = process.env.XDG_CACHE_HOME;
+    if (xdgCacheHome) return path.join(xdgCacheHome, "opencode", "packages");
+    return path.join(homedir(), ".cache", "opencode", "packages");
   }
 
   public async uninstall(scope: Scope, projectDir: string): Promise<UninstallOutcome> {
