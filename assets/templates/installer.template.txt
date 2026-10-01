@@ -7,7 +7,7 @@
 | `COMMAND NAME` → "my-command.md" | Yes | Command file name in assets/commands/ | — |
 | `PACKAGE NAME` → "opencode-myextension" | Yes | npm package name; also the manifest file base | — |
 
-**Load-bearing — do not simplify:** the deployment plan is content-based (ADR-0008): the content declaration (`"content"` in package.json, `"assets"` or `"code"`) decides the install modes — assets-only packages copy-install by default with `--mode plugin` as the opt-in, code-backed packages always plugin-register and `--mode copy` throws `CopyModeUnsupportedError`; copy install touches no config file at all — no permission blocks, no MCP entries, no plugin array edits; the `plugin` array is edited only by the surgical `PluginConfigEditor` (text splice, every other byte untouched, never a parse-then-reserialize, never rewrite config from `{}`, existing entry is a zero-write no-op); manifest-gated idempotency (never `.version` markers), the plugin-mode zero-write no-op includes a present entry (version match alone is not enough), and payload idempotency requires a recorded, hash-matching payload — a plugin-mode manifest with an empty file map means the load-time hook has not ensured assets yet, so the ensure path runs and records the payload hashes while preserving the recorded mode, entry, and target config file; config reading consults both `opencode.json` and `opencode.jsonc` per base, with `.jsonc` parsed leniently and `.json` strict, and every unparseable candidate is warned about; bundled assets resolve through `ASSET_LAYOUT_DIR` (packages shipping repo-root `skills/` instead of `assets/` set it to `"."`), and a missing or empty asset source is a hard error naming the path, package name+version, cache dir, and install command — never a silent skip, and a manifest is never written when zero files were written; the manifest hashes the whole payload relative to the config base (skills and commands), and `migrateRootConfig` deletes nothing without a consent callback and is never called from `install()`. Every function here is scope-parameterized: the exact same logic serves the local scope base (`<project>/.opencode/`) and the global scope base (`~/.config/opencode/` or `$XDG_CONFIG_HOME/opencode/`), so a global install and a project install differ only in the base path — never in behavior.
+**Load-bearing — do not simplify:** the deployment plan is content-based (ADR-0008): the content declaration (`"content"` in package.json, `"assets"` or `"code"`) decides the install modes — assets-only packages copy-install by default with `--mode plugin` as the opt-in, code-backed packages always plugin-register and `--mode copy` throws `CopyModeUnsupportedError`; copy install touches no config file at all — no permission blocks, no MCP entries, no plugin array edits; the `plugin` array is edited only by the surgical `PluginConfigEditor` (text splice, every other byte untouched, never a parse-then-reserialize, never rewrite config from `{}`, existing entry is a zero-write no-op); manifest-gated idempotency (never `.version` markers), the plugin-mode zero-write no-op includes a present entry (version match alone is not enough), and payload idempotency requires a recorded, hash-matching payload — a plugin-mode manifest with an empty file map means the load-time hook has not ensured assets yet, so the ensure path runs and records the payload hashes while preserving the recorded mode, entry, and target config file; config reading consults both `opencode.json` and `opencode.jsonc` per base, with `.jsonc` parsed leniently and `.json` strict, and every unparseable candidate is warned about; bundled assets resolve through `ASSET_LAYOUT_DIR` (packages shipping repo-root `skills/` instead of `assets/` set it to `"."`), and a missing or empty asset source is a hard error naming the path, package name+version, cache dir, and install command — never a silent skip, and a manifest is never written when zero files were written; the manifest hashes the whole payload relative to the config base (skills and commands), and `migrateRootConfig` deletes nothing without a consent callback and is never called from `install()`. Cache hygiene is self-scoped (ADR-0007): every install — including a no-op — prunes this package's own cache copies (`<package>`, `<package>@latest`, `<package>@<version>`) from OpenCode's package cache (`$XDG_CACHE_HOME/opencode/packages`, falling back to `~/.cache/opencode/packages`), best-effort warn-and-continue, never touching other packages' cache dirs or pinned versions, and the load-time hook never prunes — only the CLI's install and `clear-cache` paths do. Every function here is scope-parameterized: the exact same logic serves the local scope base (`<project>/.opencode/`) and the global scope base (`~/.config/opencode/` or `$XDG_CONFIG_HOME/opencode/`), so a global install and a project install differ only in the base path — never in behavior.
 
 ---
 import { exists, mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
@@ -36,6 +36,7 @@ export interface InstallResult {
   entryConfigPath: string | null;
   skippedModified: string[];
   upToDate: boolean;
+  clearedCache: string[];
 }
 
 export interface UninstallResult {
@@ -111,6 +112,69 @@ export async function resolveMode(requested: InstallMode | undefined): Promise<I
 
 function getPackageDir(): string {
   return join(import.meta.dirname, "..");
+}
+
+function packageCacheRoot(): string {
+  const xdgCacheHome = process.env.XDG_CACHE_HOME;
+  if (xdgCacheHome) return join(xdgCacheHome, "opencode", "packages");
+  return join(homedir(), ".cache", "opencode", "packages");
+}
+
+export async function prunePackageCache(): Promise<{ removed: string[]; warnings: string[] }> {
+  const removed: string[] = [];
+  const warnings: string[] = [];
+  const packagesRoot = packageCacheRoot();
+  const version = await getPackageVersion();
+  const wanted = [PLUGIN_NAME, `${PLUGIN_NAME}@latest`, `${PLUGIN_NAME}@${version}`];
+  let entries: string[];
+  try {
+    entries = await readdir(packagesRoot);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException)?.code === "ENOENT") return { removed, warnings };
+    throw error;
+  }
+  const targets = entries
+    .filter((name) => wanted.includes(name))
+    .sort()
+    .map((name) => join(packagesRoot, name));
+  for (const target of targets) {
+    try {
+      await rm(target, { recursive: true });
+      removed.push(target);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      warnings.push(`Could not clear cached package ${target}: ${message}`);
+    }
+  }
+  return { removed, warnings };
+}
+
+export async function clearPackageCache(): Promise<{ removed: string[]; warnings: string[] }> {
+  const removed: string[] = [];
+  const warnings: string[] = [];
+  const packagesRoot = packageCacheRoot();
+  let entries: string[];
+  try {
+    entries = await readdir(packagesRoot);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException)?.code === "ENOENT") return { removed, warnings };
+    throw error;
+  }
+  const prefix = `${PLUGIN_NAME}@`;
+  const targets = entries
+    .filter((name) => name === PLUGIN_NAME || name.startsWith(prefix))
+    .sort()
+    .map((name) => join(packagesRoot, name));
+  for (const target of targets) {
+    try {
+      await rm(target, { recursive: true });
+      removed.push(target);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      warnings.push(`Could not clear cached package ${target}: ${message}`);
+    }
+  }
+  return { removed, warnings };
 }
 
 export function getGlobalConfigPath(): string {
@@ -287,12 +351,16 @@ export async function install(
   const mode = await resolveMode(requested);
   const configBase = scopeBase(scope, projectDir);
   const { skillPath, commandPath } = await payloadPaths(configBase);
+  const cache = await prunePackageCache();
+  for (const warning of cache.warnings) {
+    console.warn(`Warning: ${warning}`);
+  }
   if (mode === "copy") {
     const { upToDate, skippedModified } = await ensurePayload(scope, projectDir, force);
-    return { scope, mode, skillPath, commandPath, entry: null, entryConfigPath: null, skippedModified, upToDate };
+    return { scope, mode, skillPath, commandPath, entry: null, entryConfigPath: null, skippedModified, upToDate, clearedCache: cache.removed };
   }
   const { upToDate, entry, entryConfigPath } = await registerPlugin(scope, projectDir);
-  return { scope, mode, skillPath, commandPath, entry, entryConfigPath, skippedModified: [], upToDate };
+  return { scope, mode, skillPath, commandPath, entry, entryConfigPath, skippedModified: [], upToDate, clearedCache: cache.removed };
 }
 
 export async function uninstall(scope: Scope, projectDir: string = process.cwd()): Promise<UninstallResult> {
