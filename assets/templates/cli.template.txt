@@ -41,10 +41,10 @@ Examples:
   opencode-myextension install --scope global
   opencode-myextension install --mode plugin
   opencode-myextension uninstall --scope local
-   opencode-myextension status
-   opencode-myextension migrate --force
-   opencode-myextension clear-cache
- `);
+  opencode-myextension status
+  opencode-myextension migrate --force
+  opencode-myextension clear-cache
+`);
 }
 
 function isInstallMode(value: string): value is InstallMode {
@@ -96,6 +96,9 @@ async function main(): Promise<void> {
           }
         } else {
           console.log(`  Plugin entry: ${result.entry} in ${result.entryConfigPath}`);
+        }
+        for (const cleared of result.clearedCache) {
+          console.log(`  Cleared cache: ${cleared}`);
         }
         break;
       }
