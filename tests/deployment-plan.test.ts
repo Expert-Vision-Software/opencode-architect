@@ -86,6 +86,60 @@ describe("content-based deployment plan (issue #18)", () => {
   });
 });
 
+describe("generated-package cache hygiene (issue #14)", () => {
+  test("installer template prunes self cache copies on install, warn-and-continue", async () => {
+    const source = await readTemplate("installer.template.txt");
+    expect(source).toContain("prunePackageCache");
+    expect(source).toContain("const cache = await prunePackageCache();");
+    expect(source).toContain("clearPackageCache");
+    expect(source).toMatch(/Could not clear cached package/);
+    expect(source).toContain('"opencode", "packages"');
+  });
+
+  test("installer prunes every invocation including no-ops, before mode dispatch", async () => {
+    const source = await readTemplate("installer.template.txt");
+    const installBody = source.slice(source.indexOf("export async function install("));
+    const pruneIndex = installBody.indexOf("await prunePackageCache()");
+    const copyBranch = installBody.indexOf('if (mode === "copy")');
+    expect(pruneIndex).toBeGreaterThan(-1);
+    expect(copyBranch).toBeGreaterThan(pruneIndex);
+  });
+
+  test("generated CLI exposes a self-only clear-cache without --package/--all", async () => {
+    const source = await readTemplate("cli.template.txt");
+    const code = source.slice(source.indexOf("#!/usr/bin/env bun"));
+    expect(code).toContain('case "clear-cache"');
+    expect(code).toContain("clearPackageCache");
+    expect(code).toContain("nothing to remove");
+    expect(code).not.toMatch(/package:\s*\{/);
+    expect(code).not.toMatch(/all:\s*\{/);
+  });
+
+  test("load-time advisory names bunx <pkg> clear-cache and the hook never deletes", async () => {
+    const source = await readTemplate("plugin-local.template.txt");
+    expect(source).toContain("clear-cache");
+    expect(source).toMatch(/bunx \$\{PACKAGE_NAME\} clear-cache/);
+    expect(source).not.toMatch(/await rm\(|rmSync/);
+  });
+
+  test("conformance checklist covers cache hygiene and the auditor consumes every item", async () => {
+    const checklist = await readReference("conformance-checklist.md");
+    expect(checklist).toContain("**A6 Cache hygiene");
+    expect(checklist).toContain("clear-cache");
+    const auditor = await readAgent("opencode-extension-auditor.md");
+    expect(auditor).toContain("every item in the checklist");
+  });
+
+  test("packager and publisher instructions require generated packages to carry cache hygiene", async () => {
+    const packager = await readAgent("opencode-packager.md");
+    const publisher = await readAgent("opencode-publisher.md");
+    expect(packager).toContain("clear-cache");
+    expect(packager).toContain("A6");
+    expect(publisher).toContain("clear-cache");
+    expect(publisher).toContain("A6");
+  });
+});
+
 async function readTemplate(name: string): Promise<string> {
   const source = await readFile(path.join(REPO_ROOT, "assets/templates", name), "utf-8");
   return source.split("---").slice(1).join("---");
@@ -93,4 +147,8 @@ async function readTemplate(name: string): Promise<string> {
 
 async function readAgent(name: string): Promise<string> {
   return readFile(path.join(REPO_ROOT, "assets/agents", name), "utf-8");
+}
+
+async function readReference(name: string): Promise<string> {
+  return readFile(path.join(REPO_ROOT, "assets/references", name), "utf-8");
 }
