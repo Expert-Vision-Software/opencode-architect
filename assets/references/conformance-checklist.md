@@ -31,6 +31,23 @@ finding.
   a manifest-only or zero-file scope as installed. A skipped asset that
   leaves the scope looking installed is non-conformant. (Hard error on the
   CLI; the B4 catch turns it into a warning at load.)
+- **A6 Cache hygiene (self-scoped).** Every install — including a zero-write
+  no-op — prunes the package's own cache copies (`<package>`,
+  `<package>@latest`, `<package>@<version>`) from OpenCode's package cache
+  (`$XDG_CACHE_HOME/opencode/packages`, falling back to
+  `~/.cache/opencode/packages`), best-effort: per-copy removal failures warn
+  and the install still succeeds. Other packages' cache dirs and pinned
+  `<package>@x.y.z` copies are never touched. The CLI exposes a self-only
+  `clear-cache` subcommand that removes `<package>` and every
+  `<package>@*` idempotently (nothing cached is a success) with the same
+  warn-and-continue semantics; a `--package <name>` or `--all` mode on a
+  generated package's CLI is non-conformant — broad cache deletion belongs
+  to the suite's own CLI only. The load-time hook never deletes cache
+  entries (deletion races OpenCode's in-flight installs, ADR-0007): when
+  bundled assets are absent (partial cache artifact), its advisory
+  instructs running `bunx <package> clear-cache` and reinstalling. A hook
+  that deletes cache entries, or an advisory that only describes manual
+  cache removal, is non-conformant.
 
 ## B. Config safety
 
