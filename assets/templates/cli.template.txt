@@ -4,15 +4,15 @@
 |---|---|---|---|
 | `CLI NAME` → "opencode-myextension" | Yes | CLI command name; matches package.json bin field | — |
 | `VERSION` → "1.0.0" | Yes | Initial version | `1.0.0` |
-| `COMMANDS` | Yes | install / uninstall / status / migrate subcommands | — |
+| `COMMANDS` | Yes | install / uninstall / status / migrate / clear-cache subcommands | — |
 | `SCOPE` → "local" | Yes | Default scope when `--scope` is not specified | `local` |
 
-**Load-bearing — do not simplify:** the deployment plan is content-based, so `install` resolves the mode through `resolveMode` and never forces one: assets-only packages default to copy and accept `--mode plugin`; code-backed packages always register and `--mode copy` surfaces the `CopyModeUnsupportedError` as a hard, explanatory exit-1 error; `install` forwards `force` so consumer-modified files are skipped without it; `status` reports mode, version, entry, entry config file, and registration presence per scope; `migrate` refuses to run without `--force` (root-config deletion is consent-gated and CLI-only); the module lives at `src/cli.ts` and imports `./installer.ts`.
+**Load-bearing — do not simplify:** the deployment plan is content-based, so `install` resolves the mode through `resolveMode` and never forces one: assets-only packages default to copy and accept `--mode plugin`; code-backed packages always register and `--mode copy` surfaces the `CopyModeUnsupportedError` as a hard, explanatory exit-1 error; `install` forwards `force` so consumer-modified files are skipped without it; `status` reports mode, version, entry, entry config file, and registration presence per scope; `migrate` refuses to run without `--force` (root-config deletion is consent-gated and CLI-only); `clear-cache` is self-only — it removes this package's own cache copies (`<package>` and every `<package>@*`) from OpenCode's package cache, is idempotent (nothing cached is a success), warns and continues on per-target removal failures, and must never grow `--package` or `--all` modes (other packages' cache and the shared OpenCode cache dir are out of scope for a generated package); the module lives at `src/cli.ts` and imports `./installer.ts`.
 
 ---
 #!/usr/bin/env bun
 import { parseArgs } from "node:util";
-import { install, uninstall, status, migrateRootConfig, CopyModeUnsupportedError, type Scope, type InstallMode } from "./installer.ts";
+import { install, uninstall, status, migrateRootConfig, clearPackageCache, CopyModeUnsupportedError, type Scope, type InstallMode } from "./installer.ts";
 
 const VERSION = JSON.parse(
   await Bun.file(`${import.meta.dirname}/../package.json`).text()
@@ -27,6 +27,7 @@ Commands:
   uninstall   Remove myextension (payload files and/or plugin registration, per manifest)
   status      Check installation status per scope
   migrate     Migrate root opencode.json into .opencode/ (asks for --force consent)
+  clear-cache Remove cached copies of this package from OpenCode's package cache
 
 Options:
   -s, --scope <scope>    Installation scope: "local" or "global" (default: local)
@@ -40,9 +41,10 @@ Examples:
   opencode-myextension install --scope global
   opencode-myextension install --mode plugin
   opencode-myextension uninstall --scope local
-  opencode-myextension status
-  opencode-myextension migrate --force
-`);
+   opencode-myextension status
+   opencode-myextension migrate --force
+   opencode-myextension clear-cache
+ `);
 }
 
 function isInstallMode(value: string): value is InstallMode {
@@ -126,6 +128,23 @@ async function main(): Promise<void> {
         }
         const migrated = await migrateRootConfig(process.cwd(), async () => true);
         console.log(migrated ? "Migrated opencode.json into .opencode/opencode.json" : "Nothing to migrate");
+        break;
+      }
+      case "clear-cache": {
+        if (positionals.length > 1) {
+          console.error(`Unexpected arguments for clear-cache: ${positionals.slice(1).join(" ")}`);
+          process.exit(1);
+        }
+        const outcome = await clearPackageCache();
+        if (outcome.removed.length === 0) {
+          console.log("No cached copies found; nothing to remove.");
+        } else {
+          console.log("Removed cached copies:");
+          for (const target of outcome.removed) console.log(`  Removed: ${target}`);
+        }
+        for (const warning of outcome.warnings) {
+          console.warn(`  Warning: ${warning}`);
+        }
         break;
       }
       default: console.error(`Unknown command: ${command}`); printHelp(); process.exit(1);
