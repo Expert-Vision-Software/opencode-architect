@@ -15,14 +15,16 @@ The frontmatter defines properties; the body is the prompt template.
 
 ```markdown
 ---
-description: Run tests with coverage
-agent: build
-model: anthropic/claude-haiku-4-5
+description: "Run tests with coverage"
+agent: "build"
+model: "anthropic/claude-haiku-4-5"
 ---
 
 Run the full test suite with coverage report and show any failures.
 Focus on the failing tests and suggest fixes.
 ```
+
+Every frontmatter property value is enclosed in double quotation marks — never bare values (checklist D6).
 
 ## Frontmatter keys
 

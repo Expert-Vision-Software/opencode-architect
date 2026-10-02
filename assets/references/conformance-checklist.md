@@ -151,20 +151,24 @@ finding.
 - **D5 One-shot advisory.** Any "not installed, run bunx … install" notice
   fires at most once per session and is suppressed when any scope holds an
   install.
-- **D6 Frontmatter hygiene.** Frontmatter values in every shipped markdown
-  file (agent definitions, `SKILL.md`, command files) contain no colons:
-  a value that needs a colon (URLs, `provider/model-id`, sentences with
-  colons) is rewritten or the value is enclosed in double quotes. Where
-  possible, all frontmatter string values are double-quoted. Unquoted
-  values containing `:` are non-conformant — YAML parses them as mappings
-  or fails validation.
-- **D7 README badge row.** The package README carries, directly below the
-  first heading, the badge row: npm version, Bun runtime, license,
-  platforms (URL-encoded, matching the repo's actual platforms), the fixed
-  OpenCode plugin badge, and DeepWiki when indexed. Badge URLs use the
-  exact package name and repo casing (`My-Org/pkg` ≠ `my-org/pkg`). A
-  missing badge row, extra runtime badges, or mismatched casing is
-   non-conformant.
+- **D6 Frontmatter hygiene.** In every shipped markdown file (agent
+  definitions, `SKILL.md`, command files) **every frontmatter property
+  value is enclosed in double quotation marks** — bare values are
+  non-conformant: `mode: subagent` fails, `mode: "subagent"` conforms.
+  Quoting is mandatory, not best-effort, and applies to names,
+  descriptions, enum values, and everything else. The only exception is a
+  value the consuming schema requires as a native YAML boolean or number
+  (e.g. `subtask: true`, `temperature: 0.2`). A value that needs a colon
+  (URLs, `provider/model-id`, sentences with colons) stays inside its
+  double quotes; an unquoted value containing `:` is doubly
+  non-conformant — YAML parses it as a mapping or fails validation.
+- **D7 README badge row.** The package README carries, on **one single
+  line** directly below the first heading, the badge row: npm version, Bun
+  runtime, license, platforms (URL-encoded, matching the repo's actual
+  platforms), the fixed OpenCode plugin badge, and DeepWiki when indexed.
+  Badge URLs use the exact package name and repo casing (`My-Org/pkg` ≠
+  `my-org/pkg`). A missing badge row, a multi-line row, extra runtime
+  badges, hand-rolled variants, or mismatched casing is non-conformant.
 
 - **D8 Consumer snippet key validity.** Every `opencode.json` snippet the
   package ships (README, AGENTS.md, CONTRIBUTING, CLI help) uses the
@@ -172,7 +176,20 @@ finding.
   `name@latest` or a `file:///` URL. Verify emitted keys against
   `https://opencode.ai/config.json` (the `Config` definition sets
   `additionalProperties: false`, so an invalid key is rejected at load). A
-   shipped snippet using an invalid key is non-conformant.
+  shipped snippet using an invalid key is non-conformant.
+
+- **D9 Promoted-source retirement.** When a package is created from
+  existing `.opencode/` extensions, the originals are removed only after
+  (1) a live config reference to the package exists — a `plugin` entry or
+  `skills.paths`, surgically written with user consent — and (2) the
+  scope's payload is verified on disk (install manifest present, files
+  match the packaged copies). Deletion is per-item with a printed list and
+  explicit user consent — never the whole `.opencode/` directory, never
+  unrelated extensions, and never with no reference in place (the
+  extension would silently vanish from the next start). The end state
+  leaves `.opencode/` holding only the config file plus hook-managed
+  payload and manifests: the source `package.json`, lockfile,
+  `node_modules/`, and every promoted original are gone.
 
 ## E. Deployment plan (ADR-0008)
 

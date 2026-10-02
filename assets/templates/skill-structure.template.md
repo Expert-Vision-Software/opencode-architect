@@ -17,13 +17,13 @@ DESCRIPTION
 
 ---
 ---
-name: myextension
-description: Use this skill when the user asks about...
-license: MIT
-compatibility: opencode
+name: "myextension"
+description: "Use this skill when the user asks about..."
+license: "MIT"
+compatibility: "opencode"
 metadata:
-  version: 1.0.0
-  audience: agents
+  version: "1.0.0"
+  audience: "agents"
   topic: "topic1, topic2"
 ---
 

@@ -15,6 +15,8 @@ The filename becomes the agent name (`review.md` → `review` agent). The markdo
 
 ## Frontmatter fields
 
+Every frontmatter property value is enclosed in double quotation marks — `description: "..."`, `mode: "subagent"` — never bare values; the only exception is a value the schema requires as a native boolean or number (checklist D6).
+
 | Field | Required | Notes |
 | --- | --- | --- |
 | `description` | yes | What the agent does and when to use it. Drives subagent selection. |

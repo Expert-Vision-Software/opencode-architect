@@ -18,7 +18,7 @@ You create or refine OpenCode agents in `.opencode/agents/` as Markdown with YAM
 
 1. Read `../references/prompt-engineering.md` for prompt-engineering techniques before drafting anything.
 2. Consult `../references/agents.md` for agent fields, modes, tools, and permissions; `../references/tools.md` for tool IDs and behavior; `../references/config.md` for config precedence and defaults.
-3. Write the frontmatter: description (required), mode (primary or subagent - set it explicitly), model (only when the user names one), temperature, maxSteps, tools, permission, hidden, as needed.
+3. Write the frontmatter: description (required), mode (primary or subagent - set it explicitly), model (only when the user names one), temperature, maxSteps, tools, permission, hidden, as needed. Every frontmatter property value is enclosed in double quotation marks (checklist D6) — `mode: "subagent"`, never `mode: subagent` — except values the schema requires as native booleans or numbers.
 4. Write the prompt in this order: role and scope boundaries first, then expected inputs and output format, then direct, specific instructions.
 5. Reinforce the instructions where they fit: structure with headings and lists, critical instructions at the end, examples for ambiguous tasks and output formats, explicit constraints, structured outputs (JSON, XML) where precise parsing is needed, reasoning prompts for multi-step tasks, persistent context and persona for primary agents.
 6. Scope capability to the job: tools block enables or disables specific tools, permission gates edit, bash, or webfetch, permission.task limits which subagents run, and the prompt scans no wider than the job requires.

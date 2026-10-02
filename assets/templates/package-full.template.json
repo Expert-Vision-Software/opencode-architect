@@ -41,7 +41,7 @@ METADATA
   "type": "module",
   "module": "index.ts",
   "bin": {
-    "opencode-myextension": "./src/cli.ts"
+    "opencode-myextension": "src/cli.ts"
   },
   "repository": {
     "type": "git",

@@ -11,5 +11,14 @@ SKILL NAME
 COMMAND NAME
   "my-command.md" → your command file name in commands/
 
+PACKAGE NAME
+  "opencode-myextension" → must match package.json; the bin entry points
+  here so `bunx <package>` works
+
 ---
 export { default } from "./plugin.ts";
+
+if (import.meta.main) {
+  const { runCli } = await import("./src/cli.ts");
+  process.exitCode = await runCli(process.argv.slice(2));
+}

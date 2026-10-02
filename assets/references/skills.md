@@ -22,6 +22,8 @@ Only these fields are recognized; unknown fields are ignored:
 
 If a skill does not show up: verify `SKILL.md` capitalization, required frontmatter, unique names across locations, and that permissions don't `deny` it.
 
+Every frontmatter property value is enclosed in double quotation marks — `name: "world-greeter"`, `description: "Greets in five languages."` — never bare values (checklist D6).
+
 ## Progressive disclosure
 
 - Metadata (name + description) is pre-loaded at startup; the body is read on demand; bundled files are read only as needed — no context penalty until accessed.

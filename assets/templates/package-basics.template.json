@@ -16,10 +16,16 @@ PATHS
   "commands/my-command.md"   → path to your command file
 
 FILES
-  ["index.ts", "plugin.ts", "skills", "commands"]
-                             → list the content directories actually shipped;
-                               add "agents", "plugins", "tools", or "src"
-                               when the package ships them
+  ["index.ts", "plugin.ts", "skills", "commands", "src"]
+                             → list the content directories actually shipped
+                               (src/ always ships the CLI); add "agents",
+                               "plugins", or "tools" when the package
+                               ships them
+
+BIN
+  "src/cli.ts"               → the bunx entry point; keeps every
+                               `bunx <package> ...` advisory working at
+                               packager time, not only after publishing
 
 CONTENT DECLARATION
   "assets"                   → keep when the package ships only skills and/or commands
@@ -39,5 +45,8 @@ METADATA
   "content": "assets",
   "type": "module",
   "module": "index.ts",
-  "files": ["index.ts", "plugin.ts", "skills", "commands"]
+  "bin": {
+    "opencode-myextension": "src/cli.ts"
+  },
+  "files": ["index.ts", "plugin.ts", "skills", "commands", "src"]
 }

@@ -199,6 +199,104 @@ describe("package-root content layout (no assets/ wrapper)", () => {
   });
 });
 
+describe("generated CLI surface", () => {
+  test("plugin-local reads version from the package root, not its parent", async () => {
+    const source = await readTemplate("plugin-local.template.txt");
+    expect(source).toContain("${import.meta.dirname}/package.json");
+    expect(source).not.toContain("${import.meta.dirname}/../package.json");
+  });
+
+  test("index template dispatches to the CLI; cli template exports runCli", async () => {
+    const index = await readTemplate("index.template.txt");
+    expect(index).toContain("import.meta.main");
+    expect(index).toContain("runCli");
+    const cli = await readTemplate("cli.template.txt");
+    expect(cli).toContain("export async function runCli");
+    expect(cli).toContain("import.meta.main");
+  });
+
+  test("package templates declare the bunx entry at packager time", async () => {
+    for (const template of ["package-basics.template.json", "package-full.template.json"]) {
+      const source = await readTemplate(template);
+      const json = JSON.parse(source.slice(source.indexOf("{")));
+      expect(json.bin["opencode-myextension"]).toBe("src/cli.ts");
+    }
+  });
+
+  test("packager requires the exact publisher badge row, the bin entry, and the full src set", async () => {
+    const packager = await readAgent("opencode-packager.md");
+    expect(packager).toContain("Never substitute custom badges");
+    expect(packager).toContain("src/cli.ts");
+    expect(packager).toContain("installer.template.txt");
+    expect(packager).toContain("cli.template.txt");
+  });
+});
+
+describe("frontmatter hygiene (mandatory double-quoting)", () => {
+  test("checklist D6 requires every frontmatter value to be double-quoted", async () => {
+    const checklist = await readReference("conformance-checklist.md");
+    expect(checklist).toContain("enclosed in double quotation marks");
+    expect(checklist).toContain("Quoting is mandatory");
+  });
+
+  test("references and templates model quoted frontmatter", async () => {
+    const structure = await readTemplate("skill-structure.template.md");
+    expect(structure).toContain('name: "myextension"');
+    expect(structure).toContain('audience: "agents"');
+    const commands = await readReference("commands.md");
+    expect(commands).toContain('description: "Run tests with coverage"');
+    const skills = await readReference("skills.md");
+    expect(skills).toContain("double quotation marks");
+    const agents = await readReference("agents.md");
+    expect(agents).toContain("double quotation marks");
+  });
+
+  test("creator agents enforce the quoting rule", async () => {
+    for (const agent of ["opencode-skill-creator.md", "opencode-command-crafter.md", "opencode-agent-designer.md"]) {
+      const source = await readAgent(agent);
+      expect(source).toContain("double quotation marks");
+    }
+  });
+});
+
+describe("promoted-source retirement", () => {
+  test("packager retires the source only after a verified payload and consent", async () => {
+    const packager = await readAgent("opencode-packager.md");
+    expect(packager).toContain("Retire the promoted source");
+    expect(packager).toContain("Never delete with nothing pointing at the package");
+    expect(packager).toContain("Deletion never precedes a verified payload");
+    expect(packager).toContain("never the whole `.opencode/` directory");
+    expect(packager).toContain("PluginConfigEditor");
+    expect(packager).toContain("every source artifact");
+    expect(packager).toContain("plus hook-managed payload and manifests");
+  });
+
+  test("checklist covers promoted-source retirement (D9)", async () => {
+    const checklist = await readReference("conformance-checklist.md");
+    expect(checklist).toContain("**D9 Promoted-source retirement.**");
+    expect(checklist).toContain("never with no reference in place");
+    expect(checklist).toContain("plus hook-managed\n  payload and manifests");
+  });
+});
+
+describe("packager self-audit gate", () => {
+  test("done requires tree-verified inventory, thin plugin.ts, single-line badge row, and green gates", async () => {
+    const packager = await readAgent("opencode-packager.md");
+    expect(packager).toContain("Self-audit gate");
+    expect(packager).toContain("plugin.ts is the thin hook");
+    expect(packager).toContain("monolith pattern");
+    expect(packager).toContain("One single line, directly below the first heading");
+    expect(packager).toContain("`bun test` and `bunx tsc --noEmit` run green");
+    expect(packager).toContain("Done when every self-audit gate item verifies against the tree");
+  });
+
+  test("checklist D7 requires the badge row on one single line", async () => {
+    const checklist = await readReference("conformance-checklist.md");
+    expect(checklist).toContain("**one single\n  line**");
+    expect(checklist).toContain("a multi-line row");
+  });
+});
+
 async function readTemplate(name: string): Promise<string> {
   const source = await readFile(path.join(REPO_ROOT, "assets/templates", name), "utf-8");
   return source.split("---").slice(1).join("---");
