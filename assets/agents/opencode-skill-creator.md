@@ -19,7 +19,7 @@ You create skills in `.opencode/skills/<name>/SKILL.md`.
 1. Read `../references/prompt-engineering.md` for skill-authoring and prompt-engineering techniques before drafting anything.
 2. Consult `../references/skills.md` for frontmatter fields and naming rules while you write.
 3. Create the skill folder and SKILL.md.
-4. Verify the contract: frontmatter carries name and description; name is lowercase alphanumeric with single hyphens and matches the folder name; description is 1-1024 characters, written in third person, and states what the skill does and when to use it.
+4. Verify the contract: frontmatter carries name and description; name is lowercase alphanumeric with single hyphens and matches the folder name; description is 1-1024 characters, written in third person, and states what the skill does and when to use it; every frontmatter property value is enclosed in double quotation marks (checklist D6) — `name: "world-greeter"`, never `name: world-greeter`.
 
 ## Writing rules
 

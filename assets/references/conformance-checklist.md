@@ -3,8 +3,9 @@
 Canonical review criteria for assessing whether an existing plugin package
 conforms to this suite's design (ADR 0006: scope-aware, manifest-gated
 installation). Review a built package — a repo with `plugin.ts`, install
-logic, a bundled asset directory (`assets/` or repo-root `skills/`), and
-`package.json` — against every item. Cite
+logic, bundled content directories at the package root (`skills/`,
+`commands/`; the legacy `assets/` wrapper is recognized but non-default),
+and `package.json` — against every item. Cite
 file and line evidence per item; an item with no evidence found is a
 finding.
 
@@ -31,6 +32,23 @@ finding.
   a manifest-only or zero-file scope as installed. A skipped asset that
   leaves the scope looking installed is non-conformant. (Hard error on the
   CLI; the B4 catch turns it into a warning at load.)
+- **A6 Cache hygiene (self-scoped).** Every install — including a zero-write
+  no-op — prunes the package's own cache copies (`<package>`,
+  `<package>@latest`, `<package>@<version>`) from OpenCode's package cache
+  (`$XDG_CACHE_HOME/opencode/packages`, falling back to
+  `~/.cache/opencode/packages`), best-effort: per-copy removal failures warn
+  and the install still succeeds. Other packages' cache dirs and pinned
+  `<package>@x.y.z` copies are never touched. The CLI exposes a self-only
+  `clear-cache` subcommand that removes `<package>` and every
+  `<package>@*` idempotently (nothing cached is a success) with the same
+  warn-and-continue semantics; a `--package <name>` or `--all` mode on a
+  generated package's CLI is non-conformant — broad cache deletion belongs
+  to the suite's own CLI only. The load-time hook never deletes cache
+  entries (deletion races OpenCode's in-flight installs, ADR-0007): when
+  bundled assets are absent (partial cache artifact), its advisory
+  instructs running `bunx <package> clear-cache` and reinstalling. A hook
+  that deletes cache entries, or an advisory that only describes manual
+  cache removal, is non-conformant.
 
 ## B. Config safety
 
@@ -63,6 +81,20 @@ finding.
   once-guards — sharing one flag lets either suppress the other. The hook
   never deletes the cache (deletion races OpenCode's in-flight installs);
   it instructs only.
+
+- **B5 Surgical config writes.** Every registration write to a consumer
+  config file is a text splice into the `plugin` array with every other
+  byte untouched — indentation, comments, trailing commas, key order, and
+  unrelated keys all preserved. A parse-then-reserialize of the whole file
+  (which reformats or drops comments) is non-conformant. The splice never
+  touches anything outside the array, and a file that cannot be spliced is
+  reported, not rewritten.
+- **B6 Zero-write registration no-op.** When a semantically matching entry
+  (`name`, `name@latest`, `name@x.y.z`) already exists in a candidate
+  config, registration for that config is a no-op: zero bytes written, even
+  when the entry's spelling differs from the canonical form. Conversely, a
+  plugin-mode up-to-date check requires the recorded entry to still be
+  present — a version match alone is not enough when the entry was removed.
 
 ## C. Scope discipline
 
@@ -119,20 +151,24 @@ finding.
 - **D5 One-shot advisory.** Any "not installed, run bunx … install" notice
   fires at most once per session and is suppressed when any scope holds an
   install.
-- **D6 Frontmatter hygiene.** Frontmatter values in every shipped markdown
-  file (agent definitions, `SKILL.md`, command files) contain no colons:
-  a value that needs a colon (URLs, `provider/model-id`, sentences with
-  colons) is rewritten or the value is enclosed in double quotes. Where
-  possible, all frontmatter string values are double-quoted. Unquoted
-  values containing `:` are non-conformant — YAML parses them as mappings
-  or fails validation.
-- **D7 README badge row.** The package README carries, directly below the
-  first heading, the badge row: npm version, Bun runtime, license,
-  platforms (URL-encoded, matching the repo's actual platforms), the fixed
-  OpenCode plugin badge, and DeepWiki when indexed. Badge URLs use the
-  exact package name and repo casing (`My-Org/pkg` ≠ `my-org/pkg`). A
-  missing badge row, extra runtime badges, or mismatched casing is
-   non-conformant.
+- **D6 Frontmatter hygiene.** In every shipped markdown file (agent
+  definitions, `SKILL.md`, command files) **every frontmatter property
+  value is enclosed in double quotation marks** — bare values are
+  non-conformant: `mode: subagent` fails, `mode: "subagent"` conforms.
+  Quoting is mandatory, not best-effort, and applies to names,
+  descriptions, enum values, and everything else. The only exception is a
+  value the consuming schema requires as a native YAML boolean or number
+  (e.g. `subtask: true`, `temperature: 0.2`). A value that needs a colon
+  (URLs, `provider/model-id`, sentences with colons) stays inside its
+  double quotes; an unquoted value containing `:` is doubly
+  non-conformant — YAML parses it as a mapping or fails validation.
+- **D7 README badge row.** The package README carries, on **one single
+  line** directly below the first heading, the badge row: npm version, Bun
+  runtime, license, platforms (URL-encoded, matching the repo's actual
+  platforms), the fixed OpenCode plugin badge, and DeepWiki when indexed.
+  Badge URLs use the exact package name and repo casing (`My-Org/pkg` ≠
+  `my-org/pkg`). A missing badge row, a multi-line row, extra runtime
+  badges, hand-rolled variants, or mismatched casing is non-conformant.
 
 - **D8 Consumer snippet key validity.** Every `opencode.json` snippet the
   package ships (README, AGENTS.md, CONTRIBUTING, CLI help) uses the
@@ -142,10 +178,39 @@ finding.
   `additionalProperties: false`, so an invalid key is rejected at load). A
   shipped snippet using an invalid key is non-conformant.
 
+- **D9 Promoted-source retirement.** When a package is created from
+  existing `.opencode/` extensions, the originals are removed only after
+  (1) a live config reference to the package exists — a `plugin` entry or
+  `skills.paths`, surgically written with user consent — and (2) the
+  scope's payload is verified on disk (install manifest present, files
+  match the packaged copies). Deletion is per-item with a printed list and
+  explicit user consent — never the whole `.opencode/` directory, never
+  unrelated extensions, and never with no reference in place (the
+  extension would silently vanish from the next start). The end state
+  leaves `.opencode/` holding only the config file plus hook-managed
+  payload and manifests: the source `package.json`, lockfile,
+  `node_modules/`, and every promoted original are gone.
+
+## E. Deployment plan (ADR-0008)
+
+- **E1 Content declaration present and consistent.** `package.json` carries
+  a `"content"` field (`"assets"` or `"code"`), and it matches what the
+  package actually ships: any package containing agents, tools, hooks, or
+  other plugin integrations declares `"code"`; an assets-only package
+  declares `"assets"`. A missing declaration, or one contradicting the
+  payload (e.g. `"assets"` on a package shipping a `plugin.ts` hook) is
+  non-conformant.
+- **E2 Binary mode enforcement.** The deployment plan is binary and
+  content-decided: assets-only packages copy-install by default (`--mode
+  plugin` opts into registration); code-backed packages always register and
+  `--mode copy` is a hard, explanatory error (`CopyModeUnsupportedError`),
+  never a hybrid copy-plus-register. A per-scope mode choice, a mixed
+  copy-and-register install, or a silent mode fallback is non-conformant.
+
 ## Verdict scale
 
 - **Conformant** — every item evidenced.
 - **Partially conformant** — violations are latent (dead code, fallback
   paths not yet exercised); list item IDs with evidence.
-- **Non-conformant** — any A1–A4, B1, B4, C1–C3 violation on a live code path;
-  these are the historically destructive patterns.
+- **Non-conformant** — any A1–A4, B1, B4–B6, C1–C3, E1–E2 violation on a
+  live code path; these are the historically destructive patterns.

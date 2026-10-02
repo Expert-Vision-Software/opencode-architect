@@ -5,6 +5,36 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.0] - 2026-10-01
+
+### Added
+
+- Packager deployment-target choice: the packager first establishes the repo root (`git rev-parse --show-toplevel`, never the `.opencode/` directory) and resolves every source and target path from it; a generated package lays down in the current workspace root by default (files merged with consent, structural conflicts routed to `opencode-plugin-engineer`, sibling `../opencode-<name>/` recommended only on explicit request or extensive merges) or in a sibling directory on request
+- Mandatory frontmatter double-quoting (checklist D6): every frontmatter property value in every generated asset — `SKILL.md`, commands, agent definitions — is enclosed in double quotation marks (bare values non-conformant; native booleans/numbers excepted); rule carried in the skills/commands/agents references, the skill-structure template, and the three creator agents
+- Generated packages ship a working CLI surface at packager time: `bin` entry (`<package> → src/cli.ts`), `check`/`test` scripts, `src/installer.ts` + `src/cli.ts` created from templates, `runCli(argv)` export, and an `index.ts` dispatch shim — so every `bunx <package> ...` advisory resolves before any publishing step
+- Promoted-source retirement (checklist D9): after packaging `.opencode/` extensions, the packager establishes a live config reference to the package (surgical `plugin`/`skills.paths` write with consent), triggers and verifies the scope payload, then — with a printed list and explicit user confirmation — removes the promoted originals per item; the end state leaves `.opencode/` holding only the config file plus hook-managed payload and manifests (source `package.json`, lockfile, and `node_modules/` always removed, unrelated extensions untouched), and it never deletes with no reference in place or the whole `.opencode/` directory
+- Packager self-audit gate: before reporting done, the packager verifies the actual tree — exact file inventory (`src/` module split), `plugin.ts` as the thin hook only (monolith pattern is a structural failure), package.json `bin`/`files`/`content`/scripts, single-line byte-for-byte badge row, D6 frontmatter quoting, `bun test` + `bunx tsc --noEmit` green, and the retirement end state — and fixes misses by rebuilding from templates; checklist D7 now fails multi-line or hand-rolled badge rows
+- Generated packages inherit the suite's cache hygiene, self-scoped (checklist A6): the installer template prunes its own `@latest`, `@<version>`, and untagged cache copies on every install (best-effort warn-and-continue, including no-ops); the generated CLI template gains a self-only `clear-cache` subcommand (no `--package`/`--all`); the generated load-time failure advisory suggests `bunx <pkg> clear-cache` instead of manual removal; the conformance checklist, packager, and publisher instructions require generated output to carry it; regression coverage asserts each template behavior
+- `clear-cache` CLI subcommand (manual-only, never invoked at load): with no flags it removes `opencode-architect` and every `opencode-architect@*` copy from OpenCode's package cache (`$XDG_CACHE_HOME/opencode/packages`, falling back to `~/.cache/opencode/packages`). `--package <name>` removes `<name>` and every `<name>@*`; `--all` removes the whole OpenCode cache directory; both broad modes require `--yes`, are mutually exclusive, and unsafe package names (path separators, `..`) are rejected. `--dry-run` lists what any mode would remove without deleting. Idempotent — nothing cached is a success — and removal failures warn without failing the command
+- `install` prunes this package's stale copies from OpenCode's package cache (`$XDG_CACHE_HOME/opencode/packages`, falling back to `~/.cache/opencode/packages`): `opencode-architect`, `opencode-architect@latest`, and `opencode-architect@<installed version>` are removed on every install invocation, including no-ops, so OpenCode re-fetches the just-installed version on next start. Pinned versions and other packages' cache dirs are preserved; removal failures warn without failing the install, and cleared paths are reported
+- Conformance checklist items for the content-based deployment plan (ADR-0008): surgical config writes (B5), zero-write registration no-op (B6), content declaration present and consistent (E1), and binary mode enforcement (E2); E1–E2 and B5–B6 join the hard non-conformance set and the auditor's conformance review covers section E
+- Plugins and config references document the allowed config patterns (including global `config.json`), the repo-root `opencode.jsonc` create-default, and the surgical-writer rule
+
+### Fixed
+
+- `plugin-local.template.txt` read the package version from the parent of the package dir (`${import.meta.dirname}/../package.json`); corrected to the package root, matching plugin.ts's actual location
+
+### Changed
+
+- Packager README badge row is now byte-for-byte the publisher 4b markup: substituting custom badges ("Bun tested", "TypeScript", hand-rolled variants) is explicitly D7 non-conformant
+- **Breaking:** generated packages use package-root content directories — `skills/<name>/`, `commands/`, `agents/` sit at the package root with no `assets/` intermediary (`ASSET_LAYOUT_DIR = "."`), aligning generated repos with skills.sh-style root-`skills/` scanners; legacy `assets/`-wrapper packages remain recognized by the installer, checklist, auditor, and publisher
+- Generated `package.json` `files` lists the shipped content directories (`skills`, `commands`, plus `agents`/`plugins`/`tools`/`src` as present) instead of `assets`
+- **Breaking:** `install` is now a registration manager (plugin install is the only mode for this code-backed package, per [ADR-0008](docs/adr/0008-content-based-deployment-plans.md), superseding ADR-0004): the CLI ensures the `plugin` entry in the target scope's config file via the surgical editor — comments and formatting preserved, unparseable configs abort untouched — and writes a generalized manifest (version, mode, plugin entry, target config file) at the scope base. A matching manifest with the entry present is a zero-write no-op. `--mode copy` is refused with an explanatory error; `--force` now re-registers and rewrites the manifest instead of removing the entry
+- Legacy copy installs migrate automatically on install: the old manifest's file list is removed exactly, with a printed notice, before the plugin entry is added
+- `uninstall` surgically removes the plugin entry (config formatting preserved) plus the manifest and any residual copy payload — manifest-gated, or a known-filenames sweep of `agents/` and `opencode-architect/` when no manifest exists; `status` reports mode, version, and the config file holding the registration
+- Generalized manifest schema covers copy mode too, with a single `content-hash` property (folder-hash) for copy-installed payloads
+- Nothing changes at runtime: the plugin already registers the agents from the package and resolves reference paths at load
+
 ## [0.7.1] - 2026-09-21
 
 ### Fixed

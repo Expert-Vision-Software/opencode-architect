@@ -4,15 +4,32 @@
 |---|---|---|---|
 | `PACKAGE NAME` → "opencode-myextension" | Yes | npm package name; the manifest file is `<configBase>/<package>.manifest.json` | — |
 
-**Load-bearing — do not simplify:** idempotency is per-file sha256 (`Bun.CryptoHasher`), never a `.version` marker; a missing or malformed manifest reads as "not installed" (drift), never as a reason to write without an ensure path.
+**Load-bearing — do not simplify:** idempotency is per-file sha256 (`Bun.CryptoHasher`), never a `.version` marker; a missing or malformed manifest reads as "not installed" (drift), never as a reason to write without an ensure path; a manifest without a `mode` field reads as `"copy"` so pre-generalization copy installs migrate cleanly; the manifest is one record per scope for BOTH install modes — `mode` and the registration fields record the deployment plan, while `files` records whatever payload the load-time hook has ensured (so a plugin-mode manifest gains payload hashes after the first load, and the CLI must preserve them when it rewrites registration); plugin-mode up-to-dateness includes the registration — the recorded entry must still be present in the recorded config file (semantic name match, `@latest`-aware) — plus the recorded payload hashes; consumer-modified files that were skipped during install are recorded with their **packaged** hash — never the consumer's on-disk content — so the modification stays detectable and `--force` can still take ownership of it.
 
 ---
 import { readdir, readFile, writeFile, mkdir } from "node:fs/promises";
 import { join, relative } from "node:path";
+import { parseJsonc } from "./registration.ts";
+import { PluginNameNormalizer } from "./plugin-name.ts";
+
+export type InstallMode = "copy" | "plugin";
 
 export interface ManifestData {
   version: string;
+  mode: InstallMode;
+  entry: string | null;
+  entryConfigPath: string | null;
   files: Record<string, string>;
+}
+
+export interface ManifestWrite {
+  version: string;
+  mode: InstallMode;
+  entry: string | null;
+  entryConfigPath: string | null;
+  rootDir: string | null;
+  files: string[] | null;
+  hashes: Record<string, string> | null;
 }
 
 const MANIFEST_SUFFIX = ".manifest.json";
@@ -23,6 +40,7 @@ export function manifestPath(configBase: string, packageName: string): string {
 
 export class InstallManifest {
   private readonly path: string;
+  private readonly normalizer = new PluginNameNormalizer();
 
   constructor(configBase: string, packageName: string) {
     this.path = manifestPath(configBase, packageName);
@@ -35,24 +53,41 @@ export class InstallManifest {
       if (typeof parsed.version !== "string" || typeof parsed.files !== "object" || parsed.files === null) {
         return null;
       }
-      return { version: parsed.version, files: parsed.files };
+      return {
+        version: parsed.version,
+        mode: parsed.mode === "plugin" ? "plugin" : "copy",
+        entry: typeof parsed.entry === "string" ? parsed.entry : null,
+        entryConfigPath: typeof parsed.entryConfigPath === "string" ? parsed.entryConfigPath : null,
+        files: parsed.files,
+      };
     } catch {
       return null;
     }
   }
 
-  async write(version: string, rootDir: string, files: string[]): Promise<void> {
-    const data: ManifestData = { version, files: {} };
-    for (const file of files) {
-      data.files[this.toRelative(rootDir, file)] = await sha256(file);
+  async write(data: ManifestWrite): Promise<void> {
+    const record: ManifestData = {
+      version: data.version,
+      mode: data.mode,
+      entry: data.entry,
+      entryConfigPath: data.entryConfigPath,
+      files: {},
+    };
+    if (data.hashes) {
+      record.files = data.hashes;
+    } else if (data.rootDir !== null && data.files !== null) {
+      for (const file of data.files) {
+        record.files[this.toRelative(data.rootDir, file)] = await sha256(file);
+      }
     }
     await mkdir(join(this.path, ".."), { recursive: true });
-    await writeFile(this.path, JSON.stringify(data, null, 2));
+    await writeFile(this.path, JSON.stringify(record, null, 2));
   }
 
   async isUpToDate(version: string, rootDir: string): Promise<boolean> {
     const data = await this.read();
     if (data === null || data.version !== version) return false;
+    if (data.mode === "plugin" && !(await this.registrationPresent(data))) return false;
     for (const [relPath, hash] of Object.entries(data.files)) {
       const absolute = join(rootDir, relPath);
       if (await sha256(absolute).catch(() => null) !== hash) return false;
@@ -60,9 +95,23 @@ export class InstallManifest {
     return true;
   }
 
-  async findConsumerModified(version: string, rootDir: string): Promise<string[]> {
+  private async registrationPresent(data: ManifestData): Promise<boolean> {
+    if (!data.entry) return false;
+    if (!data.entryConfigPath) return false;
+    let text: string;
+    try {
+      text = await readFile(data.entryConfigPath, "utf-8");
+    } catch {
+      return false;
+    }
+    const packageName = this.baseName(data.entry);
+    const entries = pluginEntries(text, data.entryConfigPath);
+    return entries.some(entry => this.normalizer.matches(entry, packageName));
+  }
+
+  async findConsumerModified(rootDir: string): Promise<string[]> {
     const data = await this.read();
-    if (data === null || data.version === version) return [];
+    if (data === null || data.mode !== "copy") return [];
     const modified: string[] = [];
     for (const [relPath, hash] of Object.entries(data.files)) {
       const absolute = join(rootDir, relPath);
@@ -72,8 +121,23 @@ export class InstallManifest {
     return modified;
   }
 
+  private baseName(entry: string): string {
+    const specIndex = entry.lastIndexOf("@");
+    return specIndex > 0 ? entry.slice(0, specIndex) : entry;
+  }
+
   private toRelative(rootDir: string, file: string): string {
     return relative(rootDir, file).replaceAll("\\", "/");
+  }
+}
+
+function pluginEntries(text: string, configPath: string): string[] {
+  try {
+    const config = (configPath.endsWith(".jsonc") ? parseJsonc(text) : JSON.parse(text)) as { plugin?: unknown };
+    if (!Array.isArray(config.plugin)) return [];
+    return config.plugin.filter((entry): entry is string => typeof entry === "string");
+  } catch {
+    return [];
   }
 }
 

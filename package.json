@@ -1,6 +1,6 @@
 {
   "name": "opencode-architect",
-  "version": "0.7.1",
+  "version": "0.8.0",
   "description": "OpenCode plugin and CLI with ten specialist agents for agent skills, slash commands, custom tools, plugins, and MCP server integration",
   "keywords": [
     "opencode",
@@ -33,6 +33,7 @@
     "email": "support@expertvision.software"
   },
   "scripts": {
+    "start": "bun test",
     "check": "tsc --noEmit",
     "test": "bun test",
     "prepublishOnly": "npm run check && npm test",
@@ -44,18 +45,23 @@
   "files": [
     "index.ts",
     "agent-loader.ts",
+    "cache-cleaner.ts",
+    "clear-cache-usage-error.ts",
     "cli.ts",
     "installer.ts",
+    "plugin-config.ts",
     "permission-registrar.ts",
     "assets"
   ],
   "dependencies": {
-    "yaml": "^2.7.1",
-    "@opencode-ai/plugin": "*"
+    "@opencode-ai/plugin": "*",
+    "folder-hash": "^4.1.3",
+    "yaml": "^2.7.1"
   },
   "devDependencies": {
     "@opencode-ai/sdk": "latest",
     "@types/bun": "latest",
+    "@types/folder-hash": "^4.0.4",
     "@types/node": "latest",
     "typescript": "latest"
   }

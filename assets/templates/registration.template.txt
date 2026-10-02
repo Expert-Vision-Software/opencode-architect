@@ -2,7 +2,7 @@
 
 None — emit as-is as src/registration.ts.
 
-**Load-bearing — do not simplify:** detection is read-only (no writes, ever); it checks the global config, the repo's `.opencode/opencode.json(c)`, and a repo-root `opencode.json(c)` — both extensions at every base — with `@latest`-aware name matching, never the launch directory, which opencode always sets to the consumer repo, and never any directory-identity comparison (plugin dir vs `directory`, `import.meta.dirname`, `process.cwd()`, realpath); a maintainer's own checkout is served by that repo's own config registration, not by a directory check. `.jsonc` parses leniently (string-aware `//` and `/* */` comment stripping plus trailing-comma removal, so a `$schema` URL's `//` and escaped quotes survive); `.json` stays strict. Every unparseable candidate is warned about before any short-circuit. Nested and root configs combine with OR — a present-but-unregistered nested file never masks a repo-root registration.
+**Load-bearing — do not simplify:** detection is read-only (no writes, ever); it checks the global config base (`opencode.json`, `opencode.jsonc`, and the legacy `config.json`), the repo's `.opencode/opencode.json(c)`, and a repo-root `opencode.json(c)` — both extensions at every base plus global `config.json` — with `@latest`-aware name matching, never the launch directory, which opencode always sets to the consumer repo, and never any directory-identity comparison (plugin dir vs `directory`, `import.meta.dirname`, `process.cwd()`, realpath); a maintainer's own checkout is served by that repo's own config registration, not by a directory check. `.jsonc` parses leniently (string-aware `//` and `/* */` comment stripping plus trailing-comma removal, so a `$schema` URL's `//` and escaped quotes survive); `.json` stays strict. Every unparseable candidate is warned about before any short-circuit. Nested and root configs combine with OR — a present-but-unregistered nested file never masks a repo-root registration.
 
 ---
 import { exists, readFile } from "node:fs/promises";
@@ -98,13 +98,19 @@ async function readEntriesForBase(base: string): Promise<string[] | null> {
   return null;
 }
 
+async function readGlobalEntries(): Promise<string[] | null> {
+  const entries = await readEntriesForBase(getGlobalConfigPath());
+  if (entries !== null) return entries;
+  return readPluginEntries(join(getGlobalConfigPath(), "config.json"));
+}
+
 export class RegistrationDetector {
   private readonly normalizer = new PluginNameNormalizer();
 
   constructor(private readonly packageName: string) {}
 
   async detect(projectDir: string): Promise<RegistrationScope> {
-    const globalEntries = await readEntriesForBase(getGlobalConfigPath());
+    const globalEntries = await readGlobalEntries();
     const nestedEntries = await readEntriesForBase(join(projectDir, ".opencode"));
     const rootEntries = await readEntriesForBase(projectDir);
     const inGlobal = globalEntries !== null && this.matchesAny(globalEntries);

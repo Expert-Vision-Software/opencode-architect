@@ -10,8 +10,28 @@ VERSION
   "1.0.0"                    → initial version
 
 PATHS
-  "skills/myextension"       → path to your skill assets
+  "skills/myextension"       → path to your skill assets (folder at the
+                               package root — skills/, commands/, agents/;
+                               there is no assets/ wrapper)
   "commands/my-command.md"   → path to your command file
+
+FILES
+  ["index.ts", "plugin.ts", "skills", "commands", "src"]
+                             → list the content directories actually shipped
+                               (src/ always ships the CLI); add "agents",
+                               "plugins", or "tools" when the package
+                               ships them
+
+BIN
+  "src/cli.ts"               → the bunx entry point; keeps every
+                               `bunx <package> ...` advisory working at
+                               packager time, not only after publishing
+
+CONTENT DECLARATION
+  "assets"                   → keep when the package ships only skills and/or commands
+  "code"                     → replace when the package ships any agent, tool, hook, or
+                                other plugin integration (code-backed packages may also
+                                ship skills/commands)
 
 METADATA
   "Publisher Name"           → your name or organization
@@ -22,7 +42,11 @@ METADATA
 {
   "name": "opencode-myextension",
   "version": "1.0.0",
+  "content": "assets",
   "type": "module",
   "module": "index.ts",
-  "files": ["index.ts", "plugin.ts", "assets"]
+  "bin": {
+    "opencode-myextension": "src/cli.ts"
+  },
+  "files": ["index.ts", "plugin.ts", "skills", "commands", "src"]
 }
