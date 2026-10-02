@@ -6,10 +6,10 @@ EXTENSION NAME
   "myextension"  → your extension identifier (e.g., "mytool")
 
 SKILL NAME
-  "myextension"  → must match the folder name in assets/skills/
+  "myextension"  → must match the folder name in skills/
 
 COMMAND NAME
-  "my-command.md" → your command file name in assets/commands/
+  "my-command.md" → your command file name in commands/
 
 ---
 export { default } from "./plugin.ts";

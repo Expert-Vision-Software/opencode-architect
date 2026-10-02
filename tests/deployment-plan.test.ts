@@ -140,6 +140,65 @@ describe("generated-package cache hygiene (issue #14)", () => {
   });
 });
 
+describe("package-root content layout (no assets/ wrapper)", () => {
+  test("installer resolves content directories at the package root by default", async () => {
+    const source = await readTemplate("installer.template.txt");
+    expect(source).toContain('const ASSET_LAYOUT_DIR = ".";');
+    expect(source).not.toContain('const ASSET_LAYOUT_DIR = "assets";');
+  });
+
+  test("package.json templates list content directories, never assets", async () => {
+    for (const template of ["package-basics.template.json", "package-full.template.json"]) {
+      const source = await readTemplate(template);
+      const json = JSON.parse(source.slice(source.indexOf("{")));
+      const files = json.files as string[];
+      expect(files).toContain("skills");
+      expect(files).toContain("commands");
+      expect(files).not.toContain("assets");
+      expect(json.content).toBe("assets");
+    }
+  });
+
+  test("templates address skills and commands at the package root", async () => {
+    for (const template of ["plugin-local.template.txt", "index.template.txt", "installer.template.txt"]) {
+      const source = await readTemplate(template);
+      expect(source).not.toContain("assets/skills");
+      expect(source).not.toContain("assets/commands");
+    }
+  });
+
+  test("packager establishes the repo root before any path resolution", async () => {
+    const packager = await readAgent("opencode-packager.md");
+    expect(packager).toContain("Establish the workspace root");
+    expect(packager).toContain("git rev-parse --show-toplevel");
+    expect(packager).toContain("never the `.opencode/` directory");
+    expect(packager).toContain("never a sibling of `.opencode/`");
+  });
+
+  test("packager chooses the deployment target: this workspace by default, sibling on request or heavy merges", async () => {
+    const packager = await readAgent("opencode-packager.md");
+    expect(packager).toContain("Choose the deployment target");
+    expect(packager).toContain("This workspace (default)");
+    expect(packager).toContain("a mostly-empty repo never triggers sibling mode");
+    expect(packager).toContain("Sibling");
+    expect(packager).toContain("opencode-plugin-engineer");
+    expect(packager).toContain("recommend sibling mode");
+    expect(packager).toContain("no `assets/` intermediary");
+    expect(packager).toContain("skills/<skill>/SKILL.md");
+  });
+
+  test("publisher verifies package-root content directories", async () => {
+    const publisher = await readAgent("opencode-publisher.md");
+    expect(publisher).toContain("package root");
+    expect(publisher).not.toContain("assets/skills/");
+  });
+
+  test("architect routes packaging to this workspace by default", async () => {
+    const architect = await readAgent("opencode-architect.md");
+    expect(architect).toContain("this workspace root by default");
+  });
+});
+
 async function readTemplate(name: string): Promise<string> {
   const source = await readFile(path.join(REPO_ROOT, "assets/templates", name), "utf-8");
   return source.split("---").slice(1).join("---");

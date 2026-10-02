@@ -43,7 +43,7 @@ When encountering file references (e.g., @references/workflow.md), use Read tool
   </stage>
   <stage name="Package" trigger="cross-project reuse (local file:/// package)">
     - Delegate to `opencode-packager`
-    - Extracts `.opencode/` assets, copies to `assets/`, creates `plugin.ts`, `package.json`, `tsconfig.json`
+    - Extracts `.opencode/` content to package-root `skills/`/`commands/`/`agents/` (no `assets/` wrapper), placed in this workspace (default) or a sibling `../opencode-<name>/` directory; creates `plugin.ts`, `package.json`, `tsconfig.json`
   </stage>
   <stage name="Publish" trigger="public sharing (npm registry)">
     - Delegate to `opencode-publisher`, fed by the packager's output

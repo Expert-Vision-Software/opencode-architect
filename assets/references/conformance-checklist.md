@@ -3,8 +3,9 @@
 Canonical review criteria for assessing whether an existing plugin package
 conforms to this suite's design (ADR 0006: scope-aware, manifest-gated
 installation). Review a built package — a repo with `plugin.ts`, install
-logic, a bundled asset directory (`assets/` or repo-root `skills/`), and
-`package.json` — against every item. Cite
+logic, bundled content directories at the package root (`skills/`,
+`commands/`; the legacy `assets/` wrapper is recognized but non-default),
+and `package.json` — against every item. Cite
 file and line evidence per item; an item with no evidence found is a
 finding.
 
