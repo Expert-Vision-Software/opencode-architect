@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { AGENT_FILENAMES, AgentLoader } from "../agent-loader";
@@ -22,6 +22,36 @@ function isReferenceFilePath(candidate: string): boolean {
   const lastSegment = candidate.split(/[\\/]/).pop() ?? "";
   return looksAbsolute && /\.[A-Za-z0-9]+$/.test(lastSegment);
 }
+
+function frontmatterLines(content: string): string[] {
+  const match = content.match(/^---\r?\n([\s\S]*?)\r?\n---/);
+  if (!match) return [];
+  return (match[1] ?? "").split(/\r?\n/);
+}
+
+function frontmatterViolations(filename: string): string[] {
+  const violations: string[] = [];
+  for (const line of frontmatterLines(readFileSync(path.join(AGENTS_DIR, filename), "utf-8"))) {
+    if (line.trim().length === 0) continue;
+    const indented = /^[ \t]/.test(line);
+    const property = line.match(/^([A-Za-z_-]+):\s*(.*)$/);
+    const entry = indented ? line.match(/^\s+(?:"[^"]+"|[A-Za-z_-]+):\s*(.*)$/) : null;
+    const value = (property && !indented ? (property[2] ?? "") : (entry?.[1] ?? "")).trim();
+    if (value.length === 0) continue;
+    if (/^(true|false|-?\d+(\.\d+)?)$/.test(value)) continue;
+    if (!/^".*"$/.test(value)) {
+      violations.push(`${filename}: unquoted value ${value}`);
+    }
+  }
+  return violations;
+}
+
+describe("frontmatter hygiene (D6)", () => {
+  test("every frontmatter property value in shipped agents is double-quoted", () => {
+    const violations = AGENT_FILENAMES.flatMap((filename) => frontmatterViolations(filename));
+    expect(violations).toEqual([]);
+  });
+});
 
 describe("AgentLoader", () => {
   test("loadAgents returns all ten agents with non-empty prompts", async () => {

@@ -1,6 +1,6 @@
 ---
 description: "Creates OpenCode slash commands in .opencode/commands - prompt templates, $ARGUMENTS, frontmatter"
-mode: subagent
+mode: "subagent"
 tools:
   read: true
   write: true

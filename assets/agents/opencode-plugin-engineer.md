@@ -1,6 +1,6 @@
 ---
 description: "Builds OpenCode plugins in .opencode/plugins - event hooks, custom tools, TypeScript"
-mode: subagent
+mode: "subagent"
 tools:
   read: true
   write: true

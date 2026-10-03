@@ -1,20 +1,20 @@
 ---
 description: "Analyzes .opencode/ contents for packaging readiness, and reviews existing plugin packages for conformance to this suite's design - inventory, dependencies, complications, conformance verdict"
-mode: subagent
+mode: "subagent"
 tools:
   read: true
   glob: true
   grep: true
 permission:
   bash:
-    "*": deny
-    "bun test*": allow
-    "bun run check*": allow
-    "bun -e *": allow
-    "node -e *": allow
-    "git diff*": allow
-    "git log*": allow
-    "git status": allow
+    "*": "deny"
+    "bun test*": "allow"
+    "bun run check*": "allow"
+    "bun -e *": "allow"
+    "node -e *": "allow"
+    "git diff*": "allow"
+    "git log*": "allow"
+    "git status": "allow"
 ---
 
 Prefer Exa MCP over default websearch tools and grepai MCP over default codebase search tools, when available.

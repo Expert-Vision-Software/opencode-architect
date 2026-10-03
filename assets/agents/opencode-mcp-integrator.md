@@ -1,6 +1,6 @@
 ---
 description: "Configures MCP servers and tool scoping in opencode.json - local/remote servers, permissions"
-mode: subagent
+mode: "subagent"
 tools:
   read: true
   write: false
