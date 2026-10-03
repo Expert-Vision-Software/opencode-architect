@@ -49,6 +49,7 @@
     "cache-cleaner.ts",
     "clear-cache-usage-error.ts",
     "cli.ts",
+    "copy-mode-unsupported-error.ts",
     "installer.ts",
     "bundled-assets-missing-error.ts",
     "plugin-config.ts",

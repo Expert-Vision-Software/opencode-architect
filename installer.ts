@@ -4,6 +4,7 @@ import path from "node:path";
 import { hashElement } from "folder-hash";
 import { AGENT_FILENAMES } from "./agent-loader";
 import { BundledAssetsMissingError } from "./bundled-assets-missing-error";
+import { CopyModeUnsupportedError } from "./copy-mode-unsupported-error";
 import { PluginConfigEditor } from "./plugin-config";
 
 export type Scope = "local" | "global";
@@ -72,10 +73,7 @@ export class Installer {
 
   public async install(scope: Scope, options: InstallOptions): Promise<InstallOutcome> {
     if (options.mode === "copy") {
-      throw new Error(
-        `${PACKAGE_NAME} is a code-backed package: it ships agents, which only work through ` +
-          `plugin registration. Copy install cannot express that. Run without --mode copy.`,
-      );
+      throw new CopyModeUnsupportedError(PACKAGE_NAME);
     }
 
     const base = this.scopeBase(scope, options.projectDir);
