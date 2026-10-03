@@ -21,6 +21,12 @@ interface CandidateConfig {
   writable: boolean;
 }
 
+interface CandidateRead {
+  candidate: CandidateConfig;
+  text: string;
+  plugins: string[] | null;
+}
+
 export interface RemovePluginEntryOutcome {
   action: "noop" | "removed" | "blocked";
   configPath: string | null;
@@ -172,10 +178,8 @@ export class PluginConfigEditor {
     return configs;
   }
 
-  private async readCandidates(
-    options: EnsurePluginEntryOptions,
-  ): Promise<Array<{ candidate: CandidateConfig; text: string; plugins: string[] | null }>> {
-    const reads: Array<{ candidate: CandidateConfig; text: string; plugins: string[] | null }> = [];
+  private async readCandidates(options: EnsurePluginEntryOptions): Promise<CandidateRead[]> {
+    const reads: CandidateRead[] = [];
     for (const candidate of this.candidateConfigs(options)) {
       if (!(await exists(candidate.path))) continue;
       const text = await readFile(candidate.path, "utf-8");

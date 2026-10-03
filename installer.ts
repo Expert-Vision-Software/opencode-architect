@@ -59,6 +59,7 @@ export interface StatusOutcome {
 }
 
 const PACKAGE_NAME = "opencode-architect";
+const BUNDLED_ASSET_DIRS = ["agents", "references", "templates"];
 const PLUGIN_ENTRY = "opencode-architect@latest";
 const MANIFEST_NAME = "opencode-architect.manifest.json";
 const LEGACY_MANIFEST_NAME = "opencode-architect.json";
@@ -115,7 +116,7 @@ export class Installer {
       action = existing.version === version && registration.action === "noop" ? "noop" : "upgraded";
     }
 
-    if (action !== "noop" || options.force || record.path === legacyManifestPath) {
+    if (action !== "noop" || options.force || record.foundPath === legacyManifestPath) {
       const manifest: Manifest = {
         version,
         mode: "plugin",
@@ -146,7 +147,7 @@ export class Installer {
   }
 
   private async requireBundledAssets(version: string): Promise<void> {
-    for (const name of ["agents", "references", "templates"]) {
+    for (const name of BUNDLED_ASSET_DIRS) {
       const dir = path.join(this.assetsDir, name);
       if (!(await exists(dir))) throw new BundledAssetsMissingError(dir, this.packageCacheRoot(), version);
       const contents = await readdir(dir);
@@ -235,14 +236,9 @@ export class Installer {
 
   public async status(scope: Scope, projectDir: string): Promise<StatusOutcome> {
     const base = this.scopeBase(scope, projectDir);
-    const record = await this.readManifestRecord(base);
-    if (record.manifest !== null) {
-      return {
-        scope,
-        mode: record.manifest.mode,
-        version: record.manifest.version,
-        configPath: record.manifest.configPath,
-      };
+    const { manifest } = await this.readManifestRecord(base);
+    if (manifest !== null) {
+      return { scope, mode: manifest.mode, version: manifest.version, configPath: manifest.configPath };
     }
     const registrationPath = await this.editor.findRegistration(PACKAGE_NAME, { scope, projectDir });
     if (registrationPath !== null) {
@@ -294,12 +290,12 @@ export class Installer {
     return [path.join(base, MANIFEST_NAME), path.join(base, LEGACY_MANIFEST_NAME)];
   }
 
-  private async readManifestRecord(base: string): Promise<{ manifest: Manifest | null; path: string | null }> {
+  private async readManifestRecord(base: string): Promise<{ manifest: Manifest | null; foundPath: string | null }> {
     for (const candidate of this.manifestCandidates(base)) {
       const manifest = await this.readManifest(candidate);
-      if (manifest !== null) return { manifest, path: candidate };
+      if (manifest !== null) return { manifest, foundPath: candidate };
     }
-    return { manifest: null, path: null };
+    return { manifest: null, foundPath: null };
   }
 
   private async removeManifestFiles(base: string): Promise<string[]> {
