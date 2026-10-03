@@ -57,7 +57,8 @@ export interface StatusOutcome {
 }
 
 const PACKAGE_NAME = "opencode-architect";
-const MANIFEST_NAME = "opencode-architect.json";
+const MANIFEST_NAME = "opencode-architect.manifest.json";
+const LEGACY_MANIFEST_NAME = "opencode-architect.json";
 
 export class Installer {
   private readonly editor = new PluginConfigEditor();
@@ -72,8 +73,10 @@ export class Installer {
 
     const base = this.scopeBase(scope, options.projectDir);
     const manifestPath = path.join(base, MANIFEST_NAME);
+    const legacyManifestPath = path.join(base, LEGACY_MANIFEST_NAME);
+    const record = await this.readManifestRecord(base);
+    const existing = record.manifest;
     const version = await this.getPackageVersion();
-    const existing = await this.readManifest(manifestPath);
 
     let removedPayload: string[] = [];
     let action: InstallAction;
@@ -98,7 +101,7 @@ export class Installer {
       action = existing.version === version && registration.action === "noop" ? "noop" : "upgraded";
     }
 
-    if (action !== "noop" || options.force) {
+    if (action !== "noop" || options.force || record.path === legacyManifestPath) {
       const manifest: Manifest = {
         version,
         mode: "plugin",
@@ -109,6 +112,9 @@ export class Installer {
       };
       await mkdir(base, { recursive: true });
       await writeFile(manifestPath, JSON.stringify(manifest, null, 2) + "\n");
+      if (await exists(legacyManifestPath)) {
+        await rm(legacyManifestPath);
+      }
     }
 
     const cache = await this.prunePackageCache(version);
@@ -154,8 +160,8 @@ export class Installer {
 
   public async uninstall(scope: Scope, projectDir: string): Promise<UninstallOutcome> {
     const base = this.scopeBase(scope, projectDir);
-    const manifestPath = path.join(base, MANIFEST_NAME);
-    const manifest = await this.readManifest(manifestPath);
+    const record = await this.readManifestRecord(base);
+    const manifest = record.manifest;
     const removed: string[] = [];
 
     const removal = await this.editor.removePluginEntry(PACKAGE_NAME, { scope, projectDir });
@@ -166,13 +172,11 @@ export class Installer {
 
     if (manifest !== null && manifest.mode === "copy") {
       removed.push(...(await this.removePayloadPerManifest(base, manifest.hashes ?? [])));
-      await rm(manifestPath);
-      removed.push(manifestPath);
+      removed.push(...(await this.removeManifestFiles(base)));
     }
 
     if (manifest !== null && manifest.mode === "plugin") {
-      await rm(manifestPath);
-      removed.push(manifestPath);
+      removed.push(...(await this.removeManifestFiles(base)));
     }
 
     if (manifest === null) {
@@ -208,9 +212,14 @@ export class Installer {
 
   public async status(scope: Scope, projectDir: string): Promise<StatusOutcome> {
     const base = this.scopeBase(scope, projectDir);
-    const manifest = await this.readManifest(path.join(base, MANIFEST_NAME));
-    if (manifest !== null) {
-      return { scope, mode: manifest.mode, version: manifest.version, configPath: manifest.configPath };
+    const record = await this.readManifestRecord(base);
+    if (record.manifest !== null) {
+      return {
+        scope,
+        mode: record.manifest.mode,
+        version: record.manifest.version,
+        configPath: record.manifest.configPath,
+      };
     }
     const registrationPath = await this.editor.findRegistration(PACKAGE_NAME, { scope, projectDir });
     if (registrationPath !== null) {
@@ -246,6 +255,28 @@ export class Installer {
     if (!(await exists(directory))) return;
     const contents = await readdir(directory);
     if (contents.length === 0) await rmdir(directory);
+  }
+
+  private manifestCandidates(base: string): string[] {
+    return [path.join(base, MANIFEST_NAME), path.join(base, LEGACY_MANIFEST_NAME)];
+  }
+
+  private async readManifestRecord(base: string): Promise<{ manifest: Manifest | null; path: string | null }> {
+    for (const candidate of this.manifestCandidates(base)) {
+      const manifest = await this.readManifest(candidate);
+      if (manifest !== null) return { manifest, path: candidate };
+    }
+    return { manifest: null, path: null };
+  }
+
+  private async removeManifestFiles(base: string): Promise<string[]> {
+    const removed: string[] = [];
+    for (const candidate of this.manifestCandidates(base)) {
+      if (!(await exists(candidate))) continue;
+      await rm(candidate);
+      removed.push(candidate);
+    }
+    return removed;
   }
 
   private async readManifest(manifestPath: string): Promise<Manifest | null> {

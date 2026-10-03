@@ -1,6 +1,6 @@
 import { describe, expect, test, beforeEach, afterEach } from "bun:test";
 import { existsSync } from "node:fs";
-import { chmod, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { Installer, contentHash, type Manifest, type Scope } from "../installer";
@@ -45,6 +45,10 @@ function scopeBase(scope: Scope): string {
 }
 
 function manifestPath(scope: Scope): string {
+  return path.join(scopeBase(scope), "opencode-architect.manifest.json");
+}
+
+function legacyManifestPath(scope: Scope): string {
   return path.join(scopeBase(scope), "opencode-architect.json");
 }
 
@@ -259,6 +263,29 @@ describe("Installer.install", () => {
     expect(((await readJson(manifestPath("local"))) as unknown as Manifest).version).toBe(
       await readPackageVersion(),
     );
+  });
+
+  test("relocates a manifest left at the legacy name on the next install", async () => {
+    await install("local");
+    await rename(manifestPath("local"), legacyManifestPath("local"));
+
+    const outcome = await install("local");
+
+    expect(outcome.action).toBe("noop");
+    expect(existsSync(manifestPath("local"))).toBe(true);
+    expect(existsSync(legacyManifestPath("local"))).toBe(false);
+    const status = await installer.status("local", projectDir);
+    expect(status.version).toBe(await readPackageVersion());
+  });
+
+  test("uninstall removes manifests left at either name", async () => {
+    await install("local");
+    await rename(manifestPath("local"), legacyManifestPath("local"));
+
+    await installer.uninstall("local", projectDir);
+
+    expect(existsSync(manifestPath("local"))).toBe(false);
+    expect(existsSync(legacyManifestPath("local"))).toBe(false);
   });
 });
 
