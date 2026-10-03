@@ -215,6 +215,18 @@ describe("PluginConfigEditor.ensurePluginEntry", () => {
     expect(outcome.action).toBe("updated");
   });
 
+  test("lenient .jsonc tolerates a comment between a trailing comma and its closer", async () => {
+    const projectDir = await makeDir("project");
+    await write("project/opencode.jsonc", '{ "plugin": ["other",/* c */], }\n');
+
+    const outcome = await editor().ensurePluginEntry("my-pkg", { scope: "local", projectDir });
+
+    expect(outcome.action).toBe("updated");
+    const parsed = parseJsonc(await readFile(path.join(projectDir, "opencode.jsonc"), "utf-8"));
+    expect(parsed.plugin).toContain("my-pkg@latest");
+    expect(parsed.plugin).toContain("other");
+  });
+
   test("schema URLs with // and escaped quotes survive splicing and parsing", async () => {
     const projectDir = await makeDir("project");
     const configPath = await write(

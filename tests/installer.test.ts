@@ -315,6 +315,33 @@ describe("Installer.install", () => {
     );
   });
 
+  test("a removed plugin entry is not up to date: install re-registers", async () => {
+    await install("local");
+    const configPath = path.join(scopeBase("local"), "opencode.json");
+    await writeJson(configPath, { theme: "dark" });
+
+    const outcome = await install("local");
+
+    expect(outcome.action).toBe("upgraded");
+    const config = await readJson(configPath);
+    expect(config.plugin).toEqual(["opencode-architect@latest"]);
+    const manifest = (await readJson(manifestPath("local"))) as unknown as Manifest;
+    expect(manifest.version).toBe(await readPackageVersion());
+  });
+
+  test("re-registering one scope leaves the other scope untouched", async () => {
+    await install("local");
+    await install("global");
+    const globalConfigPath = path.join(scopeBase("global"), "opencode.jsonc");
+    const globalConfigBefore = await readFile(globalConfigPath, "utf-8");
+    const globalManifestBefore = await readFile(manifestPath("global"), "utf-8");
+
+    await install("local", { force: true });
+
+    expect(await readFile(globalConfigPath, "utf-8")).toBe(globalConfigBefore);
+    expect(await readFile(manifestPath("global"), "utf-8")).toBe(globalManifestBefore);
+  });
+
   test("relocates a manifest left at the legacy name on the next install", async () => {
     await install("local");
     await rename(manifestPath("local"), legacyManifestPath("local"));
