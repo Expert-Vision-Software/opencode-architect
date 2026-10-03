@@ -298,14 +298,14 @@ describe("packager self-audit gate", () => {
 });
 
 async function readTemplate(name: string): Promise<string> {
-  const source = await readFile(path.join(REPO_ROOT, "assets/templates", name), "utf-8");
+  const source = await readFile(path.join(REPO_ROOT, "templates", name), "utf-8");
   return source.split("---").slice(1).join("---");
 }
 
 async function readAgent(name: string): Promise<string> {
-  return readFile(path.join(REPO_ROOT, "assets/agents", name), "utf-8");
+  return readFile(path.join(REPO_ROOT, "agents", name), "utf-8");
 }
 
 async function readReference(name: string): Promise<string> {
-  return readFile(path.join(REPO_ROOT, "assets/references", name), "utf-8");
+  return readFile(path.join(REPO_ROOT, "references", name), "utf-8");
 }

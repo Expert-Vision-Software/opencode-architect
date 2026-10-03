@@ -1,8 +1,5 @@
 # opencode-architect
-
-[![npm version](https://img.shields.io/npm/v/opencode-architect)](https://www.npmjs.com/package/opencode-architect)
-[![License: MIT](https://img.shields.io/npm/l/opencode-architect)](./LICENSE.md)
-[![OpenCode plugin](https://img.shields.io/badge/opencode-plugin-blueviolet)](https://opencode.ai/docs/plugins)
+[![npm version](https://img.shields.io/npm/v/opencode-architect?color=cb3837&label=npm)](https://www.npmjs.com/package/opencode-architect) [![Bun](https://img.shields.io/badge/Runtime-Bun-f9f1e1?logo=bun&logoColor=black)](https://bun.sh) [![License: MIT](https://img.shields.io/badge/License-MIT-22c55e)](LICENSE.md) [![Platforms](https://img.shields.io/badge/Platforms-Linux-6366f1)](#quick-start-install-the-opencode-plugin-suite) [![OpenCode plugin](https://img.shields.io/badge/opencode-plugin-blueviolet)](https://opencode.ai/docs/plugins)
 
 **Ten specialist agents that design, build, and package OpenCode extensions — agent skills, slash commands, custom tools, plugins, and MCP server integrations — right inside your AI coding assistant.**
 
@@ -16,7 +13,7 @@ Add the package to the `plugin` array in your OpenCode config — `.opencode/ope
 
 ```json
 {
-  "plugin": ["opencode-architect"]
+  "plugin": ["opencode-architect@latest"]
 }
 ```
 
@@ -24,7 +21,7 @@ The plugin registers the full agent suite at startup, with self-contained bundle
 
 ### Option 2 — Install with the CLI (bunx or npx)
 
-The CLI registers the package as a plugin: it adds `opencode-architect` to the `plugin` array of your OpenCode config with surgical text editing (comments and formatting elsewhere in the file are preserved), then records the registration in an `opencode-architect.json` manifest at the scope base. Nothing is copied — the agents, references, and templates all load from the package at startup.
+The CLI registers the package as a plugin: it adds `opencode-architect@latest` to the `plugin` array of your OpenCode config with surgical text editing (comments and formatting elsewhere in the file are preserved), then records the registration in an `opencode-architect.manifest.json` manifest at the scope base. Nothing is copied — the agents, references, and templates all load from the package at startup.
 
 ```bash
 # Project scope (default): edits the ./.opencode/ or repo-root config

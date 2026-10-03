@@ -1,6 +1,7 @@
 {
   "name": "opencode-architect",
   "version": "0.8.0",
+  "content": "code",
   "description": "OpenCode plugin and CLI with ten specialist agents for agent skills, slash commands, custom tools, plugins, and MCP server integration",
   "keywords": [
     "opencode",
@@ -19,7 +20,7 @@
   "type": "module",
   "module": "index.ts",
   "bin": {
-    "opencode-architect": "cli.ts"
+    "opencode-architect": "src/cli.ts"
   },
   "repository": {
     "type": "git",
@@ -44,14 +45,11 @@
   },
   "files": [
     "index.ts",
-    "agent-loader.ts",
-    "cache-cleaner.ts",
-    "clear-cache-usage-error.ts",
-    "cli.ts",
-    "installer.ts",
-    "plugin-config.ts",
-    "permission-registrar.ts",
-    "assets"
+    "plugin.ts",
+    "src",
+    "agents",
+    "references",
+    "templates"
   ],
   "dependencies": {
     "@opencode-ai/plugin": "*",

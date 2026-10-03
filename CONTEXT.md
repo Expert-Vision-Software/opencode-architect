@@ -203,11 +203,11 @@ taking ownership of them is CLI-only with an explicit force flag.
 ### Bundled files
 
 **References**:
-The static markdown guides bundled with the package at `assets/references/`,
+The static markdown guides bundled with the package at `references/`,
 covering stable OpenCode fundamentals.
 
 **Templates**:
-The static scaffolding files bundled with the package at `assets/templates/`,
+The static scaffolding files bundled with the package at `templates/`,
 from which the packager and publisher render a generated package's code
 files (plugin entry, manifest, name normalizer, registration detector, CLI,
 installer). The structural source of truth for generated packages: example

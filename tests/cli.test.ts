@@ -6,7 +6,7 @@ import path from "node:path";
 import { seedCachedPackage } from "./test-helpers";
 
 const PACKAGE_ROOT = path.resolve(import.meta.dirname, "..");
-const CLI_PATH = path.join(PACKAGE_ROOT, "cli.ts");
+const CLI_PATH = path.join(PACKAGE_ROOT, "src", "cli.ts");
 
 interface CliRun {
   exitCode: number;

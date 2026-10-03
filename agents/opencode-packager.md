@@ -1,6 +1,6 @@
 ---
 description: "Packages OpenCode extensions for local sharing across projects - file:/// plugin packages"
-mode: subagent
+mode: "subagent"
 tools:
   read: true
   write: true

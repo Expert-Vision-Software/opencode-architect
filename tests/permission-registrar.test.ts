@@ -1,9 +1,9 @@
 import { describe, expect, test } from "bun:test";
 import path from "node:path";
 import type { Config } from "@opencode-ai/plugin";
-import { AssetPermissionRegistrar } from "../permission-registrar";
+import { AssetPermissionRegistrar } from "../src/permission-registrar";
 
-const ASSETS_DIR = path.resolve(import.meta.dirname, "..", "assets");
+const ASSETS_DIR = path.resolve(import.meta.dirname, "..");
 const ASSETS_PATTERN = path.join(ASSETS_DIR, "*").replaceAll("\\", "/");
 
 function configWithPermission(value: unknown): Config {
@@ -68,6 +68,6 @@ describe("AssetPermissionRegistrar", () => {
 
     const pattern = Object.keys(externalDirectory(config) as Record<string, string>)[0] ?? "";
     expect(pattern.includes("\\")).toBe(false);
-    expect(pattern.endsWith("/assets/*")).toBe(true);
+    expect(pattern.endsWith("/*")).toBe(true);
   });
 });

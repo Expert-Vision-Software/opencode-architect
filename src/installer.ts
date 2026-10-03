@@ -3,6 +3,8 @@ import { homedir } from "node:os";
 import path from "node:path";
 import { hashElement } from "folder-hash";
 import { AGENT_FILENAMES } from "./agent-loader";
+import { BundledAssetsMissingError } from "./bundled-assets-missing-error";
+import { CopyModeUnsupportedError } from "./copy-mode-unsupported-error";
 import { PluginConfigEditor } from "./plugin-config";
 
 export type Scope = "local" | "global";
@@ -57,27 +59,43 @@ export interface StatusOutcome {
 }
 
 const PACKAGE_NAME = "opencode-architect";
-const MANIFEST_NAME = "opencode-architect.json";
+const BUNDLED_ASSET_DIRS = ["agents", "references", "templates"];
+const PLUGIN_ENTRY = "opencode-architect@latest";
+const MANIFEST_NAME = "opencode-architect.manifest.json";
+const LEGACY_MANIFEST_NAME = "opencode-architect.json";
 
 export class Installer {
   private readonly editor = new PluginConfigEditor();
+  private readonly assetsDir: string;
+
+  constructor(assetsDir: string | null = null) {
+    this.assetsDir = assetsDir ?? path.join(import.meta.dirname, "..");
+  }
 
   public async install(scope: Scope, options: InstallOptions): Promise<InstallOutcome> {
     if (options.mode === "copy") {
-      throw new Error(
-        `${PACKAGE_NAME} is a code-backed package: it ships agents, which only work through ` +
-          `plugin registration. Copy install cannot express that. Run without --mode copy.`,
-      );
+      throw new CopyModeUnsupportedError(PACKAGE_NAME);
     }
 
     const base = this.scopeBase(scope, options.projectDir);
     const manifestPath = path.join(base, MANIFEST_NAME);
+    const legacyManifestPath = path.join(base, LEGACY_MANIFEST_NAME);
+    const record = await this.readManifestRecord(base);
+    const existing = record.manifest;
     const version = await this.getPackageVersion();
-    const existing = await this.readManifest(manifestPath);
+    await this.requireBundledAssets(version);
 
     let removedPayload: string[] = [];
     let action: InstallAction;
     if (existing !== null && existing.mode === "copy") {
+      if (!options.force) {
+        throw new Error(
+          `A legacy copy install of ${PACKAGE_NAME} was found at ${base}. ` +
+            `Migrating it to plugin registration removes the copied payload it recorded, ` +
+            `including any files you edited after installing. ` +
+            `Re-run with --force to consent.`,
+        );
+      }
       const check = await this.editor.checkParseable({ scope, projectDir: options.projectDir });
       if (!check.ok) throw new Error(check.warning);
       removedPayload = await this.removePayloadPerManifest(base, existing.hashes ?? []);
@@ -98,17 +116,20 @@ export class Installer {
       action = existing.version === version && registration.action === "noop" ? "noop" : "upgraded";
     }
 
-    if (action !== "noop" || options.force) {
+    if (action !== "noop" || options.force || record.foundPath === legacyManifestPath) {
       const manifest: Manifest = {
         version,
         mode: "plugin",
-        entry: PACKAGE_NAME,
+        entry: PLUGIN_ENTRY,
         configPath: registration.configPath,
         "content-hash": null,
         hashes: null,
       };
       await mkdir(base, { recursive: true });
       await writeFile(manifestPath, JSON.stringify(manifest, null, 2) + "\n");
+      if (await exists(legacyManifestPath)) {
+        await rm(legacyManifestPath);
+      }
     }
 
     const cache = await this.prunePackageCache(version);
@@ -123,6 +144,15 @@ export class Installer {
       clearedCache: cache.removed,
       cacheWarnings: cache.warnings,
     };
+  }
+
+  private async requireBundledAssets(version: string): Promise<void> {
+    for (const name of BUNDLED_ASSET_DIRS) {
+      const dir = path.join(this.assetsDir, name);
+      if (!(await exists(dir))) throw new BundledAssetsMissingError(dir, this.packageCacheRoot(), version);
+      const contents = await readdir(dir);
+      if (contents.length === 0) throw new BundledAssetsMissingError(dir, this.packageCacheRoot(), version);
+    }
   }
 
   private async prunePackageCache(version: string): Promise<{ removed: string[]; warnings: string[] }> {
@@ -154,8 +184,8 @@ export class Installer {
 
   public async uninstall(scope: Scope, projectDir: string): Promise<UninstallOutcome> {
     const base = this.scopeBase(scope, projectDir);
-    const manifestPath = path.join(base, MANIFEST_NAME);
-    const manifest = await this.readManifest(manifestPath);
+    const record = await this.readManifestRecord(base);
+    const manifest = record.manifest;
     const removed: string[] = [];
 
     const removal = await this.editor.removePluginEntry(PACKAGE_NAME, { scope, projectDir });
@@ -166,13 +196,11 @@ export class Installer {
 
     if (manifest !== null && manifest.mode === "copy") {
       removed.push(...(await this.removePayloadPerManifest(base, manifest.hashes ?? [])));
-      await rm(manifestPath);
-      removed.push(manifestPath);
+      removed.push(...(await this.removeManifestFiles(base)));
     }
 
     if (manifest !== null && manifest.mode === "plugin") {
-      await rm(manifestPath);
-      removed.push(manifestPath);
+      removed.push(...(await this.removeManifestFiles(base)));
     }
 
     if (manifest === null) {
@@ -208,7 +236,7 @@ export class Installer {
 
   public async status(scope: Scope, projectDir: string): Promise<StatusOutcome> {
     const base = this.scopeBase(scope, projectDir);
-    const manifest = await this.readManifest(path.join(base, MANIFEST_NAME));
+    const { manifest } = await this.readManifestRecord(base);
     if (manifest !== null) {
       return { scope, mode: manifest.mode, version: manifest.version, configPath: manifest.configPath };
     }
@@ -217,6 +245,16 @@ export class Installer {
       return { scope, mode: "plugin", version: null, configPath: registrationPath };
     }
     return { scope, mode: "none", version: null, configPath: null };
+  }
+
+  public async hasManifestAnywhere(projectDir: string): Promise<boolean> {
+    for (const scope of ["global", "local"] as const) {
+      const base = this.scopeBase(scope, projectDir);
+      for (const candidate of this.manifestCandidates(base)) {
+        if (await exists(candidate)) return true;
+      }
+    }
+    return false;
   }
 
   private async removePayloadPerManifest(
@@ -248,6 +286,28 @@ export class Installer {
     if (contents.length === 0) await rmdir(directory);
   }
 
+  private manifestCandidates(base: string): string[] {
+    return [path.join(base, MANIFEST_NAME), path.join(base, LEGACY_MANIFEST_NAME)];
+  }
+
+  private async readManifestRecord(base: string): Promise<{ manifest: Manifest | null; foundPath: string | null }> {
+    for (const candidate of this.manifestCandidates(base)) {
+      const manifest = await this.readManifest(candidate);
+      if (manifest !== null) return { manifest, foundPath: candidate };
+    }
+    return { manifest: null, foundPath: null };
+  }
+
+  private async removeManifestFiles(base: string): Promise<string[]> {
+    const removed: string[] = [];
+    for (const candidate of this.manifestCandidates(base)) {
+      if (!(await exists(candidate))) continue;
+      await rm(candidate);
+      removed.push(candidate);
+    }
+    return removed;
+  }
+
   private async readManifest(manifestPath: string): Promise<Manifest | null> {
     try {
       const parsed = JSON.parse(await readFile(manifestPath, "utf-8")) as Partial<Manifest>;
@@ -277,7 +337,7 @@ export class Installer {
   }
 
   private async getPackageVersion(): Promise<string> {
-    const content = await readFile(path.join(import.meta.dirname, "package.json"), "utf-8");
+    const content = await readFile(path.join(import.meta.dirname, "..", "package.json"), "utf-8");
     return (JSON.parse(content) as { version: string }).version;
   }
 

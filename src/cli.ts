@@ -4,10 +4,11 @@ import { Installer, type Scope } from "./installer";
 import { CacheCleaner } from "./cache-cleaner";
 import { ClearCacheUsageError } from "./clear-cache-usage-error";
 
-const VERSION = (JSON.parse(await Bun.file(`${import.meta.dirname}/package.json`).text()) as { version: string }).version;
+const VERSION = (JSON.parse(await Bun.file(`${import.meta.dirname}/../package.json`).text()) as { version: string }).version;
 
-async function main(): Promise<void> {
+export async function runCli(argv: string[]): Promise<number> {
   const { positionals, values } = parseArgs({
+    args: argv,
     options: {
       scope: { type: "string", short: "s" },
       mode: { type: "string", short: "m" },
@@ -25,23 +26,23 @@ async function main(): Promise<void> {
 
   if (values.version) {
     console.log(`opencode-architect v${VERSION}`);
-    return;
+    return 0;
   }
   if (values.help || positionals.length === 0) {
     printHelp();
-    return;
+    return 0;
   }
 
   const command = positionals[0];
   const scopeInput = values.scope;
   if (scopeInput !== undefined && scopeInput !== "local" && scopeInput !== "global") {
     console.error(`Invalid scope: ${scopeInput}. Must be "local" or "global".`);
-    process.exit(1);
+    return 1;
   }
   const scope: Scope = scopeInput === "global" ? "global" : "local";
   if (values.mode !== undefined && values.mode !== "plugin" && values.mode !== "copy") {
     console.error(`Invalid mode: ${values.mode}. Must be "plugin" or "copy".`);
-    process.exit(1);
+    return 1;
   }
   const mode: "plugin" | "copy" = values.mode === "copy" ? "copy" : "plugin";
   const installer = new Installer();
@@ -93,7 +94,7 @@ async function main(): Promise<void> {
       case "clear-cache": {
         if (positionals.length > 1) {
           console.error(`Unexpected arguments for clear-cache: ${positionals.slice(1).join(" ")}`);
-          process.exit(1);
+          return 1;
         }
         let outcome;
         try {
@@ -101,7 +102,7 @@ async function main(): Promise<void> {
         } catch (error) {
           if (error instanceof ClearCacheUsageError) {
             console.error(error.message);
-            process.exit(1);
+            return 1;
           }
           throw error;
         }
@@ -122,13 +123,18 @@ async function main(): Promise<void> {
       default:
         console.error(`Unknown command: ${command}`);
         printHelp();
-        process.exit(1);
+        return 1;
     }
+    return 0;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     console.error(`Error: ${message}`);
-    process.exit(1);
+    return 1;
   }
+}
+
+if (import.meta.main) {
+  process.exitCode = await runCli(process.argv.slice(2));
 }
 
 function printHelp(): void {
@@ -150,7 +156,8 @@ Options:
   -s, --scope <scope>    "local" (project) or "global" (XDG/home config); default local
   -m, --mode <mode>      "plugin" (default) or "copy"; copy is refused for this
                          code-backed package
-  -f, --force            re-register and rewrite the manifest even when it is up to date
+  -f, --force            re-register and rewrite the manifest even when it is up to date;
+                         consent to migrating a legacy copy install (removes its copied payload)
       --package <name>   clear-cache: remove <name> and every <name>@* instead;
                          requires --yes
       --all              clear-cache: remove the whole OpenCode cache directory;
@@ -172,4 +179,3 @@ Examples:
 `);
 }
 
-main();

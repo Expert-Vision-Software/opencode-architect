@@ -1,10 +1,10 @@
 import { describe, expect, test } from "bun:test";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
-import { AGENT_FILENAMES, AgentLoader } from "../agent-loader";
+import { AGENT_FILENAMES, AgentLoader } from "../src/agent-loader";
 
-const AGENTS_DIR = path.resolve(import.meta.dirname, "..", "assets", "agents");
+const AGENTS_DIR = path.resolve(import.meta.dirname, "..", "agents");
 const RELATIVE_REFERENCE_REGEX = /`((?:\.{1,2})(?:[\\/][^`\\/]+)+)`/g;
 const ABSOLUTE_PATH_REGEX = /`([A-Za-z]:[\\/][^`]+|\/[^`]+)`/g;
 
@@ -22,6 +22,44 @@ function isReferenceFilePath(candidate: string): boolean {
   const lastSegment = candidate.split(/[\\/]/).pop() ?? "";
   return looksAbsolute && /\.[A-Za-z0-9]+$/.test(lastSegment);
 }
+
+function frontmatterLines(content: string): string[] {
+  const match = content.match(/^---\r?\n([\s\S]*?)\r?\n---/);
+  if (!match) return [];
+  return (match[1] ?? "").split(/\r?\n/);
+}
+
+function listShippedMarkdown(): string[] {
+  const assetsRoot = path.resolve(import.meta.dirname, "..");
+  return readdirSync(assetsRoot, { recursive: true })
+    .map(String)
+    .filter((relative) => relative.endsWith(".md"))
+    .map((relative) => path.join(assetsRoot, relative));
+}
+
+function frontmatterViolations(filePath: string): string[] {
+  const violations: string[] = [];
+  for (const line of frontmatterLines(readFileSync(filePath, "utf-8"))) {
+    if (line.trim().length === 0) continue;
+    const indented = /^[ \t]/.test(line);
+    const property = line.match(/^([A-Za-z_-]+):\s*(.*)$/);
+    const entry = indented ? line.match(/^\s+(?:"[^"]+"|[A-Za-z_-]+):\s*(.*)$/) : null;
+    const value = (property && !indented ? (property[2] ?? "") : (entry?.[1] ?? "")).trim();
+    if (value.length === 0) continue;
+    if (/^(true|false|-?\d+(\.\d+)?)$/.test(value)) continue;
+    if (!/^".*"$/.test(value)) {
+      violations.push(`${path.basename(filePath)}: unquoted value ${value}`);
+    }
+  }
+  return violations;
+}
+
+describe("frontmatter hygiene (D6)", () => {
+  test("every frontmatter value in every shipped markdown file is double-quoted", () => {
+    const violations = listShippedMarkdown().flatMap((filePath) => frontmatterViolations(filePath));
+    expect(violations).toEqual([]);
+  });
+});
 
 describe("AgentLoader", () => {
   test("loadAgents returns all ten agents with non-empty prompts", async () => {
