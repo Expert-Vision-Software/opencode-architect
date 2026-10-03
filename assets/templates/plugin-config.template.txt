@@ -2,7 +2,7 @@
 
 None — emit as-is as src/plugin-config.ts.
 
-**Load-bearing — do not simplify:** the editor is a surgical text splice into the `plugin` array with every other byte of the config untouched — never a parse-then-reserialize (comments, key order, and formatting survive); candidates are consulted in priority order: for local scope the nested `.opencode/opencode.json` then `opencode.jsonc`, then the repo-root `opencode.json` then `opencode.jsonc`; for global scope the same pair in the global scope base; and finally the global `config.json` which is read-only (detection only, never written); a config that fails to parse blocks the edit — never rewrite config from `{}`; `.jsonc` parses leniently (comments blanked string-aware so `$schema` URLs and escaped quotes survive, trailing commas removed) and `.json` stays strict; matching is semantic (`name`, `name@latest`, `name@x.y.z` are the same package) and new entries are written canonically as `name@latest`; an existing semantically matching entry is a zero-write no-op; when no config exists a minimal `opencode.jsonc` is created; every splice re-parses the result and aborts untouched if the entry is not present after the edit.
+**Load-bearing — do not simplify:** the editor is a surgical text splice into the `plugin` array with every other byte of the config untouched — never a parse-then-reserialize (comments, key order, and formatting survive); candidates are consulted in priority order: for local scope the nested `.opencode/opencode.json` then `opencode.jsonc`, then the repo-root `opencode.json` then `opencode.jsonc`; for global scope the same pair in the global scope base; and finally the global `config.json` which is read-only (detection only, never written); every candidate is read up front and every unparseable one is warned about **before** any short-circuit on a successful match; a config that fails to parse blocks the edit — never rewrite config from `{}`; `.jsonc` parses leniently (comments blanked string-aware so `$schema` URLs and escaped quotes survive, trailing commas removed) and `.json` stays strict; matching is semantic (`name`, `name@latest`, `name@x.y.z` are the same package) and new entries are written canonically as `name@latest`; an existing semantically matching entry is a zero-write no-op; when no config exists a minimal `opencode.jsonc` is created; every splice re-parses the result and aborts untouched if the entry is not present after the edit.
 
 ---
 import { exists, mkdir, readFile, writeFile } from "node:fs/promises";
@@ -54,10 +54,7 @@ export class PluginConfigEditor {
     options: EnsurePluginEntryOptions,
   ): Promise<EnsurePluginEntryOutcome> {
     const canonical = this.canonicalEntry(packageName);
-    for (const candidate of this.candidateConfigs(options)) {
-      if (!(await exists(candidate.path))) continue;
-      const text = await readFile(candidate.path, "utf-8");
-      const plugins = this.parsePluginArray(text, candidate.lenient);
+    for (const { candidate, text, plugins } of await this.readCandidates(options)) {
       if (plugins === null) {
         return {
           action: "blocked",
@@ -111,10 +108,7 @@ export class PluginConfigEditor {
     packageName: string,
     options: EnsurePluginEntryOptions,
   ): Promise<string | null> {
-    for (const candidate of this.candidateConfigs(options)) {
-      if (!(await exists(candidate.path))) continue;
-      const text = await readFile(candidate.path, "utf-8");
-      const plugins = this.parsePluginArray(text, candidate.lenient);
+    for (const { candidate, plugins } of await this.readCandidates(options)) {
       if (plugins === null) continue;
       if (this.hasMatchingEntry(plugins, packageName)) return candidate.path;
     }
@@ -125,10 +119,7 @@ export class PluginConfigEditor {
     packageName: string,
     options: EnsurePluginEntryOptions,
   ): Promise<RemovePluginEntryOutcome> {
-    for (const candidate of this.candidateConfigs(options)) {
-      if (!(await exists(candidate.path)) || !candidate.writable) continue;
-      const text = await readFile(candidate.path, "utf-8");
-      const plugins = this.parsePluginArray(text, candidate.lenient);
+    for (const { candidate, text, plugins } of await this.readCandidates(options)) {
       if (plugins === null) {
         return {
           action: "blocked",
@@ -138,6 +129,7 @@ export class PluginConfigEditor {
             `Fix or remove the file and re-run the uninstall.`,
         };
       }
+      if (!candidate.writable) continue;
       if (!this.hasMatchingEntry(plugins, packageName)) continue;
       const spliced = this.spliceOutEntry(text, packageName, candidate.lenient);
       if (spliced === null) {
@@ -185,6 +177,24 @@ export class PluginConfigEditor {
     }
     configs.push({ path: path.join(scopeBase, "config.json"), lenient: false, writable: false });
     return configs;
+  }
+
+  private async readCandidates(
+    options: EnsurePluginEntryOptions,
+  ): Promise<Array<{ candidate: CandidateConfig; text: string; plugins: string[] | null }>> {
+    const reads: Array<{ candidate: CandidateConfig; text: string; plugins: string[] | null }> = [];
+    for (const candidate of this.candidateConfigs(options)) {
+      if (!(await exists(candidate.path))) continue;
+      const text = await readFile(candidate.path, "utf-8");
+      const plugins = this.parsePluginArray(text, candidate.lenient);
+      if (plugins === null) {
+        console.warn(
+          `Warning: ${candidate.path} could not be parsed; refusing to treat it as a registration candidate.`,
+        );
+      }
+      reads.push({ candidate, text, plugins });
+    }
+    return reads;
   }
 
   private defaultConfigPath(options: EnsurePluginEntryOptions): string {

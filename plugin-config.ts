@@ -47,10 +47,7 @@ export class PluginConfigEditor {
     options: EnsurePluginEntryOptions,
   ): Promise<EnsurePluginEntryOutcome> {
     const canonical = this.canonicalEntry(packageName);
-    for (const candidate of this.candidateConfigs(options)) {
-      if (!(await exists(candidate.path))) continue;
-      const text = await readFile(candidate.path, "utf-8");
-      const plugins = this.parsePluginArray(text, candidate.lenient);
+    for (const { candidate, text, plugins } of await this.readCandidates(options)) {
       if (plugins === null) {
         return {
           action: "blocked",
@@ -104,10 +101,7 @@ export class PluginConfigEditor {
     packageName: string,
     options: EnsurePluginEntryOptions,
   ): Promise<string | null> {
-    for (const candidate of this.candidateConfigs(options)) {
-      if (!(await exists(candidate.path))) continue;
-      const text = await readFile(candidate.path, "utf-8");
-      const plugins = this.parsePluginArray(text, candidate.lenient);
+    for (const { candidate, plugins } of await this.readCandidates(options)) {
       if (plugins === null) continue;
       if (this.hasMatchingEntry(plugins, packageName)) return candidate.path;
     }
@@ -118,10 +112,7 @@ export class PluginConfigEditor {
     packageName: string,
     options: EnsurePluginEntryOptions,
   ): Promise<RemovePluginEntryOutcome> {
-    for (const candidate of this.candidateConfigs(options)) {
-      if (!(await exists(candidate.path)) || !candidate.writable) continue;
-      const text = await readFile(candidate.path, "utf-8");
-      const plugins = this.parsePluginArray(text, candidate.lenient);
+    for (const { candidate, text, plugins } of await this.readCandidates(options)) {
       if (plugins === null) {
         return {
           action: "blocked",
@@ -131,6 +122,7 @@ export class PluginConfigEditor {
             `Fix or remove the file and re-run the uninstall.`,
         };
       }
+      if (!candidate.writable) continue;
       if (!this.hasMatchingEntry(plugins, packageName)) continue;
       const spliced = this.spliceOutEntry(text, packageName, candidate.lenient);
       if (spliced === null) {
@@ -178,6 +170,24 @@ export class PluginConfigEditor {
     }
     configs.push({ path: path.join(scopeBase, "config.json"), lenient: false, writable: false });
     return configs;
+  }
+
+  private async readCandidates(
+    options: EnsurePluginEntryOptions,
+  ): Promise<Array<{ candidate: CandidateConfig; text: string; plugins: string[] | null }>> {
+    const reads: Array<{ candidate: CandidateConfig; text: string; plugins: string[] | null }> = [];
+    for (const candidate of this.candidateConfigs(options)) {
+      if (!(await exists(candidate.path))) continue;
+      const text = await readFile(candidate.path, "utf-8");
+      const plugins = this.parsePluginArray(text, candidate.lenient);
+      if (plugins === null) {
+        console.warn(
+          `Warning: ${candidate.path} could not be parsed; refusing to treat it as a registration candidate.`,
+        );
+      }
+      reads.push({ candidate, text, plugins });
+    }
+    return reads;
   }
 
   private defaultConfigPath(options: EnsurePluginEntryOptions): string {

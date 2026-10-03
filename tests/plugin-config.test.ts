@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { PluginConfigEditor } from "../plugin-config";
@@ -158,6 +158,44 @@ describe("PluginConfigEditor.ensurePluginEntry", () => {
     expect(outcome.action).toBe("blocked");
     expect(outcome.warning).toContain("could not be parsed");
     expect(await readFile(configPath, "utf-8")).toBe(before);
+  });
+
+  test("warns about an unparseable candidate even when an earlier candidate matches", async () => {
+    const projectDir = await makeDir("project");
+    await write("project/.opencode/opencode.json", '{ "plugin": ["my-pkg"] }\n');
+    const brokenRoot = await write("project/opencode.json", "{ broken ]");
+    const warnings: string[] = [];
+    const spy = spyOn(console, "warn").mockImplementation((message: unknown) => {
+      warnings.push(String(message));
+    });
+
+    try {
+      const outcome = await editor().ensurePluginEntry("my-pkg", { scope: "local", projectDir });
+
+      expect(outcome.action).toBe("noop");
+      expect(warnings.some((message) => message.includes(brokenRoot))).toBe(true);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  test("findRegistration warns about unparseable candidates and still finds later registrations", async () => {
+    const projectDir = await makeDir("project");
+    await write("project/.opencode/opencode.json", "{ broken ]");
+    const rootConfig = await write("project/opencode.json", '{ "plugin": ["my-pkg@1.0.0"] }\n');
+    const warnings: string[] = [];
+    const spy = spyOn(console, "warn").mockImplementation((message: unknown) => {
+      warnings.push(String(message));
+    });
+
+    try {
+      const found = await editor().findRegistration("my-pkg", { scope: "local", projectDir });
+
+      expect(found).toBe(rootConfig);
+      expect(warnings.some((message) => message.includes(".opencode"))).toBe(true);
+    } finally {
+      spy.mockRestore();
+    }
   });
 
   test("strict .json rejects comments and trailing commas", async () => {
