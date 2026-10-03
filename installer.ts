@@ -251,6 +251,16 @@ export class Installer {
     return { scope, mode: "none", version: null, configPath: null };
   }
 
+  public async hasManifestAnywhere(projectDir: string): Promise<boolean> {
+    for (const scope of ["global", "local"] as const) {
+      const base = this.scopeBase(scope, projectDir);
+      for (const candidate of this.manifestCandidates(base)) {
+        if (await exists(candidate)) return true;
+      }
+    }
+    return false;
+  }
+
   private async removePayloadPerManifest(
     base: string,
     hashes: ManifestHashEntry[],
