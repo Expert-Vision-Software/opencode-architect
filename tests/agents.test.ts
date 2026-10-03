@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { AGENT_FILENAMES, AgentLoader } from "../agent-loader";
@@ -29,9 +29,17 @@ function frontmatterLines(content: string): string[] {
   return (match[1] ?? "").split(/\r?\n/);
 }
 
-function frontmatterViolations(filename: string): string[] {
+function listShippedMarkdown(): string[] {
+  const assetsRoot = path.resolve(import.meta.dirname, "..", "assets");
+  return readdirSync(assetsRoot, { recursive: true })
+    .map(String)
+    .filter((relative) => relative.endsWith(".md"))
+    .map((relative) => path.join(assetsRoot, relative));
+}
+
+function frontmatterViolations(filePath: string): string[] {
   const violations: string[] = [];
-  for (const line of frontmatterLines(readFileSync(path.join(AGENTS_DIR, filename), "utf-8"))) {
+  for (const line of frontmatterLines(readFileSync(filePath, "utf-8"))) {
     if (line.trim().length === 0) continue;
     const indented = /^[ \t]/.test(line);
     const property = line.match(/^([A-Za-z_-]+):\s*(.*)$/);
@@ -40,15 +48,15 @@ function frontmatterViolations(filename: string): string[] {
     if (value.length === 0) continue;
     if (/^(true|false|-?\d+(\.\d+)?)$/.test(value)) continue;
     if (!/^".*"$/.test(value)) {
-      violations.push(`${filename}: unquoted value ${value}`);
+      violations.push(`${path.basename(filePath)}: unquoted value ${value}`);
     }
   }
   return violations;
 }
 
 describe("frontmatter hygiene (D6)", () => {
-  test("every frontmatter property value in shipped agents is double-quoted", () => {
-    const violations = AGENT_FILENAMES.flatMap((filename) => frontmatterViolations(filename));
+  test("every frontmatter value in every shipped markdown file is double-quoted", () => {
+    const violations = listShippedMarkdown().flatMap((filePath) => frontmatterViolations(filePath));
     expect(violations).toEqual([]);
   });
 });
