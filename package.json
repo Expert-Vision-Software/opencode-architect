@@ -20,7 +20,7 @@
   "type": "module",
   "module": "index.ts",
   "bin": {
-    "opencode-architect": "cli.ts"
+    "opencode-architect": "src/cli.ts"
   },
   "repository": {
     "type": "git",
@@ -45,16 +45,11 @@
   },
   "files": [
     "index.ts",
-    "agent-loader.ts",
-    "cache-cleaner.ts",
-    "clear-cache-usage-error.ts",
-    "cli.ts",
-    "copy-mode-unsupported-error.ts",
-    "installer.ts",
-    "bundled-assets-missing-error.ts",
-    "plugin-config.ts",
-    "permission-registrar.ts",
-    "assets"
+    "plugin.ts",
+    "src",
+    "agents",
+    "references",
+    "templates"
   ],
   "dependencies": {
     "@opencode-ai/plugin": "*",

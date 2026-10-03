@@ -8,8 +8,8 @@ import { OpencodeArchitectPlugin } from "../index";
 import { captureConsole } from "./test-helpers";
 
 const REPO_ROOT = path.resolve(import.meta.dirname, "..");
-const REAL_AGENTS_DIR = path.join(REPO_ROOT, "assets", "agents");
-const REAL_ASSETS_DIR = path.join(REPO_ROOT, "assets");
+const REAL_AGENTS_DIR = path.join(REPO_ROOT, "agents");
+const REAL_ASSETS_DIR = REPO_ROOT;
 
 type PluginHooks = Awaited<ReturnType<Plugin>>;
 

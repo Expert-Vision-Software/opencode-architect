@@ -4,7 +4,7 @@ import { Installer, type Scope } from "./installer";
 import { CacheCleaner } from "./cache-cleaner";
 import { ClearCacheUsageError } from "./clear-cache-usage-error";
 
-const VERSION = (JSON.parse(await Bun.file(`${import.meta.dirname}/package.json`).text()) as { version: string }).version;
+const VERSION = (JSON.parse(await Bun.file(`${import.meta.dirname}/../package.json`).text()) as { version: string }).version;
 
 async function main(): Promise<void> {
   const { positionals, values } = parseArgs({

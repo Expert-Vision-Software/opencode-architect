@@ -2,9 +2,9 @@ import { describe, expect, test } from "bun:test";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
-import { AGENT_FILENAMES, AgentLoader } from "../agent-loader";
+import { AGENT_FILENAMES, AgentLoader } from "../src/agent-loader";
 
-const AGENTS_DIR = path.resolve(import.meta.dirname, "..", "assets", "agents");
+const AGENTS_DIR = path.resolve(import.meta.dirname, "..", "agents");
 const RELATIVE_REFERENCE_REGEX = /`((?:\.{1,2})(?:[\\/][^`\\/]+)+)`/g;
 const ABSOLUTE_PATH_REGEX = /`([A-Za-z]:[\\/][^`]+|\/[^`]+)`/g;
 
@@ -30,7 +30,7 @@ function frontmatterLines(content: string): string[] {
 }
 
 function listShippedMarkdown(): string[] {
-  const assetsRoot = path.resolve(import.meta.dirname, "..", "assets");
+  const assetsRoot = path.resolve(import.meta.dirname, "..");
   return readdirSync(assetsRoot, { recursive: true })
     .map(String)
     .filter((relative) => relative.endsWith(".md"))

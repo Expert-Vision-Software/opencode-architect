@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { PluginConfigEditor } from "../plugin-config";
+import { PluginConfigEditor } from "../src/plugin-config";
 import { captureConsole } from "./test-helpers";
 
 const ROOT = path.join(import.meta.dirname, "..", ".tmp-plugin-config-test");

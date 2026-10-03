@@ -1,7 +1,7 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { expect, spyOn } from "bun:test";
-import { ClearCacheUsageError } from "../clear-cache-usage-error";
+import { ClearCacheUsageError } from "../src/clear-cache-usage-error";
 
 export interface CapturedConsole {
   lines: string[];

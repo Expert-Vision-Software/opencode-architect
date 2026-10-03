@@ -3,7 +3,7 @@ import { existsSync } from "node:fs";
 import { chmod, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { CacheCleaner } from "../cache-cleaner";
+import { CacheCleaner } from "../src/cache-cleaner";
 import { seedCachedPackage, expectClearCacheUsageError } from "./test-helpers";
 
 let cacheDir = "";

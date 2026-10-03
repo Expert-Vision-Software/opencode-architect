@@ -3,8 +3,8 @@ import { existsSync } from "node:fs";
 import { chmod, mkdir, mkdtemp, readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { Installer, contentHash, type Manifest, type Scope } from "../installer";
-import { CopyModeUnsupportedError } from "../copy-mode-unsupported-error";
+import { Installer, contentHash, type Manifest, type Scope } from "../src/installer";
+import { CopyModeUnsupportedError } from "../src/copy-mode-unsupported-error";
 
 const PACKAGE_ROOT = path.resolve(import.meta.dirname, "..");
 

@@ -10,8 +10,8 @@ const readRepoFile = (relativePath: string): Promise<string> =>
 describe("content declaration", () => {
   test("both package.json templates declare the content field", async () => {
     for (const template of [
-      "assets/templates/package-basics.template.json",
-      "assets/templates/package-full.template.json",
+      "templates/package-basics.template.json",
+      "templates/package-full.template.json",
     ]) {
       const source = await readRepoFile(template);
       const body = source.split("---")[1] ?? "";
@@ -21,13 +21,13 @@ describe("content declaration", () => {
   });
 
   test("packager derives the declaration from its inventory", async () => {
-    const source = await readRepoFile("assets/agents/opencode-packager.md");
+    const source = await readRepoFile("agents/opencode-packager.md");
     expect(source).toContain('"content": "assets"');
     expect(source).toContain('"code"');
   });
 
   test("publisher verifies and carries the declaration", async () => {
-    const source = await readRepoFile("assets/agents/opencode-publisher.md");
+    const source = await readRepoFile("agents/opencode-publisher.md");
     expect(source).toContain("content` declaration");
     expect(source).toContain('declares `"content"`');
   });

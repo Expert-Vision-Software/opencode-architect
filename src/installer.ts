@@ -69,7 +69,7 @@ export class Installer {
   private readonly assetsDir: string;
 
   constructor(assetsDir: string | null = null) {
-    this.assetsDir = assetsDir ?? path.join(import.meta.dirname, "assets");
+    this.assetsDir = assetsDir ?? path.join(import.meta.dirname, "..");
   }
 
   public async install(scope: Scope, options: InstallOptions): Promise<InstallOutcome> {
@@ -337,7 +337,7 @@ export class Installer {
   }
 
   private async getPackageVersion(): Promise<string> {
-    const content = await readFile(path.join(import.meta.dirname, "package.json"), "utf-8");
+    const content = await readFile(path.join(import.meta.dirname, "..", "package.json"), "utf-8");
     return (JSON.parse(content) as { version: string }).version;
   }
 
