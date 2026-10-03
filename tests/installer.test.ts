@@ -193,6 +193,35 @@ describe("Installer.install", () => {
     expect(existsSync(manifestPath("local"))).toBe(false);
   });
 
+  test("fails loudly when bundled assets are absent (partial cache artifact)", async () => {
+    const partialCache = await mkdtemp(path.join(tmpdir(), "oa-partial-cache-"));
+    try {
+      const broken = new Installer(partialCache);
+
+      await expect(
+        broken.install("local", { force: false, mode: "plugin", projectDir }),
+      ).rejects.toThrow(/Bundled asset directory missing or empty.*clear-cache/s);
+
+      expect(existsSync(manifestPath("local"))).toBe(false);
+    } finally {
+      await rm(partialCache, { recursive: true, force: true });
+    }
+  });
+
+  test("fails loudly when a bundled asset directory is empty", async () => {
+    const partialCache = await mkdtemp(path.join(tmpdir(), "oa-partial-cache-"));
+    await mkdir(path.join(partialCache, "agents"), { recursive: true });
+    try {
+      const broken = new Installer(partialCache);
+
+      await expect(
+        broken.install("local", { force: false, mode: "plugin", projectDir }),
+      ).rejects.toThrow(/missing or empty.*agents/s);
+    } finally {
+      await rm(partialCache, { recursive: true, force: true });
+    }
+  });
+
   test("migrates a legacy copy install: payload removed per manifest, entry added", async () => {
     const configPath = path.join(scopeBase("local"), "opencode.json");
     await writeJson(configPath, {});

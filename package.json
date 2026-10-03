@@ -50,6 +50,7 @@
     "clear-cache-usage-error.ts",
     "cli.ts",
     "installer.ts",
+    "bundled-assets-missing-error.ts",
     "plugin-config.ts",
     "permission-registrar.ts",
     "assets"

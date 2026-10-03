@@ -3,6 +3,7 @@ import { homedir } from "node:os";
 import path from "node:path";
 import { hashElement } from "folder-hash";
 import { AGENT_FILENAMES } from "./agent-loader";
+import { BundledAssetsMissingError } from "./bundled-assets-missing-error";
 import { PluginConfigEditor } from "./plugin-config";
 
 export type Scope = "local" | "global";
@@ -63,6 +64,11 @@ const LEGACY_MANIFEST_NAME = "opencode-architect.json";
 
 export class Installer {
   private readonly editor = new PluginConfigEditor();
+  private readonly assetsDir: string;
+
+  constructor(assetsDir: string | null = null) {
+    this.assetsDir = assetsDir ?? path.join(import.meta.dirname, "assets");
+  }
 
   public async install(scope: Scope, options: InstallOptions): Promise<InstallOutcome> {
     if (options.mode === "copy") {
@@ -78,6 +84,7 @@ export class Installer {
     const record = await this.readManifestRecord(base);
     const existing = record.manifest;
     const version = await this.getPackageVersion();
+    await this.requireBundledAssets(version);
 
     let removedPayload: string[] = [];
     let action: InstallAction;
@@ -138,6 +145,15 @@ export class Installer {
       clearedCache: cache.removed,
       cacheWarnings: cache.warnings,
     };
+  }
+
+  private async requireBundledAssets(version: string): Promise<void> {
+    for (const name of ["agents", "references", "templates"]) {
+      const dir = path.join(this.assetsDir, name);
+      if (!(await exists(dir))) throw new BundledAssetsMissingError(dir, this.packageCacheRoot(), version);
+      const contents = await readdir(dir);
+      if (contents.length === 0) throw new BundledAssetsMissingError(dir, this.packageCacheRoot(), version);
+    }
   }
 
   private async prunePackageCache(version: string): Promise<{ removed: string[]; warnings: string[] }> {
