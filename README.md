@@ -1,8 +1,5 @@
 # opencode-architect
-
-[![npm version](https://img.shields.io/npm/v/opencode-architect)](https://www.npmjs.com/package/opencode-architect)
-[![License: MIT](https://img.shields.io/npm/l/opencode-architect)](./LICENSE.md)
-[![OpenCode plugin](https://img.shields.io/badge/opencode-plugin-blueviolet)](https://opencode.ai/docs/plugins)
+[![npm version](https://img.shields.io/npm/v/opencode-architect?color=cb3837&label=npm)](https://www.npmjs.com/package/opencode-architect) [![Bun](https://img.shields.io/badge/Runtime-Bun-f9f1e1?logo=bun&logoColor=black)](https://bun.sh) [![License: MIT](https://img.shields.io/badge/License-MIT-22c55e)](LICENSE.md) [![Platforms](https://img.shields.io/badge/Platforms-Linux-6366f1)](#quick-start-install-the-opencode-plugin-suite) [![OpenCode plugin](https://img.shields.io/badge/opencode-plugin-blueviolet)](https://opencode.ai/docs/plugins)
 
 **Ten specialist agents that design, build, and package OpenCode extensions — agent skills, slash commands, custom tools, plugins, and MCP server integrations — right inside your AI coding assistant.**
 
