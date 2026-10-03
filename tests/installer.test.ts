@@ -217,7 +217,7 @@ describe("Installer.install", () => {
     const consumerAgent = path.join(scopeBase("local"), "agents", "consumer-own.md");
     await writeText(consumerAgent, "# consumer's own");
 
-    const outcome = await install("local");
+    const outcome = await install("local", { force: true });
 
     expect(outcome.action).toBe("migrated");
     expect(outcome.removedPayload).toContain(path.join(scopeBase("local"), "agents", "opencode-architect.md"));
@@ -234,6 +234,26 @@ describe("Installer.install", () => {
     expect(manifest.mode).toBe("plugin");
   });
 
+  test("migration requires --force consent and leaves everything intact without it", async () => {
+    const configPath = path.join(scopeBase("local"), "opencode.json");
+    await writeJson(configPath, {});
+    const legacy = {
+      version: "0.0.1",
+      hashes: [{ path: path.join("agents", "opencode-architect.md"), hash: "deadbeef" }],
+    };
+    await writeJson(manifestPath("local"), legacy);
+    await mkdir(path.join(scopeBase("local"), "agents"), { recursive: true });
+    await writeText(path.join(scopeBase("local"), "agents", "opencode-architect.md"), "old agent");
+
+    await expect(install("local")).rejects.toThrow(/--force/);
+
+    expect(existsSync(path.join(scopeBase("local"), "agents", "opencode-architect.md"))).toBe(true);
+    expect(existsSync(manifestPath("local"))).toBe(true);
+    expect(existsSync(configPath)).toBe(true);
+    const config = await readJson(configPath);
+    expect(config.plugin).toBeUndefined();
+  });
+
   test("migration aborts with the payload intact when a config is unparseable", async () => {
     const legacy = {
       version: "0.0.1",
@@ -245,7 +265,7 @@ describe("Installer.install", () => {
     const configPath = path.join(scopeBase("local"), "opencode.json");
     await writeText(configPath, "{ broken ]");
 
-    await expect(install("local")).rejects.toThrow(/could not be parsed/);
+    await expect(install("local", { force: true })).rejects.toThrow(/could not be parsed/);
 
     expect(existsSync(path.join(scopeBase("local"), "agents", "opencode-architect.md"))).toBe(true);
     expect(existsSync(manifestPath("local"))).toBe(true);

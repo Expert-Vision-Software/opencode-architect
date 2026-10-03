@@ -150,7 +150,8 @@ Options:
   -s, --scope <scope>    "local" (project) or "global" (XDG/home config); default local
   -m, --mode <mode>      "plugin" (default) or "copy"; copy is refused for this
                          code-backed package
-  -f, --force            re-register and rewrite the manifest even when it is up to date
+  -f, --force            re-register and rewrite the manifest even when it is up to date;
+                         consent to migrating a legacy copy install (removes its copied payload)
       --package <name>   clear-cache: remove <name> and every <name>@* instead;
                          requires --yes
       --all              clear-cache: remove the whole OpenCode cache directory;

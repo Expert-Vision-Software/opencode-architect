@@ -82,6 +82,14 @@ export class Installer {
     let removedPayload: string[] = [];
     let action: InstallAction;
     if (existing !== null && existing.mode === "copy") {
+      if (!options.force) {
+        throw new Error(
+          `A legacy copy install of ${PACKAGE_NAME} was found at ${base}. ` +
+            `Migrating it to plugin registration removes the copied payload it recorded, ` +
+            `including any files you edited after installing. ` +
+            `Re-run with --force to consent.`,
+        );
+      }
       const check = await this.editor.checkParseable({ scope, projectDir: options.projectDir });
       if (!check.ok) throw new Error(check.warning);
       removedPayload = await this.removePayloadPerManifest(base, existing.hashes ?? []);
