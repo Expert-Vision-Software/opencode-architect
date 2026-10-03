@@ -68,11 +68,10 @@ describe("plugin load hook (startup non-interference)", () => {
     const { agentsDir, assetsDir } = await makeScratchDirs();
     const warnings = captureWarnings();
     const plugin = createOpencodeArchitect(agentsDir, assetsDir);
-    const hooks = await hooksFrom(plugin);
 
-    await hooks.config({} as Config);
-    await hooks.config({} as Config);
-    await hooks.config({} as Config);
+    await configFrom(plugin);
+    await configFrom(plugin);
+    await configFrom(plugin);
 
     expect(warnings).toHaveLength(1);
   });
