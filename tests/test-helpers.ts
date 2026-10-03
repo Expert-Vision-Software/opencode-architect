@@ -1,7 +1,20 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { expect } from "bun:test";
+import { expect, spyOn } from "bun:test";
 import { ClearCacheUsageError } from "../clear-cache-usage-error";
+
+export interface CapturedConsole {
+  lines: string[];
+  restore: () => void;
+}
+
+export function captureConsole(method: "log" | "warn"): CapturedConsole {
+  const lines: string[] = [];
+  const spy = spyOn(console, method).mockImplementation((message: unknown) => {
+    lines.push(String(message));
+  });
+  return { lines, restore: () => spy.mockRestore() };
+}
 
 export async function seedCachedPackage(dir: string, name: string): Promise<string> {
   const target = path.join(dir, name);

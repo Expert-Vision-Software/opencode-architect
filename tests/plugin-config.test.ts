@@ -1,7 +1,8 @@
-import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { PluginConfigEditor } from "../plugin-config";
+import { captureConsole } from "./test-helpers";
 
 const ROOT = path.join(import.meta.dirname, "..", ".tmp-plugin-config-test");
 
@@ -164,18 +165,15 @@ describe("PluginConfigEditor.ensurePluginEntry", () => {
     const projectDir = await makeDir("project");
     await write("project/.opencode/opencode.json", '{ "plugin": ["my-pkg"] }\n');
     const brokenRoot = await write("project/opencode.json", "{ broken ]");
-    const warnings: string[] = [];
-    const spy = spyOn(console, "warn").mockImplementation((message: unknown) => {
-      warnings.push(String(message));
-    });
+    const captured = captureConsole("warn");
 
     try {
       const outcome = await editor().ensurePluginEntry("my-pkg", { scope: "local", projectDir });
 
       expect(outcome.action).toBe("noop");
-      expect(warnings.some((message) => message.includes(brokenRoot))).toBe(true);
+      expect(captured.lines.some((message) => message.includes(brokenRoot))).toBe(true);
     } finally {
-      spy.mockRestore();
+      captured.restore();
     }
   });
 
@@ -183,18 +181,15 @@ describe("PluginConfigEditor.ensurePluginEntry", () => {
     const projectDir = await makeDir("project");
     await write("project/.opencode/opencode.json", "{ broken ]");
     const rootConfig = await write("project/opencode.json", '{ "plugin": ["my-pkg@1.0.0"] }\n');
-    const warnings: string[] = [];
-    const spy = spyOn(console, "warn").mockImplementation((message: unknown) => {
-      warnings.push(String(message));
-    });
+    const captured = captureConsole("warn");
 
     try {
       const found = await editor().findRegistration("my-pkg", { scope: "local", projectDir });
 
       expect(found).toBe(rootConfig);
-      expect(warnings.some((message) => message.includes(".opencode"))).toBe(true);
+      expect(captured.lines.some((message) => message.includes(".opencode"))).toBe(true);
     } finally {
-      spy.mockRestore();
+      captured.restore();
     }
   });
 
@@ -203,19 +198,16 @@ describe("PluginConfigEditor.ensurePluginEntry", () => {
     const xdg = await makeDir("xdg");
     const readOnlyConfig = await write("xdg/opencode/config.json", "{ broken ]");
     process.env.XDG_CONFIG_HOME = xdg;
-    const warnings: string[] = [];
-    const spy = spyOn(console, "warn").mockImplementation((message: unknown) => {
-      warnings.push(String(message));
-    });
+    const captured = captureConsole("warn");
 
     try {
       const outcome = await editor().removePluginEntry("my-pkg", { scope: "global", projectDir });
 
       expect(outcome.action).toBe("noop");
-      expect(warnings.some((message) => message.includes(readOnlyConfig))).toBe(true);
+      expect(captured.lines.some((message) => message.includes(readOnlyConfig))).toBe(true);
       expect(await readFile(readOnlyConfig, "utf-8")).toBe("{ broken ]");
     } finally {
-      spy.mockRestore();
+      captured.restore();
       delete process.env.XDG_CONFIG_HOME;
     }
   });

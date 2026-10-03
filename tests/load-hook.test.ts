@@ -1,10 +1,11 @@
-import { afterEach, describe, expect, spyOn, test } from "bun:test";
+import { afterEach, describe, expect, test } from "bun:test";
 import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import type { Config } from "@opencode-ai/plugin";
 import type { Plugin } from "@opencode-ai/plugin";
 import { OpencodeArchitectPlugin } from "../index";
+import { captureConsole } from "./test-helpers";
 
 const REPO_ROOT = path.resolve(import.meta.dirname, "..");
 const REAL_AGENTS_DIR = path.join(REPO_ROOT, "assets", "agents");
@@ -40,19 +41,17 @@ async function makeScratchDirs(): Promise<{ agentsDir: string; assetsDir: string
 }
 
 describe("plugin load hook (startup non-interference)", () => {
-  let warnSpy: ReturnType<typeof spyOn> | null = null;
+  let restoreWarnings: (() => void) | null = null;
 
   afterEach(() => {
-    warnSpy?.mockRestore();
-    warnSpy = null;
+    restoreWarnings?.();
+    restoreWarnings = null;
   });
 
   function captureWarnings(): string[] {
-    const warnings: string[] = [];
-    warnSpy = spyOn(console, "warn").mockImplementation((message: unknown) => {
-      warnings.push(String(message));
-    });
-    return warnings;
+    const captured = captureConsole("warn");
+    restoreWarnings = captured.restore;
+    return captured.lines;
   }
 
   test("missing bundled agents degrade to exactly one advisory instead of throwing", async () => {
@@ -107,26 +106,22 @@ describe("plugin load hook (startup non-interference)", () => {
 });
 
 describe("not-installed advisory (D5)", () => {
-  let logSpy: ReturnType<typeof spyOn> | null = null;
-  let warnSpy: ReturnType<typeof spyOn> | null = null;
+  let restoreLogs: (() => void) | null = null;
+  let restoreWarnings: (() => void) | null = null;
 
   afterEach(() => {
-    logSpy?.mockRestore();
-    warnSpy?.mockRestore();
-    logSpy = null;
-    warnSpy = null;
+    restoreLogs?.();
+    restoreWarnings?.();
+    restoreLogs = null;
+    restoreWarnings = null;
   });
 
   function captureOutput(): { logs: string[]; warnings: string[] } {
-    const logs: string[] = [];
-    const warnings: string[] = [];
-    logSpy = spyOn(console, "log").mockImplementation((message: unknown) => {
-      logs.push(String(message));
-    });
-    warnSpy = spyOn(console, "warn").mockImplementation((message: unknown) => {
-      warnings.push(String(message));
-    });
-    return { logs, warnings };
+    const logs = captureConsole("log");
+    const warnings = captureConsole("warn");
+    restoreLogs = logs.restore;
+    restoreWarnings = warnings.restore;
+    return { logs: logs.lines, warnings: warnings.lines };
   }
 
   test("fires once when no scope holds an install, then stays suppressed", async () => {
