@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.1] - 2026-10-03
+
+### Fixed
+
+- v0.8.0 failed to load in every consumer session: the package entry module re-exported the named `OpencodeArchitectPlugin` class, and OpenCode's loader invokes every function-valued entry export as a plain plugin factory — calling a class without `new` aborts the whole plugin (`Cannot call a class constructor OpencodeArchitectPlugin without |new|` in the session log) and no agents register. `index.ts` now exports only `default`; the class stays importable from `plugin.ts` for tests ([ADR-0010](docs/adr/0010-plugin-entry-module-default-only.md))
+
+### Added
+
+- Entry-module regression test: `tests/entry-exports.test.ts` imports the real entry and asserts the opencode contract — nothing besides `default` is exported and `default` is callable without `new`
+- Conformance checklist E3, entry module default-only: generated packages are audited against the same rule (their templates already emit default-only entries); E3 joins the hard non-conformance set
+
 ## [0.8.0] - 2026-10-01
 
 ### Added

@@ -206,11 +206,19 @@ finding.
   `--mode copy` is a hard, explanatory error (`CopyModeUnsupportedError`),
   never a hybrid copy-plus-register. A per-scope mode choice, a mixed
   copy-and-register install, or a silent mode fallback is non-conformant.
+- **E3 Entry module default-only (ADR-0010).** The package entry module
+  (`index.ts`) exports nothing besides `default`, and `default` is the
+  plugin factory. OpenCode's loader invokes every function-valued export of
+  the entry module as a plugin factory and calls it without `new` — a named
+  class re-export there aborts the whole plugin with `Cannot call a class
+  constructor … without |new|`, and any non-function export throws `Plugin
+  export is not a function`. Internal consumers (CLI, tests) import the
+  class from its own module, never from the entry.
 
 ## Verdict scale
 
 - **Conformant** — every item evidenced.
 - **Partially conformant** — violations are latent (dead code, fallback
   paths not yet exercised); list item IDs with evidence.
-- **Non-conformant** — any A1–A4, B1, B4–B6, C1–C3, E1–E2 violation on a
+- **Non-conformant** — any A1–A4, B1, B4–B6, C1–C3, E1–E3 violation on a
   live code path; these are the historically destructive patterns.

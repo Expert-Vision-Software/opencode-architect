@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import type { Config } from "@opencode-ai/plugin";
 import type { Plugin } from "@opencode-ai/plugin";
-import { OpencodeArchitectPlugin } from "../index";
+import { OpencodeArchitectPlugin } from "../plugin";
 import { captureConsole } from "./test-helpers";
 
 const REPO_ROOT = path.resolve(import.meta.dirname, "..");

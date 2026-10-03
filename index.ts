@@ -1,4 +1,4 @@
-export { OpencodeArchitectPlugin, default } from "./plugin.ts";
+export { default } from "./plugin.ts";
 
 if (import.meta.main) {
   const { runCli } = await import("./src/cli.ts");
