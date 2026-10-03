@@ -46,6 +46,7 @@ export class PluginConfigEditor {
     packageName: string,
     options: EnsurePluginEntryOptions,
   ): Promise<EnsurePluginEntryOutcome> {
+    const canonical = this.canonicalEntry(packageName);
     for (const candidate of this.candidateConfigs(options)) {
       if (!(await exists(candidate.path))) continue;
       const text = await readFile(candidate.path, "utf-8");
@@ -63,7 +64,7 @@ export class PluginConfigEditor {
         return { action: "noop", configPath: candidate.path, warning: null };
       }
       if (!candidate.writable) continue;
-      const spliced = this.spliceEntry(text, packageName, candidate.lenient);
+      const spliced = this.spliceEntry(text, canonical, packageName, candidate.lenient);
       if (spliced === null) {
         return {
           action: "blocked",
@@ -77,7 +78,7 @@ export class PluginConfigEditor {
     }
 
     const target = this.defaultConfigPath(options);
-    const content = DEFAULT_CONFIG_TEMPLATE.replace("__PACKAGE_NAME__", packageName);
+    const content = DEFAULT_CONFIG_TEMPLATE.replace("__PACKAGE_NAME__", canonical);
     await mkdir(path.dirname(target), { recursive: true });
     await writeFile(target, content);
     return { action: "created", configPath: target, warning: null };
@@ -153,6 +154,12 @@ export class PluginConfigEditor {
     const specIndex = entry.lastIndexOf("@");
     const name = specIndex > 0 ? entry.slice(0, specIndex) : entry;
     return name === packageName;
+  }
+
+  private canonicalEntry(packageName: string): string {
+    const specIndex = packageName.lastIndexOf("@");
+    if (specIndex > 0) return packageName;
+    return `${packageName}@latest`;
   }
 
   private candidateConfigs(options: EnsurePluginEntryOptions): CandidateConfig[] {
@@ -258,13 +265,18 @@ export class PluginConfigEditor {
     return chars.join("");
   }
 
-  private spliceEntry(text: string, packageName: string, lenient: boolean): string | null {
+  private spliceEntry(
+    text: string,
+    entryToWrite: string,
+    packageName: string,
+    lenient: boolean,
+  ): string | null {
     const navigable = this.blankComments(text);
     const range = this.findPluginArrayRange(navigable);
     const spliced =
       range === null
-        ? this.splicePluginKey(text, navigable, packageName)
-        : this.spliceArrayEntry(text, navigable, range, packageName);
+        ? this.splicePluginKey(text, navigable, entryToWrite)
+        : this.spliceArrayEntry(text, navigable, range, entryToWrite);
     if (spliced === null) return null;
     const plugins = this.parsePluginArray(spliced, lenient);
     if (plugins === null || !this.hasMatchingEntry(plugins, packageName)) return null;

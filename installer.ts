@@ -57,6 +57,7 @@ export interface StatusOutcome {
 }
 
 const PACKAGE_NAME = "opencode-architect";
+const PLUGIN_ENTRY = "opencode-architect@latest";
 const MANIFEST_NAME = "opencode-architect.manifest.json";
 const LEGACY_MANIFEST_NAME = "opencode-architect.json";
 
@@ -105,7 +106,7 @@ export class Installer {
       const manifest: Manifest = {
         version,
         mode: "plugin",
-        entry: PACKAGE_NAME,
+        entry: PLUGIN_ENTRY,
         configPath: registration.configPath,
         "content-hash": null,
         hashes: null,

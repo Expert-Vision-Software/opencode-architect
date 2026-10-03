@@ -91,13 +91,13 @@ describe("Installer.install", () => {
     expect(outcome.manifestPath).toBe(manifestPath("local"));
 
     const config = await readJson(configPath);
-    expect(config.plugin).toEqual(["opencode-architect"]);
+    expect(config.plugin).toEqual(["opencode-architect@latest"]);
     expect(config.theme).toBe("dark");
 
     const manifest = (await readJson(manifestPath("local"))) as unknown as Manifest;
     expect(manifest.version).toBe(await readPackageVersion());
     expect(manifest.mode).toBe("plugin");
-    expect(manifest.entry).toBe("opencode-architect");
+    expect(manifest.entry).toBe("opencode-architect@latest");
     expect(manifest.configPath).toBe(configPath);
     expect(manifest["content-hash"]).toBeNull();
   });
@@ -163,8 +163,8 @@ describe("Installer.install", () => {
     const after = await readFile(configPath, "utf-8");
     expect(after).toContain("// my precious comment");
     expect(after).toContain("// plugin note");
-    expect(after.indexOf("opencode-architect")).toBeLessThan(after.indexOf("other-extension"));
-    const withoutEntry = after.replace(`\n    "opencode-architect",`, "");
+    expect(after.indexOf("opencode-architect@latest")).toBeLessThan(after.indexOf("other-extension"));
+    const withoutEntry = after.replace(`\n    "opencode-architect@latest",`, "");
     expect(withoutEntry).toBe(original);
   });
 
@@ -185,7 +185,7 @@ describe("Installer.install", () => {
     expect(outcome.configAction).toBe("created");
     expect(outcome.configPath).toBe(path.join(projectDir, "opencode.jsonc"));
     const text = await readFile(path.join(projectDir, "opencode.jsonc"), "utf-8");
-    expect(text).toContain('"plugin": ["opencode-architect"]');
+    expect(text).toContain('"plugin": ["opencode-architect@latest"]');
   });
 
   test("refuses copy mode with an explanatory error", async () => {
@@ -229,7 +229,7 @@ describe("Installer.install", () => {
     expect(existsSync(path.join(scopeBase("local"), "opencode-architect"))).toBe(false);
 
     const config = await readJson(path.join(scopeBase("local"), "opencode.json"));
-    expect(config.plugin).toEqual(["opencode-architect"]);
+    expect(config.plugin).toEqual(["opencode-architect@latest"]);
     const manifest = (await readJson(manifestPath("local"))) as unknown as Manifest;
     expect(manifest.mode).toBe("plugin");
   });

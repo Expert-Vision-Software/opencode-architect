@@ -16,7 +16,7 @@ Add the package to the `plugin` array in your OpenCode config — `.opencode/ope
 
 ```json
 {
-  "plugin": ["opencode-architect"]
+  "plugin": ["opencode-architect@latest"]
 }
 ```
 
@@ -24,7 +24,7 @@ The plugin registers the full agent suite at startup, with self-contained bundle
 
 ### Option 2 — Install with the CLI (bunx or npx)
 
-The CLI registers the package as a plugin: it adds `opencode-architect` to the `plugin` array of your OpenCode config with surgical text editing (comments and formatting elsewhere in the file are preserved), then records the registration in an `opencode-architect.manifest.json` manifest at the scope base. Nothing is copied — the agents, references, and templates all load from the package at startup.
+The CLI registers the package as a plugin: it adds `opencode-architect@latest` to the `plugin` array of your OpenCode config with surgical text editing (comments and formatting elsewhere in the file are preserved), then records the registration in an `opencode-architect.manifest.json` manifest at the scope base. Nothing is copied — the agents, references, and templates all load from the package at startup.
 
 ```bash
 # Project scope (default): edits the ./.opencode/ or repo-root config
