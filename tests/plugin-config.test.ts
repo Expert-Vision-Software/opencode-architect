@@ -198,6 +198,28 @@ describe("PluginConfigEditor.ensurePluginEntry", () => {
     }
   });
 
+  test("unparseable read-only candidate is warned about and skipped, never blocking removal", async () => {
+    const projectDir = await makeDir("project");
+    const xdg = await makeDir("xdg");
+    const readOnlyConfig = await write("xdg/opencode/config.json", "{ broken ]");
+    process.env.XDG_CONFIG_HOME = xdg;
+    const warnings: string[] = [];
+    const spy = spyOn(console, "warn").mockImplementation((message: unknown) => {
+      warnings.push(String(message));
+    });
+
+    try {
+      const outcome = await editor().removePluginEntry("my-pkg", { scope: "global", projectDir });
+
+      expect(outcome.action).toBe("noop");
+      expect(warnings.some((message) => message.includes(readOnlyConfig))).toBe(true);
+      expect(await readFile(readOnlyConfig, "utf-8")).toBe("{ broken ]");
+    } finally {
+      spy.mockRestore();
+      delete process.env.XDG_CONFIG_HOME;
+    }
+  });
+
   test("strict .json rejects comments and trailing commas", async () => {
     const projectDir = await makeDir("project");
     await write("project/opencode.json", '{ "plugin": ["a",], }\n');

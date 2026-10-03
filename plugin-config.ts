@@ -113,6 +113,7 @@ export class PluginConfigEditor {
     options: EnsurePluginEntryOptions,
   ): Promise<RemovePluginEntryOutcome> {
     for (const { candidate, text, plugins } of await this.readCandidates(options)) {
+      if (!candidate.writable) continue;
       if (plugins === null) {
         return {
           action: "blocked",
@@ -122,7 +123,6 @@ export class PluginConfigEditor {
             `Fix or remove the file and re-run the uninstall.`,
         };
       }
-      if (!candidate.writable) continue;
       if (!this.hasMatchingEntry(plugins, packageName)) continue;
       const spliced = this.spliceOutEntry(text, packageName, candidate.lenient);
       if (spliced === null) {
