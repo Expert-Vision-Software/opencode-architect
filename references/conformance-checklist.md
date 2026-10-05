@@ -2,7 +2,7 @@
 
 Canonical review criteria for assessing whether an existing plugin package
 conforms to this suite's design (ADR 0006: scope-aware, manifest-gated
-installation). Review a built package — a repo with `plugin.ts`, install
+installation). Review a built package — a repo with `src/plugin.ts`, install
 logic, bundled content directories at the package root (`skills/`,
 `commands/`; the legacy `assets/` wrapper is recognized but non-default),
 and `package.json` — against every item. Cite
@@ -198,7 +198,7 @@ finding.
   package actually ships: any package containing agents, tools, hooks, or
   other plugin integrations declares `"code"`; an assets-only package
   declares `"assets"`. A missing declaration, or one contradicting the
-  payload (e.g. `"assets"` on a package shipping a `plugin.ts` hook) is
+  payload (e.g. `"assets"` on a package shipping a `src/plugin.ts` hook) is
   non-conformant.
 - **E2 Binary mode enforcement.** The deployment plan is binary and
   content-decided: assets-only packages copy-install by default (`--mode
@@ -214,11 +214,18 @@ finding.
   constructor … without |new|`, and any non-function export throws `Plugin
   export is not a function`. Internal consumers (CLI, tests) import the
   class from its own module, never from the entry.
+- **E4 Root holds only the entry (ADR-0011).** `index.ts` is the only
+  TypeScript file at the package root; every other module — the hook
+  (`src/plugin.ts`), installer, CLI, helpers — lives under `src/`. A
+  root-level `plugin.ts` or any stray code file outside `src/` is
+  non-conformant (a legacy root-level `plugin.ts` is recognized during
+  merge and migration, but a package built or audited against this
+  checklist must not ship one).
 
 ## Verdict scale
 
 - **Conformant** — every item evidenced.
 - **Partially conformant** — violations are latent (dead code, fallback
   paths not yet exercised); list item IDs with evidence.
-- **Non-conformant** — any A1–A4, B1, B4–B6, C1–C3, E1–E3 violation on a
+- **Non-conformant** — any A1–A4, B1, B4–B6, C1–C3, E1–E4 violation on a
   live code path; these are the historically destructive patterns.

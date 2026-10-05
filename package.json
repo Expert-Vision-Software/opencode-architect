@@ -38,14 +38,13 @@
     "check": "tsc --noEmit",
     "test": "bun test",
     "prepublishOnly": "npm run check && npm test",
-    "release": "npm version patch && npm publish && git push --follow-tags"
+    "release": "git tag v$(node -p 'require(\"./package.json\").version') && git push origin v$(node -p 'require(\"./package.json\").version')"
   },
   "publishConfig": {
     "access": "public"
   },
   "files": [
     "index.ts",
-    "plugin.ts",
     "src",
     "agents",
     "references",

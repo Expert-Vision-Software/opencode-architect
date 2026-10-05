@@ -111,3 +111,7 @@ Default vocabulary — the five canonical role names used as-is. See `docs/agent
 ### Domain docs
 
 Single-context: root `CONTEXT.md` + `docs/adr/`. See `docs/agents/domain.md`.
+
+### Release
+
+Ship via tag push only — GitHub Actions publishes to npm. Never run `npm publish` locally. See `docs/agents/release.md`.

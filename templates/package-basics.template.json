@@ -16,7 +16,7 @@ PATHS
   "commands/my-command.md"   → path to your command file
 
 FILES
-  ["index.ts", "plugin.ts", "skills", "commands", "src"]
+  ["index.ts", "src", "skills", "commands"]
                              → list the content directories actually shipped
                                (src/ always ships the CLI); add "agents",
                                "plugins", or "tools" when the package
@@ -48,5 +48,5 @@ METADATA
   "bin": {
     "opencode-myextension": "src/cli.ts"
   },
-  "files": ["index.ts", "plugin.ts", "skills", "commands", "src"]
+  "files": ["index.ts", "src", "skills", "commands"]
 }

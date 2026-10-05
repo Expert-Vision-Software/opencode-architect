@@ -1,9 +1,9 @@
 import type { Plugin } from "@opencode-ai/plugin";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
-import { AgentLoader } from "./src/agent-loader";
-import { AssetPermissionRegistrar } from "./src/permission-registrar";
-import { Installer } from "./src/installer";
+import { AgentLoader } from "./agent-loader";
+import { AssetPermissionRegistrar } from "./permission-registrar";
+import { Installer } from "./installer";
 
 const PACKAGE_NAME = "opencode-architect";
 
@@ -21,8 +21,8 @@ export class OpencodeArchitectPlugin {
     readVersion: (() => Promise<string>) | null = null,
     hasInstall: ((projectDir: string) => Promise<boolean>) | null = null,
   ) {
-    this.agentsDir = agentsDir ?? path.join(import.meta.dirname, "agents");
-    this.assetsDir = assetsDir ?? import.meta.dirname;
+    this.agentsDir = agentsDir ?? path.join(import.meta.dirname, "..", "agents");
+    this.assetsDir = assetsDir ?? path.join(import.meta.dirname, "..");
     this.readVersion = readVersion ?? (() => this.readPackageMetadata());
     this.hasInstall = hasInstall ?? ((projectDir) => new Installer().hasManifestAnywhere(projectDir));
   }
@@ -83,7 +83,7 @@ export class OpencodeArchitectPlugin {
 
   private async readPackageMetadata(): Promise<string> {
     const manifest = JSON.parse(
-      await readFile(path.join(import.meta.dirname, "package.json"), "utf-8"),
+      await readFile(path.join(import.meta.dirname, "..", "package.json"), "utf-8"),
     ) as { version: string };
     if (typeof manifest.version !== "string" || manifest.version.length === 0) {
       throw new Error("unreadable package metadata");
