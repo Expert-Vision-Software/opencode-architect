@@ -14,7 +14,8 @@ This shipped as the v0.8.0 regression: `index.ts` re-exported the named
 dispatch-shim refactor), and every consumer session — npm-installed or local
 `file://` — failed to load the suite. The contract is therefore: **the
 package entry module exports `default` and nothing else**, and `default` is
-the plugin factory. The hook class lives in its own module (`plugin.ts`);
+the plugin factory. The hook class lives in its own module
+(`src/plugin.ts`);
 the CLI and tests import it from there. The regression test
 `tests/entry-exports.test.ts` imports the entry and asserts the export set
 and that `default` is callable without `new`, and the conformance checklist
@@ -43,7 +44,7 @@ already emit default-only entries).
 - Entry-module changes are contract changes: `index.ts` may grow only the
   `import.meta.main` CLI shim, never new exports
 - The class stays public to this repo (the load-hook tests) via
-  `plugin.ts`; it is not part of the importable package surface
+  `src/plugin.ts`; it is not part of the importable package surface
 - The entry-exports regression test is load-bearing and must keep importing
   the real entry module rather than a re-implemented copy
 - E3 in the conformance checklist audits generated packages against the

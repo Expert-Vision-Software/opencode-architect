@@ -202,8 +202,8 @@ describe("package-root content layout (no assets/ wrapper)", () => {
 describe("generated CLI surface", () => {
   test("plugin-local reads version from the package root, not its parent", async () => {
     const source = await readTemplate("plugin-local.template.txt");
-    expect(source).toContain("${import.meta.dirname}/package.json");
-    expect(source).not.toContain("${import.meta.dirname}/../package.json");
+    expect(source).toContain("${import.meta.dirname}/../package.json");
+    expect(source).not.toContain("${import.meta.dirname}/../../package.json");
   });
 
   test("index template dispatches to the CLI; cli template exports runCli", async () => {

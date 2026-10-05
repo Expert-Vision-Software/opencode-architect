@@ -11,8 +11,8 @@
 
 ---
 import type { Plugin } from "@opencode-ai/plugin";
-import { ensureAssets, isInstalledAnywhere } from "./src/installer.ts";
-import { RegistrationDetector, type RegistrationScope } from "./src/registration.ts";
+import { ensureAssets, isInstalledAnywhere } from "./installer.ts";
+import { RegistrationDetector, type RegistrationScope } from "./registration.ts";
 
 const PACKAGE_NAME = "opencode-myextension";
 
@@ -34,7 +34,7 @@ async function adviseFailureOnce(message: string): Promise<void> {
   try {
     let version = "<version>";
     try {
-      version = JSON.parse(await Bun.file(`${import.meta.dirname}/package.json`).text()).version ?? version;
+      version = JSON.parse(await Bun.file(`${import.meta.dirname}/../package.json`).text()).version ?? version;
     } catch {}
     text = `MyExtension load-time install failed. Run: bunx ${PACKAGE_NAME} clear-cache, then: bunx ${PACKAGE_NAME} install --scope global. The stale cache copy is ~/.cache/opencode/packages/${PACKAGE_NAME}@${version}. Cause: ${message}`;
   } catch {

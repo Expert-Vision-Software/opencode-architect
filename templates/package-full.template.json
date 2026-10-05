@@ -16,7 +16,7 @@ PATHS
   "commands/my-command.md"   → path to your command file
 
 FILES
-  ["index.ts", "plugin.ts", "src", "skills", "commands"]
+  ["index.ts", "src", "skills", "commands"]
                              → list the content directories actually shipped;
                                add "agents", "plugins", or "tools" when the
                                package ships them
@@ -54,7 +54,7 @@ METADATA
     "email": "support@example.com"
   },
   "license": "MIT",
-  "files": ["index.ts", "plugin.ts", "src", "skills", "commands"],
+  "files": ["index.ts", "src", "skills", "commands"],
   "scripts": {
     "check": "tsc --noEmit",
     "test": "bun test"
