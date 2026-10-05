@@ -1,16 +1,30 @@
 import { describe, expect, test } from "bun:test";
 import { execSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 
 const packageJson = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf-8"));
+const ROOT = new URL("..", import.meta.url).pathname;
 
 interface PackFile {
   path: string;
 }
 
 function packDryRun(): PackFile[] {
-  const output = execSync("npm pack --dry-run --json", { encoding: "utf-8", cwd: new URL("..", import.meta.url).pathname });
+  const output = execSync("npm pack --dry-run --json", { encoding: "utf-8", cwd: ROOT });
   return JSON.parse(output)[0].files as PackFile[];
+}
+
+function walkDisk(entry: string): string[] {
+  const base = `${ROOT}${entry}`;
+  const files: string[] = [];
+  const visit = (relative: string) => {
+    for (const item of readdirSync(`${base}${relative}`, { withFileTypes: true })) {
+      if (item.isDirectory()) visit(`${relative}/${item.name}`);
+      else files.push(`${entry}${relative}/${item.name}`);
+    }
+  };
+  visit("");
+  return files.sort();
 }
 
 function expectedPaths(): string[] {
@@ -20,8 +34,7 @@ function expectedPaths(): string[] {
       paths.push(entry);
       continue;
     }
-    const listed = execSync(`git ls-files ${entry}`, { encoding: "utf-8", cwd: new URL("..", import.meta.url).pathname });
-    paths.push(...listed.split("\n").filter(Boolean));
+    paths.push(...walkDisk(entry));
   }
   return paths;
 }
