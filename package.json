@@ -1,6 +1,6 @@
 {
   "name": "opencode-architect",
-  "version": "0.8.1",
+  "version": "0.9.0",
   "content": "code",
   "description": "OpenCode plugin and CLI with ten specialist agents for agent skills, slash commands, custom tools, plugins, and MCP server integration",
   "keywords": [
@@ -38,14 +38,13 @@
     "check": "tsc --noEmit",
     "test": "bun test",
     "prepublishOnly": "npm run check && npm test",
-    "release": "npm version patch && npm publish && git push --follow-tags"
+    "release": "git tag v$(node -p 'require(\"./package.json\").version') && git push origin v$(node -p 'require(\"./package.json\").version')"
   },
   "publishConfig": {
     "access": "public"
   },
   "files": [
     "index.ts",
-    "plugin.ts",
     "src",
     "agents",
     "references",

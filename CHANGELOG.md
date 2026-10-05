@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.0] - 2026-10-03
+
+### Added
+
+- Conformance checklist E4, root holds only the entry ([ADR-0011](docs/adr/0011-package-root-holds-only-the-entry.md)): `index.ts` is the only TypeScript file at the package root, every other module lives under `src/`; a legacy root-level `plugin.ts` is recognized during merge and migration but is non-conformant for built or audited packages; the packager self-audit gate verifies the root surface
+- `docs/agents/release.md`: the release flow is tag push only — `npm run release` tags the head commit `v<version>` (version read from `package.json`) and pushes; CI validates the changelog section and publishes with provenance
+
+### Changed
+
+- **Breaking:** `plugin.ts` moved to `src/plugin.ts` — in this package and in generated packages (hook template lands at `src/plugin.ts`, `index.ts` re-exports `./src/plugin.ts`, template `files` whitelists drop `plugin.ts`); templates resolve package-root resources via `../` from `src/`; packager, publisher, architect, and auditor instructions updated
+- `release` npm script no longer bumps the version or publishes locally
+
 ## [0.8.1] - 2026-10-03
 
 ### Fixed
