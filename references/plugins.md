@@ -1,96 +1,189 @@
 # OpenCode plugins — fundamentals
 
-Plugins are JS/TS modules that hook into OpenCode events and customize behavior.
+Plugins are packages that register agents, tools, hooks, and MCP changes with
+a running OpenCode host through context domains. Everything below is v2
+(Effect-first), adjudicated against the pinned source: facts per
+`docs/reference/opencode-v2-facts.md` §1–2 (definition, lifecycle), §7
+(registration, install), §8 (tools), §9 (hooks), §10 (MCP), §11 (TUI/RPC).
+General Effect-TS teaching is out of scope here — see the repo's effect-ts
+skill.
 
-Locations:
+## Authoring package
 
-- Project: `.opencode/plugins/`
-- Global: `~/.config/opencode/plugins/`
+- Package: `@opencode/plugin` (consumer guidance resolves `latest`).
+- Subpath exports: `.` (Promise root), `./effect` (Effect variant — house
+  style), `./host` (entrypoint resolution helpers), `./tui` (TUI/CLI surface),
+  `./*` (any other module). Facts §1.
 
-Files in these directories load automatically at startup. npm packages can be loaded via the `plugin` array in `opencode.json`. Load order: global config → project config → global plugin dir → project plugin dir.
+## Plugin definition
 
-## Plugin shape
-
-A plugin exports one or more async functions. Each receives a context and returns a hooks object:
-
-```ts
-import type { Plugin } from "@opencode-ai/plugin"
-
-export const MyPlugin: Plugin = async ({ project, client, $, directory, worktree }) => {
-  return {
-    // hook implementations
-  }
-}
-```
-
-Context: `project` (project info), `directory` (cwd), `worktree` (git worktree root), `client` (opencode SDK client), `$` (Bun shell API).
-
-## Config hooks
-
-Returning a `tool` object adds custom tools; a plugin tool that shares a built-in tool's name takes precedence:
+The entry module default-exports a definition; the stable `id` is
+load-bearing (storage scoping, diagnostics; duplicate ids die activation):
 
 ```ts
-import { type Plugin, tool } from "@opencode-ai/plugin"
+import { Effect } from "effect"
+import { Plugin } from "@opencode/plugin/effect"
 
-export const CustomToolsPlugin: Plugin = async (ctx) => {
-  return {
-    tool: {
-      mytool: tool({
-        description: "What the tool does",
-        args: { foo: tool.schema.string() },
-        async execute(args, context) {
-          const { directory, worktree } = context
-          return `Hello ${args.foo} from ${directory}`
-        },
-      }),
-    },
-  }
-}
+export default Plugin.define({
+  id: "my-plugin",
+  effect: (context) =>
+    Effect.gen(function* () {
+      // register via context domains
+    }),
+})
 ```
 
-## Event hooks
+- **Effect shape**: `{ id, effect(ctx) }` — the effect runs in a per-plugin
+  forked Scope, closed on failure/unload. House style. Facts §2.
+- **Promise shape**: `{ id, setup(ctx) }` — return a cleanup function (or
+  Promise of one); it runs at unload. Documented fallback for trivial
+  plugins. Facts §2.
+- Anything else fails loading: "Plugin must export a default definition with
+  an id and an effect or setup function." Facts §2.
+- **Context** carries `app`, `location`, `options`, and the domains: `agent`,
+  `aisdk`, `command`, `event`, `experimental`, `integration`, `mcp`, `model`,
+  `generate`, `permission`, `plugin`, `provider`, `reference`, `rpc`,
+  `session`, `shell`, `skill`, `storage`, `tool`, `vcs`, `websearch`,
+  `worktree`. Facts §2.
+- **Lifecycle**: activation diffs the previous generation by (id, revision) —
+  only the changed suffix reloads; unchanged registrations stay alive; a
+  failed revision is not retried until the revision changes. Facts §2.
+- **Storage**: `ctx.storage.get/set/remove/scan` — JSON values, scoped to
+  your plugin's id. **Options**: `{ package, options }` config entries
+  surface as `ctx.options`. Facts §2.
 
-Hooks are named event handlers: `"<event>": async (input, output) => { ... }`.
+## Registration and discovery
 
-Key events:
+- Config key is **`plugins`** (plural array) in `opencode.json`/`opencode.jsonc`
+  — v2 never reads `config.json`. Entries: a package spec string, or
+  `{ package, options }`. A `-target` entry removes/disables; `file://`,
+  `./`, `../`, or absolute specs load from disk (resolved from the config
+  file's directory); anything else is an npm/Git spec. Facts §5, §7.
+- Directory discovery: every config root is scanned for `plugin/` and
+  `plugins/` children; `.ts`/`.js` files, directories, and symlinks load.
+  Project: `.opencode/plugin/` (or `plugins/`). Global:
+  `~/.config/opencode/plugin/` (or `plugins/`). Facts §7.
+- **Precedence**: auto-discovered directories activate first; explicit config
+  applies last (so config can remove auto-discovered packages); config files
+  merge lowest→highest (global → explicit → direct → project). Facts §7.
 
-- Commands: `command.executed`
-- Files: `file.edited`, `file.watcher.updated`
-- Messages: `message.updated`, `message.part.updated`, `message.part.removed`, `message.removed`
-- Permissions: `permission.asked`, `permission.replied`
-- Sessions: `session.created`, `session.idle`, `session.updated`, `session.error`, `session.compacted`, `session.deleted`, `session.diff`, `session.status`
-- Tools: `tool.execute.before`, `tool.execute.after`
-- Shell: `shell.env`
-- TUI: `tui.prompt.append`, `tui.command.execute`, `tui.toast.show`
-- Other: `installation.updated`, `lsp.client.diagnostics`, `lsp.updated`, `server.connected`, `todo.updated`
+## Domains: how plugins change behavior
 
-A catch-all `event: async ({ event }) => {...}` hook receives every event (`event.type` switches on it).
+Registration is replayable: any registration/removal/`reload()` marks the
+registry changed, and the next read replays every active transform in
+registration order onto a fresh value. Facts §3.
 
-`tool.execute.before` can inspect/modify `output.args` or throw to block; `shell.env` mutates `output.env`.
+- **Agents**: `ctx.agent.transform((editor) => ...)` — editor
+  `list/get/default/update/remove`. Facts §3.
+- **Tools**: `ctx.tool.transform((editor) => ...)` — editor
+  `list/get/namespace/add/update/remove`; later registrations override the
+  same effective name; namespaced ids are `<namespace>_<name>`. Facts §8.
 
-Compaction hook `experimental.session.compacting` can append via `output.context.push(...)` or fully replace the prompt via `output.prompt`.
+  ```ts
+  context.tool.transform((editor) => {
+    editor.add({
+      name: "validate-commit",
+      description: "Validate a commit message against conventional commits",
+      input: {
+        type: "object",
+        properties: { message: { type: "string", description: "The message" } },
+        required: ["message"],
+      },
+      execute: (args, ctx) =>
+        Effect.succeed({
+          output: /^(feat|fix|docs|chore)(\(.+\))?: .+/.test(args.message)
+            ? "valid"
+            : "invalid",
+        }),
+    })
+  })
+  ```
 
-## Dependencies and logging
+  `input` accepts raw JSON Schema, an Effect `Schema.Codec`, or any
+  Standard-Schema validator (e.g. Zod) — the v1 `tool.schema` helper style is
+  gone. Results: `{ output?, content?, metadata? }`; failures
+  `Tool.Error { message }`. Per-tool `options`: `{ namespace?, permission?,
+  codemode?, pinned? }`. Facts §8.
+- **Hooks**: `ctx.<domain>.hook(name, callback)` returns a `Registration`
+  (`{ dispose }`); only `execute.before` may fail the call. Facts §9.
+- **Permissions**: `ctx.permission.hook("evaluate", ...)` runs after
+  configured rules for `allow`/`ask` outcomes; explicit configured `deny` is
+  final and skips the hook; the hook may rewrite `effect` and set `message`.
+  Facts §4.
+- **Events**: `ctx.event.subscribe()` — an async-iterable stream replaces the
+  v1 catch-all `event` hook. Facts §9.
+- **MCP**: `ctx.mcp.transform((editor) => ...)` with
+  `list/get/set/update/remove`; `disabled` toggles reconciliation;
+  `reload()` reapplies. Facts §10.
+- **Providers/models**: `ctx.provider.transform`, `ctx.model.transform`;
+  provider-SDK injection via `ctx.aisdk.hook("sdk" | "language")`. Facts §9, §11.
 
-- Local plugins can use npm packages: add a `package.json` to the config directory (`.opencode/package.json`); OpenCode runs `bun install` at startup.
-- Prefer structured logging via `client.app.log({ body: { service, level, message, extra } })` over `console.log`. Levels: `debug`, `info`, `warn`, `error`.
+## Hook-family map (v1 → v2)
 
-## npm plugin loading mechanics
+The v1 names below appear only as migration input; nothing in v2 uses them.
+Full table: facts §9.
 
-Verified against the OpenCode source; rely on these when writing plugins that self-install assets.
+| v1 hook | v2 replacement |
+| --- | --- |
+| returned `event` catch-all | `ctx.event.subscribe()` stream |
+| returned `dispose` | cleanup returned by Promise `setup` |
+| returned `config` | per-domain `transform(...)` |
+| returned `tool` map + `tool()` helper | `ctx.tool.transform` + `ToolEditor.add` |
+| `auth` | `ctx.integration.transform` + connect APIs |
+| `provider` | `ctx.provider.transform` / `ctx.model.transform` |
+| `chat.message` | `ctx.session.hook("prompt")` |
+| `chat.params` | `ctx.session.hook("context")` (+ kind hooks) |
+| `chat.headers` | `ctx.session.hook("model.request")` or `"http.request"` |
+| `permission.ask` | `ctx.permission.hook("evaluate")` |
+| `tool.execute.before` / `.after` | `ctx.tool.hook("execute.before" / "execute.after")` |
+| `shell.env` | `ctx.shell.hook("create.before")` |
+| TUI hooks | `@opencode/plugin/tui` definition + `cli.json` |
 
-- Resolution: a `plugin` entry starting with `file://`, `.`, or an absolute path loads from disk as-is; anything else is treated as an npm spec and installed with arborist into `~/.cache/opencode/packages/<sanitized-spec>/node_modules/<name>`. An existing cached `node_modules/<name>` is reused verbatim — including a partial or corrupt install; nothing re-validates or repairs it.
-- Import: the entrypoint is picked from `exports["./server"]`, then `main`, then a root `index.{ts,tsx,js,mjs,cjs}`; it must resolve inside the package directory. The module is imported from the real directory (no bundling), so `import.meta.dirname` is the package dir and bundled content directories (`skills/`, `commands/`, `agents/`) resolve normally.
-- Error handling: install/entry/import failures are caught and logged — startup continues. But the wait that joins background npm-install fibers has no timeout, and a hook that rejects during config assembly propagates into config loading: either can stall startup with no visible escape. A plugin must therefore never throw from hooks.
-- Config files: global config may be `opencode.json`, `opencode.jsonc`, or `config.json`; project config likewise `.json`/`.jsonc` at either base (`.opencode/opencode.json(c)` and repo root). Anything reading consumer registration must check both extensions, and `config.json` at the global base.
-- `.jsonc` parse semantics: string-aware stripping of `//` and `/* */` comments plus trailing commas, for `.jsonc` only; `.json` stays strict. A `$schema` URL containing `//` must survive; escaped quotes must not break string tracking; the trailing-comma lookahead must skip comments (strip comments first, then trailing commas). Any `.jsonc` reader must pass this fixture matrix: line comment; block comment; trailing comma at array end; trailing comma at object end; comment between a trailing comma and its closer; `$schema` URL containing `//`; a string containing `/*`; an escaped quote inside a string; and a genuinely malformed file, which must stay unparseable and be preserved byte-for-byte.
-- Precedence: the effective `plugin` list is the union of global and project entries (project wins on name collision). Agents, commands, and skills are scanned global-first, project-last, with later (project) definitions overriding the same name — so a consumer can override one installed skill or command file per project without touching the global install.
+Settled v2-native additions we recommend: `session.hook("retry")`,
+`session.hook("http.response")`, `experimental.ws.*` (treat as unstable —
+hedged, facts §9, §14.5).
+
+## Install and distribution mechanics
+
+- Entrypoint resolution per package: `exports["./server"]` first; `.ts`/`.js`
+  files load as-is; the entry must resolve inside the package directory.
+  **Every distributed package must declare `exports["./server"]`** — the
+  root-index fallback is runtime-dependent (dead on Bun 1.3.x, disabled at
+  the entry stage) and must not be relied on. Facts §7, §13 row 9, §14.6;
+  `harness: tests/v2-host.test.ts`.
+- npm/Git specs install via `@npmcli/arborist` into a generation cache at
+  `<cache>/npm/<key>/<generation-timestamp>/node_modules/<name>`; the newest
+  generation loads; startup loads cached immediately and installs missing in
+  the background; unpinned specs are checked for updates without
+  auto-upgrade; exact versions and full commit hashes stay pinned; last 2
+  generations kept, 7-day retention. Facts §7.
+- CLI management: `opencode plugin add|list|check|update|remove`;
+  `cli.json` in the global config dir configures CLI-only plugins. Facts §7.
+
+## Non-interference
+
+Load/entry/import failures are caught and logged; a failed plugin is
+disabled with an error ref, and startup continues. A plugin must never throw
+from its startup path (ADR-0007 invariant, unchanged in v2). Facts §2.
 
 ## Editing consumer configs (surgical writer)
 
-Rules for any code that adds a `plugin` entry to a consumer's config — treat as load-bearing invariants:
+Rules for any code that adds a `plugins` entry to a consumer's config —
+load-bearing invariants:
 
-- **Allowed config patterns.** Registration candidates are: `.opencode/opencode.json` and `.opencode/opencode.jsonc` (repo-local), `opencode.json` and `opencode.jsonc` at the repo root, and `config.json` at the global base (`~/.config/opencode/` or `$XDG_CONFIG_HOME/opencode/`). `.json` is parsed strictly; `.jsonc` leniently (comments and trailing commas). Read both extensions at every base — reading only `.json` is non-conformant.
-- **Create-default.** When no config exists at a base, create a repo-root `opencode.jsonc` with a minimal `plugin` array — do not create `.opencode/` dirs or `.json` files as a default, and never create anything at the global base implicitly.
-- **Surgical writes.** An edit is a text splice into the `plugin` array only: every other byte — indentation, comments, trailing commas, key order, unrelated keys — must be untouched. Never parse-then-reserialize the whole file; never write a config rebuilt from `{}` after a parse error (a parse error aborts, preserving the file byte-for-byte).
-- **Zero-write no-op.** If a semantically matching entry already exists (`name`, `name@latest`, `name@x.y.z` are the same package), write nothing — even when the existing spelling is non-canonical.
+- **Allowed candidates.** `.opencode/opencode.json(c)` and repo-root
+  `opencode.json(c)` (project scope); global `~/.config/opencode/opencode.json(c)`
+  (or `$XDG_CONFIG_HOME/opencode/`). A global legacy `config.json` is a
+  read-only candidate only: v2 never reads it, so an entry there is inert —
+  warn and point the consumer at `opencode.json(c)`; never edit it.
+- **Write the plural key.** New entries splice into the `plugins` array as
+  `name@latest`. A legacy singular `plugin` entry is tolerated read-only:
+  reported with an upgrade advisory, never rewritten or silently migrated
+  (facts §13 row 10).
+- **Surgical writes.** Text splice into the array only — every other byte
+  (indentation, comments, trailing commas, key order, unrelated keys)
+  untouched; never parse-then-reserialize; a parse error aborts, preserving
+  the file byte-for-byte.
+- **Zero-write no-op.** A semantically matching entry (`name`, `name@latest`,
+  `name@x.y.z`) means write nothing — even when the existing spelling is
+  non-canonical.

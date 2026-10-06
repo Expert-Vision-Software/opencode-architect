@@ -28,12 +28,37 @@ A user-invoked slash command defined as markdown with a prompt template.
 Distinct from a tool: the user triggers it, not an agent.
 
 **Tool**:
-A function with a typed schema and execute logic that agents call. Distinct
-from a command: agents invoke it, not the user.
+A function with a typed argument schema and execute logic that agents call.
+Tools are registered by plugins (see tool registration); there is no
+file-based tool definition. Distinct from a command: agents invoke it, not
+the user.
 
 **Plugin**:
-A TypeScript module registering config, tools, and event hooks with OpenCode.
+A package registered under the plugins config key whose entry default-exports
+a plugin definition that registers agents, tools, hooks, and MCP changes
+through context domains at activation.
 _Avoid_: extension (a plugin is one kind of extension)
+
+**Plugin registration key**:
+The `plugins` array in `opencode.json`/`opencode.jsonc` — the config key that
+registers plugin packages. Entries are package specs (`name@latest`) or
+`{ package, options }` objects; `-target` entries remove. Replaces the v1
+singular `plugin` key, which is tolerated read-only with an upgrade advisory.
+_Avoid_: plugin key (singular), plugin array
+
+**Plugin definition shape**:
+The default-export contract for a plugin entry module: `{ id, effect }`
+(Effect-first) or `{ id, setup }` (Promise fallback), with a stable `id` that
+scopes storage and diagnostics. Anything else fails loading. The suite's
+house style is the Effect shape.
+_Avoid_: plugin factory, hooks object
+
+**Tool registration**:
+How custom tools come to exist in v2: a plugin's tool-domain transform adds
+`{ name, input, description, execute }` tool definitions whose `input` is a
+JSON Schema (or Effect Schema/Standard Schema codec). The v1 file-based
+`.opencode/tools/` convention has no v2 equivalent.
+_Avoid_: tool file, file-based tool (for new work)
 
 ### The suite
 
@@ -129,7 +154,7 @@ package.json, derived by the packager from its asset inventory and verified
 by the publisher. It is how installers read the deployment plan.
 
 **Plugin install**:
-The mode where the package is listed in a config file's `plugin` array and
+The mode where the package is listed in a config file's `plugins` array and
 everything registers from the package at load time; the CLI copies nothing.
 Mandatory for code-backed packages; the always-fresh opt-in for assets-only
 packages.
@@ -159,7 +184,7 @@ and commands.
 
 **Manifest**:
 The JSON file an install writes at the scope base, recording the installed
-version, the install mode, the plugin entry and its target config file
+version, the install mode, the registration entry and its target config file
 (plugin mode), and the installed files with per-file content hashes (copy
 mode); source of truth for status, no-op detection, uninstall, and
 migration. Every install keeps one (a generated package's lives at
@@ -173,9 +198,9 @@ installation may touch.
 _Avoid_: scope (ambiguous with the scope base, which is a write target)
 
 **Load-time installation**:
-The plugin hook that ensures a package's assets in the registered scopes
-when OpenCode starts. Manifest-gated; never edits config registrations;
-never writes outside the detected registration scopes.
+The plugin work at startup that ensures a package's assets in the registered
+scopes when OpenCode starts. Manifest-gated; never edits config
+registrations; never writes outside the detected registration scopes.
 _Avoid_: auto-install, install on load
 
 **Startup non-interference**:
@@ -185,15 +210,16 @@ may fail hard. A hook that throws can stall startup with no escape, so
 hooks never throw.
 
 **Partial cache artifact**:
-An npm cache install of a package left incomplete (bundled assets missing)
-by an interrupted install, which OpenCode reuses indefinitely without
-repair. Packages must detect this state at load and advise removing the
-specific cache directory; it is not a consumer-setup error.
+An npm cache generation of a package left incomplete (bundled assets missing)
+by an interrupted install, in OpenCode's npm plugin cache
+(`<cache>/npm/<key>/<generation>`), which the host can load without repair.
+Packages must detect this state at activation and advise removing the
+specific cache key; it is not a consumer-setup error.
 
 **Zero-write no-op**:
 The state where the manifest matches reality — same version, file hashes
-intact, plugin entry already present — so an install or start performs no
-writes at all.
+intact, registration entry already present in the `plugins` array — so an
+install or start performs no writes at all.
 
 **Consumer modification**:
 An installed file the consumer edited after install, detected by hash

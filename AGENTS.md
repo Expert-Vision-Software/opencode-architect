@@ -22,7 +22,7 @@ When encountering file references (e.g., @references/workflow.md), use Read tool
   <identity>opencode-architect plugin</identity>
   <capabilities>Agent orchestration, plugin registration, command/tool exposure</capabilities>
   <scope>Creating and distributing OpenCode extensions (skills, commands, agents, plugins, tools)</scope>
-  <constraints>Copy transparency for skills/commands/agents; TypeScript plugins/tools in package</constraints>
+  <constraints>Copy transparency for skills/commands/agents; TypeScript plugins and plugin-registered tools in package</constraints>
 </role>
 
 <product_overview>
@@ -35,7 +35,7 @@ When encountering file references (e.g., @references/workflow.md), use Read tool
   <stage name="Create">
     - User creates extensions via delegation to specialist agents
     - skill-creator, command-crafter, agent-designer, plugin-engineer, tool-builder, mcp-integrator
-    - Default outputs: `.opencode/skills/<name>/SKILL.md`, `.opencode/commands/<name>.md`, `.opencode/agents/<name>.md`, `.opencode/plugins/<name>.ts`, `.opencode/tools/<name>.ts`
+    - Default outputs: `.opencode/skills/<name>/SKILL.md`, `.opencode/commands/<name>.md`, `.opencode/agents/<name>.md`; custom tools and plugins are Effect-first plugin code in `.opencode/plugin/<name>.ts` (or `plugins/`) — v2 has no file-based tool definition
   </stage>
   <stage name="Iterate">
     - User refines extensions based on usage feedback
@@ -43,7 +43,7 @@ When encountering file references (e.g., @references/workflow.md), use Read tool
   </stage>
   <stage name="Package" trigger="cross-project reuse (local file:/// package)">
     - Delegate to `opencode-packager`
-    - Extracts `.opencode/` content to package-root `skills/`/`commands/`/`agents/` (no `assets/` wrapper), placed in this workspace (default) or a sibling `../opencode-<name>/` directory; creates `plugin.ts`, `package.json`, `tsconfig.json`
+    - Extracts `.opencode/` content to package-root `skills/`/`commands/`/`agents/` (no `assets/` wrapper), placed in this workspace (default) or a sibling `../opencode-<name>/` directory; creates a default-only `index.ts`, the Effect-first plugin definition in `src/plugin.ts`, `package.json` (declaring `exports["./server"]`), `tsconfig.json`
   </stage>
   <stage name="Publish" trigger="public sharing (npm registry)">
     - Delegate to `opencode-publisher`, fed by the packager's output
@@ -74,10 +74,10 @@ When encountering file references (e.g., @references/workflow.md), use Read tool
   <principle name="Copying_for_Transparency">
     - Skills, commands, agents COPIED to consumer's `.opencode/` (not via config.skills.paths)
     - End-users can see, read, modify extension content locally
-    - Plugins and tools remain as TypeScript in package
+    - Plugins and plugin-registered tools remain as TypeScript in package
   </principle>
   <principle name="Merger_Complexity">
-    - Custom plugins/tools in `.opencode/plugins/` or `.opencode/tools/` require merge decisions during packaging
+    - Custom plugin code in `.opencode/plugin/` or `.opencode/plugins/` requires merge decisions during packaging
     - Packager delegates to `opencode-plugin-engineer` for guidance
   </principle>
 </design_principles>

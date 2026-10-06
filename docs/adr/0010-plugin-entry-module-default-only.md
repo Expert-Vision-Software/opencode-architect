@@ -1,5 +1,16 @@
 # Plugin entry module default-only
 
+> **Superseded mechanism (ADR-0012, v2-native).** The loader behavior
+> described below — every function-valued export invoked as a factory,
+> `Cannot call a class constructor … without |new|`, `Plugin export is not a
+> function` — is the **v1** loader and no longer applies. Under the v2
+> contract the entry must default-export a plugin definition
+> `{ id, effect }` / `{ id, setup }`; anything else fails loading with
+> "Plugin must export a default definition with an id and an effect or setup
+> function" (per opencode-v2-facts §2). The default-only rule stands — and is
+> now schema-enforced rather than convention-enforced; checklist item E3 is
+> rewritten accordingly.
+
 OpenCode's plugin loader treats every function-valued export of a plugin's
 entry module as a plugin factory and invokes it as a plain call:
 `hooks.push(await server(input, options))` over `Object.values(mod)`. A
