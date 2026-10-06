@@ -6,6 +6,7 @@ import type { AgentEditor } from "@opencode/plugin/effect/agent";
 import { AgentLoader, type LoadedAgent } from "./agent-loader";
 import { AssetPermissionAdvisor } from "./asset-permission-advisor";
 import { Installer } from "./installer";
+import { NpmCache } from "./npm-cache";
 
 const PACKAGE_NAME = "opencode-architect";
 const PLUGIN_ID = "opencode-architect";
@@ -111,9 +112,9 @@ export class OpencodeArchitectPlugin {
       `reinstall and restart OpenCode. The stale cache copy is `;
     let text: string;
     try {
-      text = `${prefix}~/.cache/opencode/npm/${PACKAGE_NAME}@${await this.readVersion()}. Cause: ${message}`;
+      text = `${prefix}${new NpmCache().root()}${path.sep}${PACKAGE_NAME}@${await this.readVersion()}. Cause: ${message}`;
     } catch {
-      text = `${prefix}~/.cache/opencode/npm/${PACKAGE_NAME}@<version>. Cause: ${message}`;
+      text = `${prefix}${new NpmCache().root()}${path.sep}${PACKAGE_NAME}@<version>. Cause: ${message}`;
     }
     try {
       console.warn(`[${PACKAGE_NAME}] ${text}`);

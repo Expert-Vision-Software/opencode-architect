@@ -5,6 +5,7 @@ import { hashElement } from "folder-hash";
 import { AGENT_FILENAMES } from "./agent-loader";
 import { BundledAssetsMissingError } from "./bundled-assets-missing-error";
 import { CopyModeUnsupportedError } from "./copy-mode-unsupported-error";
+import { NpmCache } from "./npm-cache";
 import { PluginConfigEditor } from "./plugin-config";
 
 export type Scope = "local" | "global";
@@ -68,6 +69,7 @@ const LEGACY_MANIFEST_NAME = "opencode-architect.json";
 
 export class Installer {
   private readonly editor = new PluginConfigEditor();
+  private readonly cache = new NpmCache();
   private readonly assetsDir: string;
 
   constructor(assetsDir: string | null = null) {
@@ -152,9 +154,9 @@ export class Installer {
   private async requireBundledAssets(version: string): Promise<void> {
     for (const name of BUNDLED_ASSET_DIRS) {
       const dir = path.join(this.assetsDir, name);
-      if (!(await exists(dir))) throw new BundledAssetsMissingError(dir, this.npmCacheRoot(), version);
+      if (!(await exists(dir))) throw new BundledAssetsMissingError(dir, this.cache.root(), version);
       const contents = await readdir(dir);
-      if (contents.length === 0) throw new BundledAssetsMissingError(dir, this.npmCacheRoot(), version);
+      if (contents.length === 0) throw new BundledAssetsMissingError(dir, this.cache.root(), version);
     }
   }
 
@@ -165,7 +167,7 @@ export class Installer {
       PACKAGE_NAME,
       `${PACKAGE_NAME}@latest`,
       `${PACKAGE_NAME}@${version}`,
-    ].map((name) => path.join(this.npmCacheRoot(), name));
+    ].map((name) => path.join(this.cache.root(), name));
     for (const target of targets) {
       if (!(await exists(target))) continue;
       try {
@@ -177,12 +179,6 @@ export class Installer {
       }
     }
     return { removed, warnings };
-  }
-
-  private npmCacheRoot(): string {
-    const xdgCacheHome = process.env.XDG_CACHE_HOME;
-    if (xdgCacheHome) return path.join(xdgCacheHome, "opencode", "npm");
-    return path.join(homedir(), ".cache", "opencode", "npm");
   }
 
   public async uninstall(scope: Scope, projectDir: string): Promise<UninstallOutcome> {

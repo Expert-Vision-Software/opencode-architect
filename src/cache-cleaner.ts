@@ -1,7 +1,7 @@
 import { exists, readdir, rm } from "node:fs/promises";
-import { homedir } from "node:os";
 import path from "node:path";
 import { ClearCacheUsageError } from "./clear-cache-usage-error";
+import { NpmCache } from "./npm-cache";
 
 export const PACKAGE_NAME = "opencode-architect";
 
@@ -19,15 +19,7 @@ export interface ClearCacheOutcome {
 }
 
 export class CacheCleaner {
-  public npmCacheRoot(): string {
-    const xdgCacheHome = process.env.XDG_CACHE_HOME;
-    if (xdgCacheHome) return path.join(xdgCacheHome, "opencode", "npm");
-    return path.join(homedir(), ".cache", "opencode", "npm");
-  }
-
-  public opencodeCacheRoot(): string {
-    return path.dirname(this.npmCacheRoot());
-  }
+  private readonly cache = new NpmCache();
 
   public isUnsafePackageName(name: string): boolean {
     return name.includes("/") || name.includes("\\") || name.includes("..") || name === ".";
@@ -54,7 +46,7 @@ export class CacheCleaner {
     const warnings: string[] = [];
 
     if (all) {
-      const target = this.opencodeCacheRoot();
+      const target = this.cache.opencodeRoot();
       if (dryRun) {
         if (await exists(target)) removed.push(target);
         return dryRunOutcome(removed, warnings);
@@ -64,7 +56,7 @@ export class CacheCleaner {
     }
 
     const name = packageName ?? PACKAGE_NAME;
-    const npmRoot = this.npmCacheRoot();
+    const npmRoot = this.cache.root();
     let entries: string[];
     try {
       entries = await readdir(npmRoot);
