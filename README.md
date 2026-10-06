@@ -1,9 +1,9 @@
 # opencode-architect
-[![npm version](https://img.shields.io/npm/v/opencode-architect?color=cb3837&label=npm)](https://www.npmjs.com/package/opencode-architect) [![Bun](https://img.shields.io/badge/Runtime-Bun-f9f1e1?logo=bun&logoColor=black)](https://bun.sh) [![License: MIT](https://img.shields.io/badge/License-MIT-22c55e)](LICENSE.md) [![Platforms](https://img.shields.io/badge/Platforms-Linux-6366f1)](#quick-start-install-the-opencode-plugin-suite) [![OpenCode plugin](https://img.shields.io/badge/opencode-plugin-blueviolet)](https://opencode.ai/docs/plugins)
+[![npm version](https://img.shields.io/npm/v/opencode-architect?color=cb3837&label=npm)](https://www.npmjs.com/package/opencode-architect) [![Bun](https://img.shields.io/badge/Runtime-Bun-f9f1e1?logo=bun&logoColor=black)](https://bun.sh) [![License: MIT](https://img.shields.io/badge/License-MIT-22c55e)](LICENSE.md) [![Platforms](https://img.shields.io/badge/Platforms-Linux-6366f1)](#quick-start-install-the-opencode-plugin-suite) [![OpenCode plugin](https://img.shields.io/badge/opencode-plugin-blueviolet)](https://opencode.ai/v2/docs/plugins)
 
 **Ten specialist agents that design, build, and package OpenCode extensions — agent skills, slash commands, custom tools, plugins, and MCP server integrations — right inside your AI coding assistant.**
 
-opencode-architect is an [OpenCode](https://opencode.ai) plugin and CLI that ships a suite of AI agent experts for OpenCode work: designing agents, creating skills and slash commands, building plugins and custom tools, integrating MCP servers, and packaging extensions for npm. Install it once and every specialist agent is available in your coding sessions.
+opencode-architect is an [OpenCode](https://opencode.ai) plugin and CLI that ships a suite of AI agent experts for OpenCode work: designing agents, creating skills and slash commands, building plugins and custom tools, integrating MCP servers, and packaging extensions for npm. It targets the OpenCode **v2** line and registers through the Effect-first plugin API (`@opencode/plugin/effect`). Install it once and every specialist agent is available in your coding sessions.
 
 ## Quick start: install the OpenCode plugin suite
 
@@ -63,8 +63,8 @@ Ten specialist agents, one router:
 | `opencode-agent-designer` | Designs OpenCode agents and orchestrator subagents — roles, constraints, tools, permissions |
 | `opencode-skill-creator` | Creates OpenCode skills in `.opencode/skills` — SKILL.md, frontmatter, progressive disclosure |
 | `opencode-command-crafter` | Creates OpenCode slash commands in `.opencode/commands` — prompt templates, `$ARGUMENTS`, frontmatter |
-| `opencode-tool-builder` | Creates OpenCode custom tools in `.opencode/tools` — Zod schemas and execute logic |
-| `opencode-plugin-engineer` | Builds OpenCode plugins in `.opencode/plugins` — event hooks, custom tools, TypeScript |
+| `opencode-tool-builder` | Registers OpenCode custom tools from plugins — JSON-Schema argument schemas and Effect execute logic |
+| `opencode-plugin-engineer` | Builds Effect-first OpenCode plugins — plugin definitions, context domains, hooks, tool registration |
 | `opencode-mcp-integrator` | Configures MCP servers and tool scoping in `opencode.json` — local/remote servers, permissions |
 | `opencode-packager` | Packages OpenCode extensions for local sharing across projects — `file:///` plugin packages |
 | `opencode-publisher` | Publishes OpenCode extensions to npm — transforms local packages into distributable ones |
@@ -87,7 +87,7 @@ Reach for opencode-architect whenever you want to:
 
 ## Requirements
 
-- [OpenCode](https://opencode.ai) — the AI coding assistant the plugin extends
+- [OpenCode](https://opencode.ai) — the AI coding assistant the plugin extends (v2 line)
 - [Bun](https://bun.sh) — runs the plugin and the CLI (`bunx`); if you use `npx`, Bun must still be on your `PATH` because the CLI ships as TypeScript
 
 ## Development
