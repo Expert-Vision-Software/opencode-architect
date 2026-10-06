@@ -135,7 +135,7 @@ describe("plugin activation (startup non-interference)", () => {
     expect(permission.evaluations.length).toBe(0);
     expect(warnings).toHaveLength(1);
     expect(warnings[0]).toContain("bunx opencode-architect clear-cache");
-    expect(warnings[0]).toContain(`~/.cache/opencode/packages/opencode-architect@`);
+    expect(warnings[0]).toContain(path.join(".cache", "opencode", "npm", "opencode-architect@"));
     expect(warnings[0]).toContain("ENOENT");
   });
 

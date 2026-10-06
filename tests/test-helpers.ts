@@ -18,8 +18,9 @@ export function captureConsole(method: "log" | "warn"): CapturedConsole {
 
 export async function seedCachedPackage(dir: string, name: string): Promise<string> {
   const target = path.join(dir, name);
-  await mkdir(path.join(target, "nested"), { recursive: true });
-  await writeFile(path.join(target, "nested", "file.txt"), "cached");
+  const pkgDir = path.join(target, "1738848000000", "node_modules", name.replace(/@.*$/, ""));
+  await mkdir(pkgDir, { recursive: true });
+  await writeFile(path.join(pkgDir, "index.ts"), "cached");
   return target;
 }
 

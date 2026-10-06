@@ -3,6 +3,7 @@ import { homedir } from "node:os";
 import path from "node:path";
 
 export type ConfigScope = "local" | "global";
+export type PluginConfigKey = "plugins" | "plugin";
 
 export interface EnsurePluginEntryOptions {
   scope: ConfigScope;
@@ -25,6 +26,7 @@ interface CandidateRead {
   candidate: CandidateConfig;
   text: string;
   plugins: string[] | null;
+  legacyPlugins: string[] | null;
 }
 
 export interface RemovePluginEntryOutcome {
@@ -43,7 +45,7 @@ interface PluginArrayRange {
 const DEFAULT_CONFIG_TEMPLATE = `{
   // OpenCode configuration
   "$schema": "https://opencode.ai/config.json",
-  "plugin": ["__PACKAGE_NAME__"]
+  "plugins": ["__PACKAGE_NAME__"]
 }
 `;
 
@@ -53,7 +55,7 @@ export class PluginConfigEditor {
     options: EnsurePluginEntryOptions,
   ): Promise<EnsurePluginEntryOutcome> {
     const canonical = this.canonicalEntry(packageName);
-    for (const { candidate, text, plugins } of await this.readCandidates(options)) {
+    for (const { candidate, text, plugins, legacyPlugins } of await this.readCandidates(options)) {
       if (plugins === null) {
         return {
           action: "blocked",
@@ -65,6 +67,13 @@ export class PluginConfigEditor {
       }
       if (this.hasMatchingEntry(plugins, packageName)) {
         return { action: "noop", configPath: candidate.path, warning: null };
+      }
+      if (this.hasLegacyEntry(legacyPlugins, packageName)) {
+        return {
+          action: "noop",
+          configPath: candidate.path,
+          warning: this.legacyEntryAdvisory(candidate, packageName),
+        };
       }
       if (!candidate.writable) continue;
       const spliced = this.spliceEntry(text, canonical, packageName, candidate.lenient);
@@ -107,9 +116,11 @@ export class PluginConfigEditor {
     packageName: string,
     options: EnsurePluginEntryOptions,
   ): Promise<string | null> {
-    for (const { candidate, plugins } of await this.readCandidates(options)) {
+    for (const { candidate, plugins, legacyPlugins } of await this.readCandidates(options)) {
       if (plugins === null) continue;
-      if (this.hasMatchingEntry(plugins, packageName)) return candidate.path;
+      const registered =
+        this.hasMatchingEntry(plugins, packageName) || this.hasLegacyEntry(legacyPlugins, packageName);
+      if (registered) return candidate.path;
     }
     return null;
   }
@@ -118,7 +129,9 @@ export class PluginConfigEditor {
     packageName: string,
     options: EnsurePluginEntryOptions,
   ): Promise<RemovePluginEntryOutcome> {
-    for (const { candidate, text, plugins } of await this.readCandidates(options)) {
+    const reads = await this.readCandidates(options);
+    let legacyPath: string | null = null;
+    for (const { candidate, text, plugins, legacyPlugins } of reads) {
       if (!candidate.writable) continue;
       if (plugins === null) {
         return {
@@ -129,23 +142,43 @@ export class PluginConfigEditor {
             `Fix or remove the file and re-run the uninstall.`,
         };
       }
-      if (!this.hasMatchingEntry(plugins, packageName)) continue;
-      const spliced = this.spliceOutEntry(text, packageName, candidate.lenient);
-      if (spliced === null) {
+      if (this.hasMatchingEntry(plugins, packageName)) {
+        const spliced = this.spliceOutEntry(text, packageName, candidate.lenient);
+        if (spliced === null) {
+          return {
+            action: "blocked",
+            configPath: candidate.path,
+            warning: `Plugin array in ${candidate.path} could not be safely edited; file left untouched.`,
+          };
+        }
+        await writeFile(candidate.path, spliced);
+        const leftover = reads.find((read) => this.hasLegacyEntry(read.legacyPlugins, packageName));
         return {
-          action: "blocked",
+          action: "removed",
           configPath: candidate.path,
-          warning: `Plugin array in ${candidate.path} could not be safely edited; file left untouched.`,
+          warning: leftover === undefined ? null : this.legacyRemovalAdvisory(leftover.candidate.path, packageName),
         };
       }
-      await writeFile(candidate.path, spliced);
-      return { action: "removed", configPath: candidate.path, warning: null };
+      if (legacyPath === null && this.hasLegacyEntry(legacyPlugins, packageName)) {
+        legacyPath = candidate.path;
+      }
+    }
+    if (legacyPath !== null) {
+      return {
+        action: "noop",
+        configPath: legacyPath,
+        warning: this.legacyRemovalAdvisory(legacyPath, packageName),
+      };
     }
     return { action: "noop", configPath: null, warning: null };
   }
 
   public hasMatchingEntry(entries: string[], packageName: string): boolean {
     return entries.some((entry) => this.matchesEntry(entry, packageName));
+  }
+
+  private hasLegacyEntry(legacyPlugins: string[] | null, packageName: string): boolean {
+    return legacyPlugins !== null && this.hasMatchingEntry(legacyPlugins, packageName);
   }
 
   private matchesEntry(entry: string, packageName: string): boolean {
@@ -183,15 +216,56 @@ export class PluginConfigEditor {
     for (const candidate of this.candidateConfigs(options)) {
       if (!(await exists(candidate.path))) continue;
       const text = await readFile(candidate.path, "utf-8");
-      const plugins = this.parsePluginArray(text, candidate.lenient);
-      if (plugins === null) {
+      const config = this.parseConfig(text, candidate.lenient);
+      const plugins = config === null ? null : this.keyEntries(config, "plugins");
+      const legacyPlugins = config === null ? null : this.keyEntries(config, "plugin");
+      if (config === null) {
         console.warn(
           `Warning: ${candidate.path} could not be parsed; refusing to treat it as a registration candidate.`,
         );
       }
-      reads.push({ candidate, text, plugins });
+      reads.push({ candidate, text, plugins, legacyPlugins });
     }
     return reads;
+  }
+
+  private keyEntries(config: Record<string, unknown>, key: PluginConfigKey): string[] {
+    const value = config[key];
+    if (!Array.isArray(value)) return [];
+    return value.map((entry) => this.normalizeEntry(entry)).filter((entry): entry is string => entry !== null);
+  }
+
+  private normalizeEntry(entry: unknown): string | null {
+    if (typeof entry === "string") return entry;
+    return this.packageOf(entry);
+  }
+
+  private packageOf(entry: unknown): string | null {
+    if (entry === null || typeof entry !== "object") return null;
+    const pkg = (entry as { package: unknown }).package;
+    return typeof pkg === "string" ? pkg : null;
+  }
+
+  private legacyEntryAdvisory(candidate: CandidateConfig, packageName: string): string {
+    if (path.basename(candidate.path) === "config.json") {
+      return (
+        `${candidate.path} registers ${packageName} under the legacy v1 "plugin" key. ` +
+        `OpenCode v2 no longer reads config.json, so the entry is inert, and this installer never edits it. ` +
+        `Add ${packageName} to the "plugins" key of an opencode.json or opencode.jsonc config instead.`
+      );
+    }
+    return (
+      `${candidate.path} registers ${packageName} under the legacy v1 "plugin" key. ` +
+      `OpenCode v2 still loads it through config migration, and this installer leaves legacy entries ` +
+      `read-only. Move the entry to the v2 "plugins" key to upgrade, then re-run the install.`
+    );
+  }
+
+  private legacyRemovalAdvisory(configPath: string, packageName: string): string {
+    return (
+      `${configPath} registers ${packageName} under the legacy v1 "plugin" key; it was left untouched. ` +
+      `Remove it by editing the file, or move the entry to the v2 "plugins" key and re-run the uninstall.`
+    );
   }
 
   private defaultConfigPath(options: EnsurePluginEntryOptions): string {
@@ -211,9 +285,7 @@ export class PluginConfigEditor {
   private parsePluginArray(text: string, lenient: boolean): string[] | null {
     const config = this.parseConfig(text, lenient);
     if (config === null) return null;
-    const plugins = config.plugin;
-    if (!Array.isArray(plugins)) return [];
-    return plugins.filter((entry): entry is string => typeof entry === "string");
+    return this.keyEntries(config, "plugins");
   }
 
   private parseConfig(text: string, lenient: boolean): Record<string, unknown> | null {
@@ -306,7 +378,7 @@ export class PluginConfigEditor {
     const elements = this.arrayElementRanges(navigable, innerStart, innerEnd);
     const target = elements.find((element) => {
       const raw = text.slice(element.start, element.end);
-      return this.matchesEntry(this.unquote(raw), packageName);
+      return this.matchesEntry(this.elementSpec(raw), packageName);
     });
     if (!target) return null;
     const withComma = this.dropAdjacentComma(navigable, elements, target, innerStart, innerEnd);
@@ -388,6 +460,16 @@ export class PluginConfigEditor {
     return trimmed;
   }
 
+  private elementSpec(raw: string): string {
+    const trimmed = raw.trim();
+    if (!trimmed.startsWith("{")) return this.unquote(trimmed);
+    try {
+      return this.packageOf(JSON.parse(trimmed.replace(/,(\s*[}\]])/g, "$1"))) ?? "";
+    } catch {
+      return "";
+    }
+  }
+
   private spliceArrayEntry(
     text: string,
     navigable: string,
@@ -413,7 +495,7 @@ export class PluginConfigEditor {
     if (nextContentOffset === -1) return null;
     const insertAt = objectStart + 1 + nextContentOffset;
     const isClosingBrace = rest[nextContentOffset] === "}";
-    const entry = isClosingBrace ? `"plugin": ["${packageName}"]` : `"plugin": ["${packageName}"],`;
+    const entry = isClosingBrace ? `"plugins": ["${packageName}"]` : `"plugins": ["${packageName}"],`;
     const leadingWhitespace = nextContentOffset > 0 ? rest.slice(0, nextContentOffset) : "";
     return text.slice(0, insertAt) + leadingWhitespace + entry + text.slice(insertAt);
   }
@@ -421,10 +503,10 @@ export class PluginConfigEditor {
   private findPluginArrayRange(navigable: string): PluginArrayRange | null {
     let searchFrom = 0;
     while (searchFrom < navigable.length) {
-      const keyIndex = navigable.indexOf('"plugin"', searchFrom);
+      const keyIndex = navigable.indexOf('"plugins"', searchFrom);
       if (keyIndex === -1) return null;
       if (this.precededByStructuralChar(navigable, keyIndex, ["{", ","])) {
-        const colonIndex = this.nextOutsideString(navigable, keyIndex + 8, ":");
+        const colonIndex = this.nextOutsideString(navigable, keyIndex + '"plugins"'.length, ":");
         if (colonIndex !== -1) {
           const bracketStart = this.nextOutsideString(navigable, colonIndex + 1, "[");
           if (bracketStart !== -1) {

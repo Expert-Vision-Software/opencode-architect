@@ -5,6 +5,7 @@ import { hashElement } from "folder-hash";
 import { AGENT_FILENAMES } from "./agent-loader";
 import { BundledAssetsMissingError } from "./bundled-assets-missing-error";
 import { CopyModeUnsupportedError } from "./copy-mode-unsupported-error";
+import { NpmCache } from "./npm-cache";
 import { PluginConfigEditor } from "./plugin-config";
 
 export type Scope = "local" | "global";
@@ -38,6 +39,7 @@ export interface InstallOutcome {
   manifestPath: string;
   configPath: string | null;
   configAction: "noop" | "updated" | "created" | "blocked";
+  configWarning: string | null;
   removedPayload: string[];
   clearedCache: string[];
   cacheWarnings: string[];
@@ -49,6 +51,7 @@ export interface UninstallOutcome {
   removed: string[];
   pluginRemoved: boolean;
   configPath: string | null;
+  configWarning: string | null;
 }
 
 export interface StatusOutcome {
@@ -66,6 +69,7 @@ const LEGACY_MANIFEST_NAME = "opencode-architect.json";
 
 export class Installer {
   private readonly editor = new PluginConfigEditor();
+  private readonly cache = new NpmCache();
   private readonly assetsDir: string;
 
   constructor(assetsDir: string | null = null) {
@@ -140,6 +144,7 @@ export class Installer {
       manifestPath,
       configPath: registration.configPath,
       configAction: registration.action,
+      configWarning: registration.warning,
       removedPayload,
       clearedCache: cache.removed,
       cacheWarnings: cache.warnings,
@@ -149,9 +154,9 @@ export class Installer {
   private async requireBundledAssets(version: string): Promise<void> {
     for (const name of BUNDLED_ASSET_DIRS) {
       const dir = path.join(this.assetsDir, name);
-      if (!(await exists(dir))) throw new BundledAssetsMissingError(dir, this.packageCacheRoot(), version);
+      if (!(await exists(dir))) throw new BundledAssetsMissingError(dir, this.cache.root(), version);
       const contents = await readdir(dir);
-      if (contents.length === 0) throw new BundledAssetsMissingError(dir, this.packageCacheRoot(), version);
+      if (contents.length === 0) throw new BundledAssetsMissingError(dir, this.cache.root(), version);
     }
   }
 
@@ -162,7 +167,7 @@ export class Installer {
       PACKAGE_NAME,
       `${PACKAGE_NAME}@latest`,
       `${PACKAGE_NAME}@${version}`,
-    ].map((name) => path.join(this.packageCacheRoot(), name));
+    ].map((name) => path.join(this.cache.root(), name));
     for (const target of targets) {
       if (!(await exists(target))) continue;
       try {
@@ -174,12 +179,6 @@ export class Installer {
       }
     }
     return { removed, warnings };
-  }
-
-  private packageCacheRoot(): string {
-    const xdgCacheHome = process.env.XDG_CACHE_HOME;
-    if (xdgCacheHome) return path.join(xdgCacheHome, "opencode", "packages");
-    return path.join(homedir(), ".cache", "opencode", "packages");
   }
 
   public async uninstall(scope: Scope, projectDir: string): Promise<UninstallOutcome> {
@@ -208,8 +207,19 @@ export class Installer {
     }
 
     const mode: InstallMode =
-      manifest !== null ? manifest.mode : pluginRemoved ? "plugin" : "none";
-    return { scope, mode, removed, pluginRemoved, configPath: removal.configPath };
+      manifest !== null
+        ? manifest.mode
+        : pluginRemoved || removal.configPath !== null
+          ? "plugin"
+          : "none";
+    return {
+      scope,
+      mode,
+      removed,
+      pluginRemoved,
+      configPath: removal.configPath,
+      configWarning: removal.warning,
+    };
   }
 
   private async removeResidualPayload(base: string): Promise<string[]> {

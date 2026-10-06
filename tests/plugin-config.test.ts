@@ -90,7 +90,7 @@ describe("PluginConfigEditor.ensurePluginEntry", () => {
         "  // consumer comment, keep me",
         '  "$schema": "https://opencode.ai/config.json",',
         '  "model": "x/y",',
-        '  "plugin": [',
+        '  "plugins": [',
         '    "some-other-plugin",',
         "  ],",
         "}",
@@ -106,22 +106,22 @@ describe("PluginConfigEditor.ensurePluginEntry", () => {
     const after = await readFile(configPath, "utf-8");
     expect(after).toContain('"my-pkg@latest"');
     const without = after.replace('"my-pkg@latest",', "").replace(/,\s*,/g, ",");
-    expect(without.split('"plugin"')[0]).toBe(before.split('"plugin"')[0]);
+    expect(without.split('"plugins"')[0]).toBe(before.split('"plugins"')[0]);
     const parsed = parseJsonc(after);
-    expect(parsed.plugin).toContain("my-pkg@latest");
-    expect(parsed.plugin).toContain("some-other-plugin");
+    expect(parsed.plugins).toContain("my-pkg@latest");
+    expect(parsed.plugins).toContain("some-other-plugin");
     expect(parsed.model).toBe("x/y");
   });
 
   test("writes a new entry in the canonical name@latest form", async () => {
     const projectDir = await makeDir("project");
-    await write("project/opencode.json", '{ "plugin": ["other"] }\n');
+    await write("project/opencode.json", '{ "plugins": ["other"] }\n');
 
     await editor().ensurePluginEntry("my-pkg", { scope: "local", projectDir });
 
     const parsed = parseJsonc(await readFile(path.join(projectDir, "opencode.json"), "utf-8"));
-    expect(parsed.plugin).toContain("my-pkg@latest");
-    expect(parsed.plugin).not.toContain("my-pkg");
+    expect(parsed.plugins).toContain("my-pkg@latest");
+    expect(parsed.plugins).not.toContain("my-pkg");
   });
 
   test("performs no write when a semantically matching entry exists", async () => {
@@ -129,7 +129,7 @@ describe("PluginConfigEditor.ensurePluginEntry", () => {
     for (const entry of ["my-pkg", "my-pkg@1.2.3", "my-pkg@latest"]) {
       const configPath = await write(
         "project/opencode.json",
-        `{ "plugin": ["other", "${entry}"] }\n`,
+        `{ "plugins": ["other", "${entry}"] }\n`,
       );
       const before = await readFile(configPath, "utf-8");
       const outcome = await editor().ensurePluginEntry("my-pkg", { scope: "local", projectDir });
@@ -145,7 +145,7 @@ describe("PluginConfigEditor.ensurePluginEntry", () => {
     expect(outcome.action).toBe("created");
     expect(outcome.configPath).toBe(path.join(projectDir, "opencode.jsonc"));
     const parsed = parseJsonc(await readFile(path.join(projectDir, "opencode.jsonc"), "utf-8"));
-    expect(parsed.plugin).toEqual(["my-pkg@latest"]);
+    expect(parsed.plugins).toEqual(["my-pkg@latest"]);
     expect(parsed.$schema).toContain("config.json");
   });
 
@@ -163,7 +163,7 @@ describe("PluginConfigEditor.ensurePluginEntry", () => {
 
   test("warns about an unparseable candidate even when an earlier candidate matches", async () => {
     const projectDir = await makeDir("project");
-    await write("project/.opencode/opencode.json", '{ "plugin": ["my-pkg"] }\n');
+    await write("project/.opencode/opencode.json", '{ "plugins": ["my-pkg"] }\n');
     const brokenRoot = await write("project/opencode.json", "{ broken ]");
     const captured = captureConsole("warn");
 
@@ -180,7 +180,7 @@ describe("PluginConfigEditor.ensurePluginEntry", () => {
   test("findRegistration warns about unparseable candidates and still finds later registrations", async () => {
     const projectDir = await makeDir("project");
     await write("project/.opencode/opencode.json", "{ broken ]");
-    const rootConfig = await write("project/opencode.json", '{ "plugin": ["my-pkg@1.0.0"] }\n');
+    const rootConfig = await write("project/opencode.json", '{ "plugins": ["my-pkg@1.0.0"] }\n');
     const captured = captureConsole("warn");
 
     try {
@@ -214,7 +214,7 @@ describe("PluginConfigEditor.ensurePluginEntry", () => {
 
   test("strict .json rejects comments and trailing commas", async () => {
     const projectDir = await makeDir("project");
-    await write("project/opencode.json", '{ "plugin": ["a",], }\n');
+    await write("project/opencode.json", '{ "plugins": ["a",], }\n');
     const outcome = await editor().ensurePluginEntry("my-pkg", { scope: "local", projectDir });
     expect(outcome.action).toBe("blocked");
   });
@@ -223,7 +223,7 @@ describe("PluginConfigEditor.ensurePluginEntry", () => {
     const projectDir = await makeDir("project");
     await write(
       "project/opencode.jsonc",
-      '{ /* c */ "plugin": ["a",], // trailing\n}\n',
+      '{ /* c */ "plugins": ["a",], // trailing\n}\n',
     );
     const outcome = await editor().ensurePluginEntry("my-pkg", { scope: "local", projectDir });
     expect(outcome.action).toBe("updated");
@@ -231,37 +231,37 @@ describe("PluginConfigEditor.ensurePluginEntry", () => {
 
   test("lenient .jsonc tolerates a comment between a trailing comma and its closer", async () => {
     const projectDir = await makeDir("project");
-    await write("project/opencode.jsonc", '{ "plugin": ["other",/* c */], }\n');
+    await write("project/opencode.jsonc", '{ "plugins": ["other",/* c */], }\n');
 
     const outcome = await editor().ensurePluginEntry("my-pkg", { scope: "local", projectDir });
 
     expect(outcome.action).toBe("updated");
     const parsed = parseJsonc(await readFile(path.join(projectDir, "opencode.jsonc"), "utf-8"));
-    expect(parsed.plugin).toContain("my-pkg@latest");
-    expect(parsed.plugin).toContain("other");
+    expect(parsed.plugins).toContain("my-pkg@latest");
+    expect(parsed.plugins).toContain("other");
   });
 
   test("schema URLs with // and escaped quotes survive splicing and parsing", async () => {
     const projectDir = await makeDir("project");
     const configPath = await write(
       "project/opencode.jsonc",
-      '{ "$schema": "https://opencode.ai/config.json", "key": "a \\"quoted\\" // value", "plugin": [] }\n',
+      '{ "$schema": "https://opencode.ai/config.json", "key": "a \\"quoted\\" // value", "plugins": [] }\n',
     );
     const outcome = await editor().ensurePluginEntry("my-pkg", { scope: "local", projectDir });
     expect(outcome.action).toBe("updated");
     const parsed = JSON.parse((await readFile(configPath, "utf-8")).replace(/,(\s*[}\]])/g, "$1"));
     expect(parsed.$schema).toBe("https://opencode.ai/config.json");
     expect(parsed.key).toBe('a "quoted" // value');
-    expect(parsed.plugin).toEqual(["my-pkg@latest"]);
+    expect(parsed.plugins).toEqual(["my-pkg@latest"]);
   });
 
   test("scope base config wins over repo root; existing scope-base file is edited", async () => {
     const projectDir = await makeDir("project");
     const scopeBasePath = await write(
       "project/.opencode/opencode.json",
-      '{ "plugin": [] }\n',
+      '{ "plugins": [] }\n',
     );
-    await write("project/opencode.json", '{ "plugin": [] }\n');
+    await write("project/opencode.json", '{ "plugins": [] }\n');
     const outcome = await editor().ensurePluginEntry("my-pkg", { scope: "local", projectDir });
     expect(outcome.action).toBe("updated");
     expect(outcome.configPath).toBe(scopeBasePath);
@@ -280,7 +280,7 @@ describe("PluginConfigEditor.ensurePluginEntry", () => {
     }
   });
 
-  test("global config.json with the entry is a read-only no-op", async () => {
+  test("global config.json with the entry is a read-only no-op with an upgrade advisory", async () => {
     const projectDir = await makeDir("project");
     const xdg = await makeDir("xdg");
     const globalConfig = await write(
@@ -292,6 +292,8 @@ describe("PluginConfigEditor.ensurePluginEntry", () => {
       const outcome = await editor().ensurePluginEntry("my-pkg", { scope: "global", projectDir });
       expect(outcome.action).toBe("noop");
       expect(outcome.configPath).toBe(globalConfig);
+      expect(outcome.warning).toContain("legacy v1");
+      expect(outcome.warning).toContain("no longer reads config.json");
       expect(await readFile(globalConfig, "utf-8")).toBe('{ "plugin": ["my-pkg@2.0.0"] }\n');
     } finally {
       delete process.env.XDG_CONFIG_HOME;
@@ -308,7 +310,7 @@ describe("PluginConfigEditor.ensurePluginEntry", () => {
       expect(outcome.action).toBe("created");
       expect(await readFile(globalConfig, "utf-8")).toBe('{ "model": "x/y" }\n');
       const created = parseJsonc(await readFile(path.join(xdg, "opencode", "opencode.jsonc"), "utf-8"));
-      expect(created.plugin).toEqual(["my-pkg@latest"]);
+      expect(created.plugins).toEqual(["my-pkg@latest"]);
     } finally {
       delete process.env.XDG_CONFIG_HOME;
     }
@@ -316,10 +318,10 @@ describe("PluginConfigEditor.ensurePluginEntry", () => {
 
   test("splices an inline empty plugin array in a minified config", async () => {
     const projectDir = await makeDir("project");
-    const configPath = await write("project/opencode.json", '{"plugin":[]}\n');
+    const configPath = await write("project/opencode.json", '{"plugins":[]}\n');
     const outcome = await editor().ensurePluginEntry("my-pkg", { scope: "local", projectDir });
     expect(outcome.action).toBe("updated");
-    expect(await readFile(configPath, "utf-8")).toBe('{"plugin":["my-pkg@latest"]}\n');
+    expect(await readFile(configPath, "utf-8")).toBe('{"plugins":["my-pkg@latest"]}\n');
   });
 
   test("config without a plugin key gets one spliced in, rest untouched", async () => {
@@ -331,9 +333,110 @@ describe("PluginConfigEditor.ensurePluginEntry", () => {
     const outcome = await editor().ensurePluginEntry("my-pkg", { scope: "local", projectDir });
     expect(outcome.action).toBe("updated");
     const after = await readFile(configPath, "utf-8");
-    expect(after).toContain('"plugin": ["my-pkg@latest"],');
+    expect(after).toContain('"plugins": ["my-pkg@latest"],');
     expect(after).toContain('"model": "x/y"');
     const parsed = JSON.parse(after.replace(/,(\s*[}\]])/g, "$1"));
-    expect(parsed.plugin).toEqual(["my-pkg@latest"]);
+    expect(parsed.plugins).toEqual(["my-pkg@latest"]);
+  });
+
+  test("a legacy v1 plugin entry is a zero-write no-op with an upgrade advisory", async () => {
+    const projectDir = await makeDir("project");
+    const configPath = await write(
+      "project/opencode.json",
+      '{ "plugin": ["other", "my-pkg@1.0.0"] }\n',
+    );
+    const before = await readFile(configPath, "utf-8");
+
+    const outcome = await editor().ensurePluginEntry("my-pkg", { scope: "local", projectDir });
+
+    expect(outcome.action).toBe("noop");
+    expect(outcome.configPath).toBe(configPath);
+    expect(outcome.warning).toContain("legacy v1");
+    expect(outcome.warning).toContain(configPath);
+    expect(outcome.warning).toContain('"plugins"');
+    expect(await readFile(configPath, "utf-8")).toBe(before);
+  });
+
+  test("writes the v2 plugins key alongside a legacy plugin key holding other packages", async () => {
+    const projectDir = await makeDir("project");
+    const configPath = await write("project/opencode.json", '{ "plugin": ["old-one"] }\n');
+
+    const outcome = await editor().ensurePluginEntry("my-pkg", { scope: "local", projectDir });
+
+    expect(outcome.action).toBe("updated");
+    const parsed = parseJsonc(await readFile(configPath, "utf-8"));
+    expect(parsed.plugins).toEqual(["my-pkg@latest"]);
+    expect(parsed.plugin).toEqual(["old-one"]);
+  });
+
+  test("an object-form v2 entry matches semantically without a write", async () => {
+    const projectDir = await makeDir("project");
+    const configPath = await write(
+      "project/opencode.json",
+      '{ "plugins": [{ "package": "my-pkg", "options": { "x": 1 } }] }\n',
+    );
+    const before = await readFile(configPath, "utf-8");
+
+    const outcome = await editor().ensurePluginEntry("my-pkg", { scope: "local", projectDir });
+
+    expect(outcome.action).toBe("noop");
+    expect(await readFile(configPath, "utf-8")).toBe(before);
+  });
+
+  test("findRegistration finds a legacy v1 plugin registration", async () => {
+    const projectDir = await makeDir("project");
+    const configPath = await write("project/opencode.json", '{ "plugin": ["my-pkg"] }\n');
+
+    const found = await editor().findRegistration("my-pkg", { scope: "local", projectDir });
+
+    expect(found).toBe(configPath);
+  });
+});
+
+describe("PluginConfigEditor.removePluginEntry", () => {
+  test("leaves a legacy-only entry untouched and advises instead of removing", async () => {
+    const projectDir = await makeDir("project");
+    const configPath = await write("project/opencode.json", '{ "plugin": ["my-pkg"] }\n');
+    const before = await readFile(configPath, "utf-8");
+
+    const outcome = await editor().removePluginEntry("my-pkg", { scope: "local", projectDir });
+
+    expect(outcome.action).toBe("noop");
+    expect(outcome.configPath).toBe(configPath);
+    expect(outcome.warning).toContain("legacy v1");
+    expect(outcome.warning).toContain(configPath);
+    expect(await readFile(configPath, "utf-8")).toBe(before);
+  });
+
+  test("removes an object-form v2 entry and keeps the rest of the array", async () => {
+    const projectDir = await makeDir("project");
+    const configPath = await write(
+      "project/opencode.json",
+      '{ "plugins": [{ "package": "my-pkg", "options": {} }, "other"] }\n',
+    );
+
+    const outcome = await editor().removePluginEntry("my-pkg", { scope: "local", projectDir });
+
+    expect(outcome.action).toBe("removed");
+    expect(outcome.configPath).toBe(configPath);
+    const parsed = JSON.parse(await readFile(configPath, "utf-8"));
+    expect(parsed.plugins).toEqual(["other"]);
+  });
+
+  test("removing the v2 entry warns about a leftover legacy entry in the same config", async () => {
+    const projectDir = await makeDir("project");
+    const configPath = await write(
+      "project/opencode.json",
+      '{ "plugins": ["my-pkg"], "plugin": ["my-pkg"] }\n',
+    );
+
+    const outcome = await editor().removePluginEntry("my-pkg", { scope: "local", projectDir });
+
+    expect(outcome.action).toBe("removed");
+    expect(outcome.warning).toContain("legacy v1");
+    expect(outcome.warning).toContain(configPath);
+    const parsed = JSON.parse(await readFile(configPath, "utf-8"));
+    expect(parsed.plugins).toEqual([]);
+    expect(parsed.plugin).toEqual(["my-pkg"]);
   });
 });

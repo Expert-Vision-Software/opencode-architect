@@ -54,11 +54,11 @@ function headingSlugExists(readme: string, slug: string): boolean {
 }
 
 describe("shipped config snippets (D8)", () => {
-  test("README snippets use the plugin key with canonical entries, never plugins", async () => {
+  test("README snippets use the v2 plugins key with canonical entries, never the v1 plugin key", async () => {
     const readme = await readFile(README_PATH, "utf-8");
 
-    expect(readme).toContain('"plugin": ["opencode-architect@latest"]');
-    expect(readme).not.toContain('"plugins"');
+    expect(readme).toContain('"plugins": ["opencode-architect@latest"]');
+    expect(readme).not.toContain('"plugin": ["opencode-architect');
     expect(readme).toContain("opencode-architect@latest");
   });
 });

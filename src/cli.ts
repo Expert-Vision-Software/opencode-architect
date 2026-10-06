@@ -62,6 +62,9 @@ export async function runCli(argv: string[]): Promise<number> {
         if (outcome.configPath !== null) {
           console.log(`  Plugin entry: ${outcome.configPath}`);
         }
+        if (outcome.configWarning !== null) {
+          console.warn(`  Warning: ${outcome.configWarning}`);
+        }
         console.log(`  Manifest:     ${outcome.manifestPath}`);
         for (const cachePath of outcome.clearedCache) {
           console.log(`  Cleared cache: ${cachePath}`);
@@ -81,6 +84,9 @@ export async function runCli(argv: string[]): Promise<number> {
         for (const file of outcome.removed) console.log(`  Removed: ${file}`);
         if (outcome.pluginRemoved && outcome.configPath !== null) {
           console.log(`  Removed the plugin entry from ${outcome.configPath}.`);
+        }
+        if (outcome.configWarning !== null) {
+          console.warn(`  Warning: ${outcome.configWarning}`);
         }
         break;
       }
@@ -141,9 +147,10 @@ function printHelp(): void {
   console.log(`
 opencode-architect v${VERSION}
 
-Registers the opencode-architect plugin in a config file's plugin array so the
+Registers the opencode-architect plugin in a config file's plugins array so the
 agent suite loads from the package at startup. Nothing is copied: the plugin
-registers the agents and resolves reference paths at load time.
+registers the agents and resolves reference paths at load time. Legacy v1
+"plugin" entries are detected and left read-only with an upgrade advisory.
 
 Commands:
   install     Ensure the plugin entry and write the install manifest

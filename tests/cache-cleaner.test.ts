@@ -1,20 +1,23 @@
 import { describe, expect, test, beforeEach, afterEach } from "bun:test";
 import { existsSync } from "node:fs";
-import { chmod, mkdtemp, rm } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { CacheCleaner } from "../src/cache-cleaner";
+import { NpmCache } from "../src/npm-cache";
 import { seedCachedPackage, expectClearCacheUsageError } from "./test-helpers";
 
 let cacheDir = "";
 let originalXdgCache: string | undefined;
 let cleaner = new CacheCleaner();
+let cache = new NpmCache();
 
 beforeEach(async () => {
   cacheDir = await mkdtemp(path.join(tmpdir(), "oa-clear-cache-"));
   originalXdgCache = process.env.XDG_CACHE_HOME;
   process.env.XDG_CACHE_HOME = cacheDir;
   cleaner = new CacheCleaner();
+  cache = new NpmCache();
 });
 
 afterEach(async () => {
@@ -24,7 +27,7 @@ afterEach(async () => {
 });
 
 function cacheRoot(): string {
-  return cleaner.packagesCacheRoot();
+  return cache.root();
 }
 
 describe("clearCache default mode", () => {
@@ -56,6 +59,21 @@ describe("clearCache default mode", () => {
 
     expect(outcome.removed).toEqual([]);
     expect(outcome.warnings).toEqual([]);
+  });
+
+  test("removes every generation under a key in the v2 generation cache layout", async () => {
+    const keyDir = path.join(cacheRoot(), "opencode-architect@latest");
+    for (const generation of ["1738848000000", "1738851600000"]) {
+      const pkgDir = path.join(keyDir, generation, "node_modules", "opencode-architect");
+      await mkdir(pkgDir, { recursive: true });
+      await writeFile(path.join(pkgDir, "index.ts"), "cached");
+    }
+
+    const outcome = await cleaner.clear({ packageName: null, all: false, yes: false, dryRun: false });
+
+    expect(outcome.warnings).toEqual([]);
+    expect(outcome.removed).toEqual([keyDir]);
+    expect(existsSync(keyDir)).toBe(false);
   });
 });
 
@@ -91,13 +109,13 @@ describe("clearCache --package mode", () => {
 describe("clearCache --all mode", () => {
   test("removes the entire opencode cache directory", async () => {
     await seedCachedPackage(cacheRoot(), "opencode-architect");
-    const unrelated = path.join(cleaner.opencodeCacheRoot(), "other-tool");
+    const unrelated = path.join(cache.opencodeRoot(), "other-tool");
     await seedCachedPackage(unrelated, "data");
 
     const outcome = await cleaner.clear({ packageName: null, all: true, yes: true, dryRun: false });
 
     expect(outcome.warnings).toEqual([]);
-    expect(existsSync(cleaner.opencodeCacheRoot())).toBe(false);
+    expect(existsSync(cache.opencodeRoot())).toBe(false);
   });
 
   test("requires --yes and deletes nothing without it", async () => {
@@ -149,8 +167,8 @@ describe("clearCache dry-run", () => {
     const outcome = await cleaner.clear({ packageName: null, all: true, yes: false, dryRun: true });
 
     expect(outcome.dryRun).toBe(true);
-    expect(outcome.removed).toEqual([cleaner.opencodeCacheRoot()]);
-    expect(existsSync(cleaner.opencodeCacheRoot())).toBe(true);
+    expect(outcome.removed).toEqual([cache.opencodeRoot()]);
+    expect(existsSync(cache.opencodeRoot())).toBe(true);
   });
 
   test("with nothing cached lists nothing and succeeds", async () => {
@@ -180,7 +198,7 @@ describe("clearCache failure tolerance", () => {
       expect(outcome.warnings.length).toBe(1);
       expect(outcome.warnings[0]).toContain(kept);
     } finally {
-      await chmod(kept, 0o700);
+      await chmod(kept, 0o700).catch(() => {});
     }
   });
 });
