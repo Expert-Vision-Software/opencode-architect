@@ -178,7 +178,8 @@ load-bearing invariants:
   warn and point the consumer at `opencode.json(c)`; never edit it.
 - **Write the plural key.** New entries splice into the `plugins` array as
   `name@latest`. A legacy singular `plugin` entry is tolerated read-only:
-  reported with an upgrade advisory, never rewritten or silently migrated.
+  reported with an upgrade advisory, never rewritten or silently migrated
+  (facts §13 row 10).
 - **Surgical writes.** Text splice into the array only — every other byte
   (indentation, comments, trailing commas, key order, unrelated keys)
   untouched; never parse-then-reserialize; a parse error aborts, preserving

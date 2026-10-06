@@ -68,7 +68,7 @@ item; an item with no evidence found is a finding.
   never modifies `plugins` arrays and never writes permission or MCP
   configuration — those are CLI operations. A legacy singular `plugin` entry
   is tolerated read-only: reported with an upgrade advisory, never rewritten
-  (facts §7).
+  (facts §13 row 10).
 - **B4 Hooks never throw (startup non-interference).** The entire load-time
   installation block is wrapped so any failure becomes a warning plus at
   most one advisory (naming the exact remediation command or cache path)

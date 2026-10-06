@@ -47,7 +47,10 @@ context.tool.transform((editor) => {
       },
       required: ["query"],
     },
-    execute: (args, ctx) => Effect.succeed({ output: ran(args.query) }),
+    execute: (args, ctx) =>
+      Effect.succeed({
+        output: `Executed: ${args.query}`,
+      }),
   })
 })
 ```

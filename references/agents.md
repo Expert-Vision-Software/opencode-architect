@@ -30,8 +30,8 @@ options/body), `tools` boolean map → `permissions` rules, `maxSteps` →
 | --- | --- | --- |
 | `description` | no | Optional in v2 — but keep writing it: it drives subagent selection. |
 | `mode` | no | `"primary"`, `"subagent"`, or `"all"` (default `"all"`). |
-| `model` | no | A selection object: `{ "providerID": "anthropic", "model": "claude-sonnet-4-5" }` (optional `"variant"`). Unset: primary uses the configured global model; subagents inherit the invoking agent's model. |
-| `request` | no | Provider request options — sampling controls like temperature live here, not as top-level fields. |
+| `model` | no | A selection object: `{ "providerID": "anthropic", "model": "claude-sonnet-4-5" }` (optional `"variant"`). |
+| `request` | no | Provider request options — sampling controls like temperature live here, passing through into the request body (facts §6), not as top-level fields. |
 | `steps` | no | Max agentic iterations before forced text-only summary. (`maxSteps` is deprecated.) |
 | `permissions` | no | Ordered ruleset array (see below) — replaces v1 `permission`/`tools`. |
 | `hidden` | no | `true` hides a `"subagent"` from the `@` menu; still invokable via Task tool. |

@@ -50,8 +50,8 @@ Remote options: `type` (`"remote"`), `url` (required), `headers`, `oauth`,
 ## OAuth (remote)
 
 - Pre-registered credentials (snake_case):
-  `"oauth": { "client_id": "...", "client_secret": "...", "scope":
-  "tools:read" }`, plus optional `callback_port`, `redirect_uri`,
+  `"oauth": { "client_id": "...", "client_secret": "...", "scope": "tools:read" }`,
+  plus optional `callback_port`, `redirect_uri`,
   `auth_server_metadata_url`.
 - `"oauth": false` disables OAuth handling for the server.
 - Automatic flow detection and the v1 `opencode mcp auth` CLI: pending
@@ -62,9 +62,9 @@ Remote options: `type` (`"remote"`), `url` (required), `headers`, `oauth`,
 - Per-server disable: `"disabled": true` on the server entry (v2 replaces
   the v1 `enabled` flag) — hides all its tools without deleting config.
   Facts §10.
-- Plugins reconcile servers via `ctx.mcp.transform` (`list/get/set/update/
-  remove`); setting `disabled` toggles reconciliation; `reload()` reapplies.
-  Facts §10.
+- Plugins reconcile servers via `ctx.mcp.transform` — the editor has
+  `list`, `get`, `set`, `update`, `remove`; setting `disabled` toggles
+  reconciliation; `reload()` reapplies. Facts §10.
 - Permission rules can name MCP-derived tools like any other action (the
   action vocabulary is an open string of tool names, facts §4); the exact
   `<server>_<tool>` naming of MCP-derived actions: pending verification.
