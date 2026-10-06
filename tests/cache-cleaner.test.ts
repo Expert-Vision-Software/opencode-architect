@@ -1,6 +1,6 @@
 import { describe, expect, test, beforeEach, afterEach } from "bun:test";
 import { existsSync } from "node:fs";
-import { chmod, mkdtemp, rm } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { CacheCleaner } from "../src/cache-cleaner";
@@ -24,7 +24,7 @@ afterEach(async () => {
 });
 
 function cacheRoot(): string {
-  return cleaner.packagesCacheRoot();
+  return cleaner.npmCacheRoot();
 }
 
 describe("clearCache default mode", () => {
@@ -56,6 +56,21 @@ describe("clearCache default mode", () => {
 
     expect(outcome.removed).toEqual([]);
     expect(outcome.warnings).toEqual([]);
+  });
+
+  test("removes every generation under a key in the v2 generation cache layout", async () => {
+    const keyDir = path.join(cacheRoot(), "opencode-architect@latest");
+    for (const generation of ["1738848000000", "1738851600000"]) {
+      const pkgDir = path.join(keyDir, generation, "node_modules", "opencode-architect");
+      await mkdir(pkgDir, { recursive: true });
+      await writeFile(path.join(pkgDir, "index.ts"), "cached");
+    }
+
+    const outcome = await cleaner.clear({ packageName: null, all: false, yes: false, dryRun: false });
+
+    expect(outcome.warnings).toEqual([]);
+    expect(outcome.removed).toEqual([keyDir]);
+    expect(existsSync(keyDir)).toBe(false);
   });
 });
 

@@ -19,14 +19,14 @@ export interface ClearCacheOutcome {
 }
 
 export class CacheCleaner {
-  public packagesCacheRoot(): string {
+  public npmCacheRoot(): string {
     const xdgCacheHome = process.env.XDG_CACHE_HOME;
-    if (xdgCacheHome) return path.join(xdgCacheHome, "opencode", "packages");
-    return path.join(homedir(), ".cache", "opencode", "packages");
+    if (xdgCacheHome) return path.join(xdgCacheHome, "opencode", "npm");
+    return path.join(homedir(), ".cache", "opencode", "npm");
   }
 
   public opencodeCacheRoot(): string {
-    return path.dirname(this.packagesCacheRoot());
+    return path.dirname(this.npmCacheRoot());
   }
 
   public isUnsafePackageName(name: string): boolean {
@@ -64,10 +64,10 @@ export class CacheCleaner {
     }
 
     const name = packageName ?? PACKAGE_NAME;
-    const packagesRoot = this.packagesCacheRoot();
+    const npmRoot = this.npmCacheRoot();
     let entries: string[];
     try {
-      entries = await readdir(packagesRoot);
+      entries = await readdir(npmRoot);
     } catch (error) {
       if ((error as NodeJS.ErrnoException)?.code === "ENOENT") return { removed, warnings, dryRun };
       throw error;
@@ -77,7 +77,7 @@ export class CacheCleaner {
     const targets = entries
       .filter((entry) => entry === name || entry.startsWith(prefix))
       .sort()
-      .map((entry) => path.join(packagesRoot, entry));
+      .map((entry) => path.join(npmRoot, entry));
 
     if (dryRun) {
       removed.push(...targets);

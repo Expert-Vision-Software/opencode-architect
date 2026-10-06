@@ -111,9 +111,9 @@ export class OpencodeArchitectPlugin {
       `reinstall and restart OpenCode. The stale cache copy is `;
     let text: string;
     try {
-      text = `${prefix}~/.cache/opencode/packages/${PACKAGE_NAME}@${await this.readVersion()}. Cause: ${message}`;
+      text = `${prefix}~/.cache/opencode/npm/${PACKAGE_NAME}@${await this.readVersion()}. Cause: ${message}`;
     } catch {
-      text = `${prefix}~/.cache/opencode/packages/${PACKAGE_NAME}@<version>. Cause: ${message}`;
+      text = `${prefix}~/.cache/opencode/npm/${PACKAGE_NAME}@<version>. Cause: ${message}`;
     }
     try {
       console.warn(`[${PACKAGE_NAME}] ${text}`);
