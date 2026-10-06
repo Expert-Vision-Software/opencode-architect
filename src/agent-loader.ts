@@ -30,8 +30,8 @@ export interface LoadedAgent {
 interface AgentFrontmatter {
   description: string;
   mode: Agent.Info["mode"];
-  tools?: Record<string, boolean>;
-  permission?: Record<string, PermissionEffect | Record<string, PermissionEffect>>;
+  tools: Record<string, boolean> | null;
+  permission: Record<string, PermissionEffect | Record<string, PermissionEffect>> | null;
 }
 
 type PermissionEffect = "allow" | "ask" | "deny";
@@ -80,7 +80,10 @@ export class AgentLoader {
       system,
       description: frontmatter.description,
       mode: frontmatter.mode,
-      permissions: [...toolRules(frontmatter.tools), ...permissionRules(frontmatter.permission)],
+      permissions: [
+        ...this.toolRules(frontmatter.tools ?? null),
+        ...this.permissionRules(frontmatter.permission ?? null),
+      ],
     };
   }
 
@@ -91,36 +94,36 @@ export class AgentLoader {
       return `\`${absolute}\``;
     });
   }
-}
 
-function toolRules(tools: Record<string, boolean> | undefined): Agent.Info["permissions"] {
-  if (tools === undefined) return [];
-  return Object.entries(tools).map(([tool, enabled]) => ({
-    action: normalizeAction(tool),
-    resource: "*",
-    effect: enabled ? "allow" : "deny",
-  }));
-}
-
-function permissionRules(
-  permission: Record<string, PermissionEffect | Record<string, PermissionEffect>> | undefined,
-): Agent.Info["permissions"] {
-  if (permission === undefined) return [];
-  return Object.entries(permission).flatMap(([key, rule]) => {
-    if (typeof rule === "string") {
-      return [{ action: normalizeAction(key), resource: "*", effect: rule }];
-    }
-    return Object.entries(rule).map(([resource, effect]) => ({
-      action: normalizeAction(key),
-      resource,
-      effect,
+  private toolRules(tools: Record<string, boolean> | null): Agent.Info["permissions"] {
+    if (tools === null) return [];
+    return Object.entries(tools).map(([tool, enabled]) => ({
+      action: this.normalizeAction(tool),
+      resource: "*",
+      effect: enabled ? "allow" : "deny",
     }));
-  });
-}
+  }
 
-function normalizeAction(action: string): string {
-  if (action === "write" || action === "patch") return "edit";
-  if (action === "task") return "subagent";
-  if (action === "bash") return "shell";
-  return action;
+  private permissionRules(
+    permission: Record<string, PermissionEffect | Record<string, PermissionEffect>> | null,
+  ): Agent.Info["permissions"] {
+    if (permission === null) return [];
+    return Object.entries(permission).flatMap(([key, rule]) => {
+      if (typeof rule === "string") {
+        return [{ action: this.normalizeAction(key), resource: "*", effect: rule }];
+      }
+      return Object.entries(rule).map(([resource, effect]) => ({
+        action: this.normalizeAction(key),
+        resource,
+        effect,
+      }));
+    });
+  }
+
+  private normalizeAction(action: string): string {
+    if (action === "write" || action === "patch") return "edit";
+    if (action === "task") return "subagent";
+    if (action === "bash") return "shell";
+    return action;
+  }
 }

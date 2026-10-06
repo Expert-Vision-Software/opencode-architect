@@ -39,7 +39,7 @@ export class OpencodeArchitectPlugin {
       effect: Effect.fn(function* (context) {
         const registered = yield* plugin.registerBundledAssets(context);
         if (!registered) return;
-        yield* plugin.adviseIfNotInstalled(context.location.directory);
+        yield* plugin.advisoryEffect(() => plugin.adviseNotInstalledOnce(context.location.directory));
       }),
     });
   }
@@ -79,11 +79,6 @@ export class OpencodeArchitectPlugin {
       agent.system = loaded.system;
       agent.permissions.push(...loaded.permissions);
     });
-  }
-
-  private adviseIfNotInstalled(directory: string): Effect.Effect<void, never, never> {
-    const plugin = this;
-    return plugin.advisoryEffect(() => plugin.adviseNotInstalledOnce(directory));
   }
 
   private advisoryEffect(run: () => Promise<void>): Effect.Effect<void, never, never> {
