@@ -3,6 +3,7 @@ import { homedir } from "node:os";
 import path from "node:path";
 
 export type ConfigScope = "local" | "global";
+export type PluginConfigKey = "plugins" | "plugin";
 
 export interface EnsurePluginEntryOptions {
   scope: ConfigScope;
@@ -67,7 +68,7 @@ export class PluginConfigEditor {
       if (this.hasMatchingEntry(plugins, packageName)) {
         return { action: "noop", configPath: candidate.path, warning: null };
       }
-      if (legacyPlugins !== null && this.hasMatchingEntry(legacyPlugins, packageName)) {
+      if (this.hasLegacyEntry(legacyPlugins, packageName)) {
         return {
           action: "noop",
           configPath: candidate.path,
@@ -118,8 +119,7 @@ export class PluginConfigEditor {
     for (const { candidate, plugins, legacyPlugins } of await this.readCandidates(options)) {
       if (plugins === null) continue;
       const registered =
-        this.hasMatchingEntry(plugins, packageName) ||
-        (legacyPlugins !== null && this.hasMatchingEntry(legacyPlugins, packageName));
+        this.hasMatchingEntry(plugins, packageName) || this.hasLegacyEntry(legacyPlugins, packageName);
       if (registered) return candidate.path;
     }
     return null;
@@ -129,8 +129,9 @@ export class PluginConfigEditor {
     packageName: string,
     options: EnsurePluginEntryOptions,
   ): Promise<RemovePluginEntryOutcome> {
+    const reads = await this.readCandidates(options);
     let legacyPath: string | null = null;
-    for (const { candidate, text, plugins, legacyPlugins } of await this.readCandidates(options)) {
+    for (const { candidate, text, plugins, legacyPlugins } of reads) {
       if (!candidate.writable) continue;
       if (plugins === null) {
         return {
@@ -151,9 +152,14 @@ export class PluginConfigEditor {
           };
         }
         await writeFile(candidate.path, spliced);
-        return { action: "removed", configPath: candidate.path, warning: null };
+        const leftover = reads.find((read) => this.hasLegacyEntry(read.legacyPlugins, packageName));
+        return {
+          action: "removed",
+          configPath: candidate.path,
+          warning: leftover === undefined ? null : this.legacyRemovalAdvisory(leftover.candidate.path, packageName),
+        };
       }
-      if (legacyPath === null && legacyPlugins !== null && this.hasMatchingEntry(legacyPlugins, packageName)) {
+      if (legacyPath === null && this.hasLegacyEntry(legacyPlugins, packageName)) {
         legacyPath = candidate.path;
       }
     }
@@ -169,6 +175,10 @@ export class PluginConfigEditor {
 
   public hasMatchingEntry(entries: string[], packageName: string): boolean {
     return entries.some((entry) => this.matchesEntry(entry, packageName));
+  }
+
+  private hasLegacyEntry(legacyPlugins: string[] | null, packageName: string): boolean {
+    return legacyPlugins !== null && this.hasMatchingEntry(legacyPlugins, packageName);
   }
 
   private matchesEntry(entry: string, packageName: string): boolean {
@@ -219,7 +229,7 @@ export class PluginConfigEditor {
     return reads;
   }
 
-  private keyEntries(config: Record<string, unknown>, key: string): string[] {
+  private keyEntries(config: Record<string, unknown>, key: PluginConfigKey): string[] {
     const value = config[key];
     if (!Array.isArray(value)) return [];
     return value.map((entry) => this.normalizeEntry(entry)).filter((entry): entry is string => entry !== null);
@@ -227,11 +237,13 @@ export class PluginConfigEditor {
 
   private normalizeEntry(entry: unknown): string | null {
     if (typeof entry === "string") return entry;
-    if (entry !== null && typeof entry === "object") {
-      const pkg = (entry as { package?: unknown }).package;
-      if (typeof pkg === "string") return pkg;
-    }
-    return null;
+    return this.packageOf(entry);
+  }
+
+  private packageOf(entry: unknown): string | null {
+    if (entry === null || typeof entry !== "object") return null;
+    const pkg = (entry as { package: unknown }).package;
+    return typeof pkg === "string" ? pkg : null;
   }
 
   private legacyEntryAdvisory(candidate: CandidateConfig, packageName: string): string {
@@ -452,8 +464,7 @@ export class PluginConfigEditor {
     const trimmed = raw.trim();
     if (!trimmed.startsWith("{")) return this.unquote(trimmed);
     try {
-      const parsed = JSON.parse(trimmed.replace(/,(\s*[}\]])/g, "$1")) as { package?: unknown };
-      return typeof parsed.package === "string" ? parsed.package : "";
+      return this.packageOf(JSON.parse(trimmed.replace(/,(\s*[}\]])/g, "$1"))) ?? "";
     } catch {
       return "";
     }
@@ -495,7 +506,7 @@ export class PluginConfigEditor {
       const keyIndex = navigable.indexOf('"plugins"', searchFrom);
       if (keyIndex === -1) return null;
       if (this.precededByStructuralChar(navigable, keyIndex, ["{", ","])) {
-        const colonIndex = this.nextOutsideString(navigable, keyIndex + 9, ":");
+        const colonIndex = this.nextOutsideString(navigable, keyIndex + '"plugins"'.length, ":");
         if (colonIndex !== -1) {
           const bracketStart = this.nextOutsideString(navigable, colonIndex + 1, "[");
           if (bracketStart !== -1) {

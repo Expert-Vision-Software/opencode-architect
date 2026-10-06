@@ -422,4 +422,21 @@ describe("PluginConfigEditor.removePluginEntry", () => {
     const parsed = JSON.parse(await readFile(configPath, "utf-8"));
     expect(parsed.plugins).toEqual(["other"]);
   });
+
+  test("removing the v2 entry warns about a leftover legacy entry in the same config", async () => {
+    const projectDir = await makeDir("project");
+    const configPath = await write(
+      "project/opencode.json",
+      '{ "plugins": ["my-pkg"], "plugin": ["my-pkg"] }\n',
+    );
+
+    const outcome = await editor().removePluginEntry("my-pkg", { scope: "local", projectDir });
+
+    expect(outcome.action).toBe("removed");
+    expect(outcome.warning).toContain("legacy v1");
+    expect(outcome.warning).toContain(configPath);
+    const parsed = JSON.parse(await readFile(configPath, "utf-8"));
+    expect(parsed.plugins).toEqual([]);
+    expect(parsed.plugin).toEqual(["my-pkg"]);
+  });
 });
