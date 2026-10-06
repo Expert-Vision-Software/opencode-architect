@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- V2 verification harness (issue #27, child of spec #23): `tests/v2-host.test.ts` loads the built package entry the way the v2 host does — real `@opencode/plugin` Effect activation, registrations audited against `@opencode/schema` `Agent.Info` (all ten agents, permission `evaluate` hook) and fails on registration loss; `tests/fixture-config-schema.test.ts` validates every produced fixture config (created default, splices, legacy-tolerated no-ops, README quick-start snippet) against the pinned `Config.Info`; a dedicated `V2 verification harness` CI job gates both
+- `docs/reference/opencode-v2-facts.md` §14 dispositions from the harness run: root-index entrypoint fallback settled negative under Bun (§13 row 9) with per-item reachability for the remaining open flags
+
+### Fixed
+
+- **Registration loss under v2**: `package.json` now declares `exports["./server"]` pointing at the package entry — without it, server-kind resolution depends on the root-index fallback, which is dead on Bun 1.3.x runtimes (Bun's `ResolveMessage` is not an `Error`, so the fallback's catch never fires) and the plugin is disabled at the entry stage; with the export declared, resolution is deterministic on every observed runtime
+
 ## [0.9.2] - 2026-10-04
 
 ### Added

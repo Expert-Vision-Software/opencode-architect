@@ -19,6 +19,10 @@
   "private": false,
   "type": "module",
   "module": "index.ts",
+  "exports": {
+    ".": "./index.ts",
+    "./server": "./index.ts"
+  },
   "bin": {
     "opencode-architect": "src/cli.ts"
   },
@@ -57,6 +61,8 @@
     "yaml": "^2.7.1"
   },
   "devDependencies": {
+    "@opencode/schema": "2.0.23",
+    "@opencode/util": "2.0.23",
     "@types/bun": "latest",
     "@types/folder-hash": "^4.0.4",
     "@types/node": "latest",

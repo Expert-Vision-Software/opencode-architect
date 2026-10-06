@@ -29,3 +29,19 @@ jobs:
 
       - name: Test
         run: bun test
+
+  v2-harness:
+    name: V2 verification harness
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Host smoke test and config schema validation (issue #27)
+        run: bun test tests/v2-host.test.ts tests/fixture-config-schema.test.ts
