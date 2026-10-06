@@ -1,5 +1,15 @@
 # Package root holds only the entry
 
+> **Superseded mechanism (ADR-0012, v2-native).** The resolution chain below
+> ("`exports["./server"]`, `main`, or the directory-index fallback") is
+> v1-era shorthand. Under v2 the entrypoint resolves from
+> `exports["./server"]` with a package-root index fallback — but the harness
+> proved that fallback runtime-dependent (dead on Bun 1.3.x, working on Bun
+> ≥ 1.4.2 and Node), so **every distributed package must declare
+> `exports["./server"]`** and never rely on the root index (per
+> opencode-v2-facts §13 row 9, §14.6). The root-holds-only-the-entry rule
+> stands unchanged.
+
 OpenCode's loader needs exactly one thing from a plugin package's root: the
 entry module (`index.ts`, resolved via `exports["./server"]`, `main`, or the
 directory-index fallback). Every other code file at the root is convention
