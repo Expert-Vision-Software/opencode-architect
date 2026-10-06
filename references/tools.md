@@ -1,49 +1,69 @@
 # OpenCode tools — fundamentals
 
-By default all tools are enabled and need no permission to run. Control them via the `permission` config (global or per agent).
+Control tools through the `permissions` config — an ordered ruleset array
+(global or per agent); actions are open strings named after tools plus
+cross-cutting actions. Facts per `docs/reference/opencode-v2-facts.md` §4
+(actions), §8 (tool shape, registration).
 
-## Built-in tools
+## Tool actions
 
-| Tool | Purpose | Permission key |
-| --- | --- | --- |
-| `bash` | Execute shell commands | `bash` |
-| `read` | Read files (supports line ranges) | `read` |
-| `edit` | Exact string replacement in files | `edit` |
-| `write` | Create/overwrite files | `edit` |
-| `apply_patch` | Apply patch files | `edit` |
-| `grep` | Regex content search | `grep` |
-| `glob` | File pattern matching | `glob` |
-| `skill` | Load a SKILL.md | `skill` |
-| `todowrite` | Task lists (disabled for subagents by default) | `todowrite` |
-| `webfetch` | Fetch a URL | `webfetch` |
-| `websearch` | Web search (provider/env gated) | `websearch` |
-| `question` | Ask the user structured questions | `question` |
-| `lsp` | LSP intelligence (experimental) | `lsp` |
+Observed v2 tool-derived permission actions — `edit` gates all file
+modification (`write`, `edit`, and `patch` tools):
 
-`edit`, `write`, and `apply_patch` share the single `edit` permission. `grep`/`glob` use ripgrep and respect `.gitignore` (a `.ignore` file can re-include paths). Hooks must check `input.tool === "apply_patch"` and use `output.args.patchText` (paths embedded in marker lines).
+| Action | Purpose |
+| --- | --- |
+| `read` | Read files |
+| `edit` | File modification — `write`, `edit`, `patch` |
+| `shell` | Execute shell commands |
+| `subagent` | Delegate to subagents |
+| `glob` | File pattern matching |
+| `grep` | Content search |
+| `skill` | Load a SKILL.md |
+| `webfetch` | Fetch a URL |
+| `websearch` | Web search (provider/env gated) |
+| `question` | Ask the user structured questions |
+| `*` | Cross-cutting catch-all |
+| `external_directory` | Reads outside the workspace (asks by default, batch approval, glob resources) |
 
-## Custom tools
+Wildcard rules: `permissions: [{ "action": "shell", "resource": "git *",
+"effect": "allow" }]`. Last matching rule wins. Facts §4.
 
-Defined in `.opencode/tools/` (project) or `~/.config/opencode/tools/` (global). The filename becomes the tool name (`database.ts` → `database` tool).
+## Custom tools — plugin-registered
+
+v2 has **no file-based tool definition**: the v1 `.opencode/tools/`
+convention has no v2 equivalent. Custom tools are registered by plugins via
+the tool domain; the one-shot upgrade maps v1 tool files to plugin tools.
+Facts §8.
 
 ```ts
-import { tool } from "@opencode-ai/plugin"
-
-export default tool({
-  description: "Query the project database",
-  args: {
-    query: tool.schema.string().describe("SQL query to execute"),
-  },
-  async execute(args, context) {
-    return `Executed: ${args.query}`
-  },
+context.tool.transform((editor) => {
+  editor.add({
+    name: "query-database",
+    description: "Query the project database",
+    input: {
+      type: "object",
+      properties: {
+        query: { type: "string", description: "SQL query to execute" },
+      },
+      required: ["query"],
+    },
+    execute: (args, ctx) => Effect.succeed({ output: ran(args.query) }),
+  })
 })
 ```
 
 Key API points:
 
-- `tool.schema` is Zod (`tool.schema.string()`, `.number()`, `.describe(...)`); or import `zod` directly and export a plain object.
-- `execute(args, context)` — context provides `agent`, `sessionID`, `messageID`, `directory` (session cwd), `worktree` (git worktree root). Use `context.worktree` for repo-root paths.
-- Multiple named exports in one file become separate tools named `<filename>_<exportname>` (`math_add`, `math_multiply`).
-- A custom tool with a built-in tool's name overrides it (prefer unique names; use permissions to just disable).
-- The definition is TS/JS, but `execute` can invoke scripts in any language (e.g. via `Bun.$`).
+- Definition: `{ name, input, description, execute(input, context), output?,
+  options? }`. `execute` returns an `Effect<Result, Tool.Error>`. Facts §8.
+- **Argument schemas**: `input` accepts raw JSON Schema (above), an Effect
+  `Schema.Codec`, or any Standard-Schema validator (e.g. Zod) — the v1
+  `tool.schema` helper style is gone. Facts §8.
+- **Results**: `{ output?, content?, metadata? }` — `content` may be a string
+  or typed file parts. Failures: `Tool.Error { message }`. Facts §8.
+- Executor context: `{ sessionID, agent, messageID, id, progress }`. Facts §8.
+- `options`: `{ namespace?, permission?, codemode?, pinned? }` — per-tool
+  permission naming and Code Mode exposure; namespaced ids are
+  `<namespace>_<name>`. Later registrations override the same effective
+  name. Facts §8.
+- `execute` can invoke scripts in any language (e.g. via `Bun.$`).
