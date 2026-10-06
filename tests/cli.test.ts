@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { existsSync } from "node:fs";
-import { chmod, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { seedCachedPackage } from "./test-helpers";
@@ -96,7 +96,7 @@ describe("cli", () => {
     if (process.getuid?.() === 0) return;
     const dir = await mkdtemp(path.join(tmpdir(), "oa-cli-"));
     const cacheDir = await mkdtemp(path.join(tmpdir(), "oa-cli-cache-"));
-    const blocked = path.join(cacheDir, "opencode", "packages", "opencode-architect@latest", "nested");
+    const blocked = path.join(cacheDir, "opencode", "npm", "opencode-architect@latest", "nested");
     await mkdir(blocked, { recursive: true });
     await writeFile(path.join(blocked, "file.txt"), "cached");
     await chmod(blocked, 0o500);
@@ -105,18 +105,36 @@ describe("cli", () => {
 
       expect(run.exitCode).toBe(0);
       expect(run.stdout).toContain("Registered");
-      expect(run.stderr).toContain(`Could not clear cached package ${path.join(cacheDir, "opencode", "packages", "opencode-architect@latest")}`);
-      expect(existsSync(path.join(cacheDir, "opencode", "packages", "opencode-architect"))).toBe(false);
+      expect(run.stderr).toContain(`Could not clear cached package ${path.join(cacheDir, "opencode", "npm", "opencode-architect@latest")}`);
+      expect(existsSync(path.join(cacheDir, "opencode", "npm", "opencode-architect"))).toBe(false);
     } finally {
       await chmod(blocked, 0o700);
       await rm(dir, { recursive: true, force: true });
       await rm(cacheDir, { recursive: true, force: true });
     }
   });
+
+  test("install with a legacy v1 plugin entry keeps it read-only and advises upgrading", async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), "oa-cli-"));
+    const configPath = path.join(dir, "opencode.json");
+    const legacyConfig = '{ "plugin": ["opencode-architect@0.9.0"] }\n';
+    await writeFile(configPath, legacyConfig);
+    try {
+      const run = await runCli(["install"], dir);
+
+      expect(run.exitCode).toBe(0);
+      expect(run.stdout).toContain("Registered");
+      expect(run.stderr).toContain("legacy v1");
+      expect(run.stderr).toContain('"plugins"');
+      expect(await readFile(configPath, "utf-8")).toBe(legacyConfig);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
 });
 
 describe("cli clear-cache", () => {
-  const packagesDir = (cacheDir: string) => path.join(cacheDir, "opencode", "packages");
+  const packagesDir = (cacheDir: string) => path.join(cacheDir, "opencode", "npm");
   const seedCache = seedCachedPackage;
 
   test("default mode removes only this package's cache dirs", async () => {
