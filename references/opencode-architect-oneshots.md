@@ -1,6 +1,10 @@
 # OpenCode Architect One-Shot Examples
 
-Reference examples for routing decisions. Each shows: request → analysis → agent selection → execution order.
+Reference examples for routing decisions. Each shows: request → analysis →
+agent selection → execution order. Code and config snippets are v2,
+Effect-first — facts per `docs/reference/opencode-v2-facts.md`; where a hook
+signature is not settled there, the snippet points at the domain API rather
+than restating it.
 
 ---
 
@@ -29,12 +33,14 @@ Reference examples for routing decisions. Each shows: request → analysis → a
 **Analysis:**
 - MCP server configuration → `opencode-mcp-integrator`
 - No skill/command/tool creation needed
-- Tool scoping is MCP configuration, not custom tool building
+- Tool scoping is MCP + permissions configuration, not custom tool building
 
 **Execution:**
 1. Single: `opencode-mcp-integrator` - configure server in opencode.json with permission rules
 
-**Config produced** (disable the tools globally, enable them for `build` only):
+**Config produced** (deny the server's tools globally, allow them for `build`;
+the exact MCP-derived action naming is pending verification — facts §4):
+
 ```json
 {
   "mcp": {
@@ -43,10 +49,14 @@ Reference examples for routing decisions. Each shows: request → analysis → a
       "command": ["npx", "-y", "@my-company/mcp-server"]
     }
   },
-  "tools": { "deploy-*": false },
-  "agent": {
+  "permissions": [
+    { "action": "my-company-tools_*", "resource": "*", "effect": "deny" }
+  ],
+  "agents": {
     "build": {
-      "tools": { "deploy-*": true }
+      "permissions": [
+        { "action": "my-company-tools_*", "resource": "*", "effect": "allow" }
+      ]
     }
   }
 }
@@ -66,30 +76,38 @@ Reference examples for routing decisions. Each shows: request → analysis → a
 - Not MCP (local tool, not external server)
 
 **Execution:**
-1. Single: `opencode-tool-builder` - create plugin with tool definition
+1. Single: `opencode-tool-builder` - create plugin with tool registration
 
-**Tool structure:**
+**Plugin structure** (v2 tools are plugin-registered; facts §8):
+
 ```typescript
-// .opencode/plugins/commit-validator.ts
-import { tool } from "@opencode-ai/plugin"
+// .opencode/plugin/commit-validator.ts
+import { Effect } from "effect"
+import { Plugin } from "@opencode/plugin/effect"
 
-export const CommitValidatorPlugin = async (ctx) => {
-  return {
-    tool: {
-      "validate-commit": tool({
+export default Plugin.define({
+  id: "commit-validator",
+  effect: (context) =>
+    context.tool.transform((editor) => {
+      editor.add({
+        name: "validate-commit",
         description: "Validate commit message follows conventional commits",
-        args: {
-          message: tool.schema.string().describe("Commit message to validate")
+        input: {
+          type: "object",
+          properties: {
+            message: { type: "string", description: "Commit message to validate" },
+          },
+          required: ["message"],
         },
-        async execute(args, context) {
-          const pattern = /^(feat|fix|docs|style|refactor|test|chore)(\(.+\))?:\s.+/
-          const valid = pattern.test(args.message)
-          return { valid, message: args.message }
-        }
+        execute: (args) =>
+          Effect.succeed({
+            output: /^(feat|fix|docs|style|refactor|test|chore)(\(.+\))?:\s.+/.test(args.message)
+              ? "valid"
+              : "invalid",
+          }),
       })
-    }
-  }
-}
+    }),
+})
 ```
 
 ---
@@ -97,29 +115,28 @@ export const CommitValidatorPlugin = async (ctx) => {
 ## Example 4: Code Review Agent
 
 **User Request:**
-> Create a "pr-reviewer" agent that reviews pull requests. It should have access to github tools but not bash or write tools. Load the "git-release" skill automatically.
+> Create a "pr-reviewer" agent that reviews pull requests. It should have access to github tools but not shell or file-modification tools.
 
 **Analysis:**
 - Agent definition with permissions → `opencode-agent-designer`
-- Needs specific tool allowlist/denylist
-- Skill pre-loading configuration
-- Not creating a skill, just referencing existing one
+- Needs specific action allowlist/denylist
+- Not creating a skill, just referencing existing ones
 
 **Execution:**
 1. Single: `opencode-agent-designer` - create agent frontmatter
 
-**Agent structure** (`.opencode/agents/pr-reviewer.md`; the filename becomes the agent name):
+**Agent structure** (`.opencode/agents/pr-reviewer.md`; the filename becomes
+the agent name; v2 ruleset permissions — facts §4):
+
 ```markdown
 ---
-description: Review pull requests with security and quality focus
-mode: subagent
-model: anthropic/claude-sonnet-4-5
-permission:
-  bash: deny
-  edit: deny
-  "github_*": allow
-  skill:
-    "git-release": allow
+description: "Review pull requests with security and quality focus"
+mode: "subagent"
+model: { "providerID": "anthropic", "model": "claude-sonnet-4-5" }
+permissions:
+  - { action: "shell", resource: "*", effect: "deny" }
+  - { action: "edit", resource: "*", effect: "deny" }
+  - { action: "github_*", resource: "*", effect: "allow" }
 ---
 
 ## Role
@@ -131,7 +148,8 @@ Review PRs for code quality, security vulnerabilities, and test coverage.
 3. Provide structured feedback
 ```
 
-`read`/`grep`/`glob` need no entry (tools are enabled by default); `edit` denies `write` and `apply_patch` too.
+`read`/`grep`/`glob` need no entry (allowed by the built-in defaults; facts
+§3); `edit` denies `write` and `patch` too.
 
 ---
 
@@ -153,13 +171,14 @@ Review PRs for code quality, security vulnerabilities, and test coverage.
 4. Sequential: `opencode-packager` (package all into distributable)
 
 **Package structure:**
+
 ```
 opencode-devtools/
-├── package.json
-├── .opencode/
-│   ├── skills/debug-workflow/SKILL.md
-│   ├── commands/debug.md
-│   └── plugins/env-inject.ts
+├── package.json         # declares exports["./server"] (facts §7, §14.6)
+├── index.ts             # default-only entry
+├── src/plugin.ts        # Effect-first plugin definition
+├── skills/debug-workflow/SKILL.md
+└── commands/debug.md
 ```
 
 ---
@@ -170,34 +189,39 @@ opencode-devtools/
 > Create a plugin that sends a desktop notification when a session completes or errors. This is for my local machine only, not for publishing.
 
 **Analysis:**
-- Plugin with event hooks → `opencode-plugin-engineer`
+- Plugin with event handling → `opencode-plugin-engineer`
 - Local machine only, single plugin file → `opencode-plugin-engineer` (distribution intent is the packager test; see the table below)
 
 **Execution:**
-1. Single: `opencode-plugin-engineer` - create local plugin with event hooks
+1. Single: `opencode-plugin-engineer` - create local plugin with event handling
 
-**Plugin structure:**
+**Plugin structure** (events arrive via the `ctx.event.subscribe()` stream —
+facts §9; exact event type names: pending verification):
+
 ```typescript
-// .opencode/plugins/session-notify.ts
-import type { Plugin } from "@opencode-ai/plugin"
+// .opencode/plugin/session-notify.ts
+import { Effect } from "effect"
+import { Plugin } from "@opencode/plugin/effect"
 
-export const SessionNotifyPlugin: Plugin = async ({ $ }) => {
-  return {
-    "session.idle": async () => {
-      await $`osascript -e 'display notification "Session complete" with title "OpenCode"'`
-    },
-    "session.error": async ({ event }) => {
-      await $`osascript -e 'display notification "Session error" with title "OpenCode"'`
-    }
-  }
-}
+export default Plugin.define({
+  id: "session-notify",
+  effect: (context) =>
+    Effect.gen(function* () {
+      const events = yield* context.event.subscribe()
+      for await (const event of events) {
+        // Filter for session completion/error events at implementation time
+        // (event type names pending verification), then notify:
+        // Bun.$`osascript -e 'display notification ...'`.exitCode
+      }
+    }),
+})
 ```
 
 **Key distinction:**
 | Use `plugin-engineer` when...        | Use `packager` when...              |
 | ------------------------------------ | ----------------------------------- |
 | Local-only plugin                    | Local package for sharing          |
-| Event hooks / behavior modification  | Bundling skills + commands as assets|
+| Event handling / behavior modification | Bundling skills + commands as assets|
 | Single `.ts`/`.js` file              | Full package structure with package.json |
 | Single-machine use                   | Local file:// sharing across projects |
 
@@ -209,15 +233,19 @@ export const SessionNotifyPlugin: Plugin = async ({ $ }) => {
 > Create a customer support plugin that injects a "support-agent" prompt into sessions. The prompt should be embedded in the plugin file itself, not as separate files.
 
 **Analysis:**
-- Prompt embedded as a string literal in the plugin file, managed programmatically at runtime → `opencode-plugin-engineer`
+- Prompt embedded as a string literal in the plugin file, managed
+  programmatically at runtime → `opencode-plugin-engineer`
 
 **Execution:**
 1. Single: `opencode-plugin-engineer` - create plugin with embedded prompt string
 
-**Plugin structure:**
+**Plugin structure** (session context hooks edit the request — facts §9:
+`session.hook("context")`, edit `event.system`; wire the exact callback per
+the `@opencode/plugin/effect` session types):
+
 ```typescript
-// .opencode/plugins/support-agent.ts
-import type { Plugin } from "@opencode-ai/plugin"
+// .opencode/plugin/support-agent.ts
+import { Plugin } from "@opencode/plugin/effect"
 
 const SUPPORT_AGENT_PROMPT = `
 You are a customer support agent for Acme Corp.
@@ -233,13 +261,14 @@ You are a customer support agent for Acme Corp.
 3. Offer additional help
 `
 
-export const SupportAgentPlugin: Plugin = async ({ client }) => {
-  return {
-    "session.created": async ({ event }) => {
-      await client.context.inject(SUPPORT_AGENT_PROMPT)
-    }
-  }
-}
+export default Plugin.define({
+  id: "support-agent",
+  effect: (context) =>
+    // session.hook("context") — edit event.system / event.messages here
+    context.session.hook("context", (event) => {
+      event.system = `${event.system ?? ""}\n\n${SUPPORT_AGENT_PROMPT}`.trim()
+    }),
+})
 ```
 
 **Key distinction from packager:**
