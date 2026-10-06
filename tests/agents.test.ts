@@ -69,8 +69,8 @@ describe("AgentLoader", () => {
     expect(Object.keys(agents)).toHaveLength(10);
 
     for (const [name, agentConfig] of Object.entries(agents)) {
-      const prompt = agentConfig.prompt ?? "";
-      expect(prompt.trim().length, `${name} has an empty prompt`).toBeGreaterThan(0);
+      const system = agentConfig.system ?? "";
+      expect(system.trim().length, `${name} has an empty prompt`).toBeGreaterThan(0);
     }
   });
 
@@ -93,14 +93,14 @@ describe("AgentLoader", () => {
     const agents = await new AgentLoader(AGENTS_DIR).loadAgents();
 
     for (const [name, agentConfig] of Object.entries(agents)) {
-      const prompt = agentConfig.prompt ?? "";
+      const system = agentConfig.system ?? "";
 
-      const leftoverRelative = [...prompt.matchAll(RELATIVE_REFERENCE_REGEX)].map(
+      const leftoverRelative = [...system.matchAll(RELATIVE_REFERENCE_REGEX)].map(
         (match) => match[1] ?? "",
       );
       expect(leftoverRelative, `${name} keeps unrewritten relative references`).toEqual([]);
 
-      for (const match of prompt.matchAll(ABSOLUTE_PATH_REGEX)) {
+      for (const match of system.matchAll(ABSOLUTE_PATH_REGEX)) {
         const candidate = match[1] ?? "";
         if (!isReferenceFilePath(candidate)) {
           continue;

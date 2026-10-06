@@ -51,12 +51,12 @@
     "templates"
   ],
   "dependencies": {
-    "@opencode-ai/plugin": "*",
+    "@opencode/plugin": "2.0.23",
+    "effect": "4.0.0-rc.112",
     "folder-hash": "^4.1.3",
     "yaml": "^2.7.1"
   },
   "devDependencies": {
-    "@opencode-ai/sdk": "latest",
     "@types/bun": "latest",
     "@types/folder-hash": "^4.0.4",
     "@types/node": "latest",

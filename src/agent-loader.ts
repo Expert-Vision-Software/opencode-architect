@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { parse as parseYaml } from "yaml";
-import type { AgentConfig } from "@opencode-ai/sdk";
+import type { Agent } from "@opencode/plugin/effect";
 
 export const AGENT_FILENAMES: readonly string[] = [
   "opencode-agent-designer.md",
@@ -19,18 +19,22 @@ export const AGENT_FILENAMES: readonly string[] = [
 const FRONTMATTER_REGEX = /^---\r?\n([\s\S]*?)\r?\n---\r?\n([\s\S]*)$/;
 export const RELATIVE_REFERENCE_REGEX = /`((?:\.{1,2})(?:[\\/][^`\\/]+)+)`/g;
 
+export interface LoadedAgent {
+  name: string;
+  system: string;
+  description: string;
+  mode: Agent.Info["mode"];
+  permissions: Agent.Info["permissions"];
+}
+
 interface AgentFrontmatter {
   description: string;
-  mode: "primary" | "subagent" | "all";
-  tools?: Record<string, boolean>;
-  permission?: {
-    edit?: "ask" | "allow" | "deny";
-    bash?: ("ask" | "allow" | "deny") | Record<string, "ask" | "allow" | "deny">;
-    webfetch?: "ask" | "allow" | "deny";
-    doom_loop?: "ask" | "allow" | "deny";
-    external_directory?: "ask" | "allow" | "deny";
-  };
+  mode: Agent.Info["mode"];
+  tools: Record<string, boolean> | null;
+  permission: Record<string, PermissionEffect | Record<string, PermissionEffect>> | null;
 }
+
+type PermissionEffect = "allow" | "ask" | "deny";
 
 export class AgentLoader {
   private readonly agentsDir: string;
@@ -39,8 +43,8 @@ export class AgentLoader {
     this.agentsDir = agentsDir;
   }
 
-  public async loadAgents(): Promise<Record<string, AgentConfig>> {
-    const agents: Record<string, AgentConfig> = {};
+  public async loadAgents(): Promise<Record<string, LoadedAgent>> {
+    const agents: Record<string, LoadedAgent> = {};
 
     for (const filename of AGENT_FILENAMES) {
       const agentPath = path.join(this.agentsDir, filename);
@@ -56,7 +60,7 @@ export class AgentLoader {
     agentPath: string,
     content: string,
     agentName: string,
-  ): Promise<AgentConfig> {
+  ): Promise<LoadedAgent> {
     const match = content.match(FRONTMATTER_REGEX);
 
     if (!match || match.length < 3) {
@@ -66,26 +70,21 @@ export class AgentLoader {
     const frontmatterYaml = match[1] as string;
     const rawPrompt = match[2] as string;
     const frontmatter = parseYaml(frontmatterYaml) as AgentFrontmatter;
-    const prompt = this.resolveReferencePaths(
+    const system = this.resolveReferencePaths(
       rawPrompt.replace(/^\r?\n/, ""),
       path.dirname(agentPath),
     );
 
-    const config: AgentConfig = {
+    return {
+      name: agentName,
+      system,
       description: frontmatter.description,
       mode: frontmatter.mode,
-      prompt,
+      permissions: [
+        ...this.toolRules(frontmatter.tools ?? null),
+        ...this.permissionRules(frontmatter.permission ?? null),
+      ],
     };
-
-    if (frontmatter.tools) {
-      config.tools = frontmatter.tools;
-    }
-
-    if (frontmatter.permission) {
-      config.permission = frontmatter.permission;
-    }
-
-    return config;
   }
 
   private resolveReferencePaths(prompt: string, agentDir: string): string {
@@ -94,5 +93,37 @@ export class AgentLoader {
       const absolute = path.resolve(agentDir, normalized).replaceAll("\\", "/");
       return `\`${absolute}\``;
     });
+  }
+
+  private toolRules(tools: Record<string, boolean> | null): Agent.Info["permissions"] {
+    if (tools === null) return [];
+    return Object.entries(tools).map(([tool, enabled]) => ({
+      action: this.normalizeAction(tool),
+      resource: "*",
+      effect: enabled ? "allow" : "deny",
+    }));
+  }
+
+  private permissionRules(
+    permission: Record<string, PermissionEffect | Record<string, PermissionEffect>> | null,
+  ): Agent.Info["permissions"] {
+    if (permission === null) return [];
+    return Object.entries(permission).flatMap(([key, rule]) => {
+      if (typeof rule === "string") {
+        return [{ action: this.normalizeAction(key), resource: "*", effect: rule }];
+      }
+      return Object.entries(rule).map(([resource, effect]) => ({
+        action: this.normalizeAction(key),
+        resource,
+        effect,
+      }));
+    });
+  }
+
+  private normalizeAction(action: string): string {
+    if (action === "write" || action === "patch") return "edit";
+    if (action === "task") return "subagent";
+    if (action === "bash") return "shell";
+    return action;
   }
 }
