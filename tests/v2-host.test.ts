@@ -1,8 +1,9 @@
-import { describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { Effect } from "effect";
+import * as Host from "@opencode/plugin/host";
 import type { PermissionEvaluation } from "@opencode/plugin/effect/permission";
 import { OpencodeArchitectPlugin } from "../src/plugin";
 import { captureConsole } from "./test-helpers";
@@ -59,6 +60,7 @@ describe("v2 host entrypoint resolution (facts §14.6)", () => {
   test("a package exposing only the root index cannot resolve its server kind under Bun (settled facts §14.6)", async () => {
     const cacheRoot = await makeInstalledPackage({ exports: false, serverEntry: false });
     try {
+      expect(() => Host.resolve({ directory: cacheRoot, name: "opencode-architect" })).toThrow();
       expect(harness.resolveServerEntrypoint(cacheRoot, "opencode-architect")).toBeNull();
     } finally {
       await rm(cacheRoot, { recursive: true, force: true });
@@ -89,8 +91,16 @@ describe("built plugin under the v2 host contract", () => {
   const harness = new V2HostHarness();
   let mounted: Awaited<ReturnType<typeof harness.mountInstalledLayout>>;
 
-  test("the built entry satisfies the v2 Module contract through the real host loader", async () => {
+  beforeAll(async () => {
     mounted = await harness.mountInstalledLayout();
+  });
+
+  afterAll(async () => {
+    if (!mounted) return;
+    await mounted.dispose();
+  });
+
+  test("the built entry satisfies the v2 Module contract through the real host loader", async () => {
     const { check } = await harness.loadInstalled(mounted.cacheRoot);
     expect(check.violation).toBeNull();
     expect(check.effectKind).toBe("effect");

@@ -30,9 +30,7 @@ export class ConfigSchemaValidator {
 
 function stripJsonc(text: string): string {
   return blankComments(text).replace(/,(\s*[}\]])/g, "$1");
-}
-
-function blankComments(text: string): string {
+}function blankComments(text: string): string {
   const chars = text.split("");
   let inString = false;
   let inLineComment = false;
@@ -80,7 +78,7 @@ function blankComments(text: string): string {
   return chars.join("");
 }
 
-function flattenIssue(failure: unknown): string {
+export function flattenIssue(failure: unknown): string {
   const issue = (failure as { issue?: unknown } | null)?.issue;
   const message = (issue as { message?: unknown } | null)?.message;
   if (typeof message === "string" && message.length > 0) return message;

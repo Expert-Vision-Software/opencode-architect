@@ -47,10 +47,6 @@ async function makeProject(configFileName: string | null, contents: string | nul
   return projectDir;
 }
 
-async function readProducedConfig(configPath: string): Promise<string> {
-  return readFile(configPath, "utf-8");
-}
-
 function readmeQuickStartConfig(): string {
   const readme = readFileSync(path.join(REPO_ROOT, "README.md"), "utf-8");
   const match = readme.match(/```json\n([\s\S]*?)```/);
@@ -67,7 +63,7 @@ describe("produced fixture configs against the v2 config schema", () => {
     try {
       const outcome = await editor.ensurePluginEntry("opencode-architect", { scope: "local", projectDir });
       expect(outcome.action).toBe("created");
-      const text = await readProducedConfig(outcome.configPath ?? "");
+      const text = await readFile(outcome.configPath ?? "", "utf-8");
       const verdict = validator.validateText(text, true);
       expect(verdict.issue).toBeNull();
       expect(verdict.ok).toBe(true);
@@ -82,7 +78,7 @@ describe("produced fixture configs against the v2 config schema", () => {
     try {
       const outcome = await editor.ensurePluginEntry("opencode-architect", { scope: "local", projectDir });
       expect(outcome.action).toBe("updated");
-      const text = await readProducedConfig(outcome.configPath ?? "");
+      const text = await readFile(outcome.configPath ?? "", "utf-8");
       const verdict = validator.validateText(text, false);
       expect(verdict.issue).toBeNull();
       expect(verdict.ok).toBe(true);
@@ -99,7 +95,7 @@ describe("produced fixture configs against the v2 config schema", () => {
       const outcome = await editor.ensurePluginEntry("opencode-architect", { scope: "local", projectDir });
       expect(outcome.action).toBe("noop");
       expect(outcome.warning).toContain("legacy v1");
-      const text = await readProducedConfig(outcome.configPath ?? "");
+      const text = await readFile(outcome.configPath ?? "", "utf-8");
       const verdict = validator.validateText(text, false);
       expect(verdict.ok).toBe(true);
     } finally {
@@ -112,7 +108,7 @@ describe("produced fixture configs against the v2 config schema", () => {
     try {
       const outcome = await editor.ensurePluginEntry("opencode-architect", { scope: "local", projectDir });
       expect(outcome.action).toBe("updated");
-      const text = await readProducedConfig(outcome.configPath ?? "");
+      const text = await readFile(outcome.configPath ?? "", "utf-8");
       const verdict = validator.validateText(text, false);
       expect(verdict.ok).toBe(true);
       expect(verdict.config?.plugins).toEqual(["opencode-architect@latest", "kept-entry"]);
@@ -139,7 +135,7 @@ describe("produced fixture configs against the v2 config schema", () => {
   test("unparseable fixtures are reported as issues, never thrown", async () => {
     const projectDir = await makeProject("opencode.jsonc", "{ not json ]");
     try {
-      const text = await readProducedConfig(path.join(projectDir, "opencode.jsonc"));
+      const text = await readFile(path.join(projectDir, "opencode.jsonc"), "utf-8");
       const verdict = validator.validateText(text, true);
       expect(verdict.ok).toBe(false);
       expect(verdict.issue).toContain("not parseable");
@@ -155,14 +151,17 @@ describe("produced fixture configs against the v2 config schema", () => {
     ];
     for (const [fileName, contents] of variants) {
       const projectDir = await makeProject(null, null);
-      await mkdir(projectDir, { recursive: true });
-      await writeFile(path.join(projectDir, fileName), contents);
-      const outcome = await editor.ensurePluginEntry("opencode-architect", { scope: "local", projectDir });
-      expect(outcome.action).toBe("updated");
-      const text = await readProducedConfig(outcome.configPath ?? "");
-      const verdict = validator.validateText(text, fileName.endsWith(".jsonc"));
-      expect(verdict.ok).toBe(true);
-      await rm(projectDir, { recursive: true, force: true });
+      try {
+        await mkdir(projectDir, { recursive: true });
+        await writeFile(path.join(projectDir, fileName), contents);
+        const outcome = await editor.ensurePluginEntry("opencode-architect", { scope: "local", projectDir });
+        expect(outcome.action).toBe("updated");
+        const text = await readFile(outcome.configPath ?? "", "utf-8");
+        const verdict = validator.validateText(text, fileName.endsWith(".jsonc"));
+        expect(verdict.ok).toBe(true);
+      } finally {
+        await rm(projectDir, { recursive: true, force: true });
+      }
     }
   });
 });

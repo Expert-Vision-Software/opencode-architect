@@ -8,6 +8,7 @@ import { Agent, Plugin } from "@opencode/plugin/effect";
 import type { AgentEditor } from "@opencode/plugin/effect/agent";
 import type { PermissionEvaluation } from "@opencode/plugin/effect/permission";
 import { AGENT_FILENAMES } from "../src/agent-loader";
+import { flattenIssue } from "./config-schema-validator";
 
 const REPO_ROOT = path.resolve(import.meta.dirname, "..");
 const PACKAGE_NAME = "opencode-architect";
@@ -35,7 +36,6 @@ export interface HostAgentRecord {
   system: string;
   description: string;
   permissions: Array<{ action: string; resource: string; effect: string }>;
-  schemaDecoded: boolean;
   schemaIssue: string | null;
 }
 
@@ -54,7 +54,6 @@ export interface RecordingContext {
   context: Plugin.Context;
   agents: Map<string, unknown>;
   permissionHooks: Array<(input: PermissionEvaluation) => Effect.Effect<void>>;
-  restore: (() => void) | null;
 }
 
 const SUITE_MODES = new Set(["subagent", "primary"]);
@@ -68,7 +67,7 @@ export class V2HostHarness {
 
   public resolveServerEntrypoint(directory: string, name: string | null): string | null {
     try {
-      return serverKindEntry(directory, name);
+      return resolveServerKindEntrypoint(directory, name);
     } catch {
       return null;
     }
@@ -87,10 +86,10 @@ export class V2HostHarness {
     if (entrypoint === null) {
       throw new Error(`Host.resolve found no server entrypoint for ${PACKAGE_NAME} under ${cacheRoot}`);
     }
-    const check = this.moduleContract(await Host.load(entrypoint), entrypoint);
+    const loaded = (await Host.load(entrypoint)) as { default: unknown };
+    const check = this.moduleContract(loaded, entrypoint);
     if (check.violation !== null) throw new Error(`Built entry violates the v2 Module contract: ${check.violation}`);
-    const loaded = (await Host.load(entrypoint)) as { default: Plugin.Plugin };
-    return { definition: loaded.default, check };
+    return { definition: loaded.default as Plugin.Plugin, check };
   }
 
   public moduleContract(loaded: unknown, entrypoint: string): ModuleContractCheck {
@@ -124,7 +123,7 @@ export class V2HostHarness {
           }),
       },
     } as unknown as Plugin.Context;
-    return { context, agents, permissionHooks, restore: null };
+    return { context, agents, permissionHooks };
   }
 
   public activate(definition: Plugin.Plugin, recording: RecordingContext): Promise<void> {
@@ -159,8 +158,7 @@ export class V2HostHarness {
     const agent = normalizeAgent(record);
     const decoded = decodeAgentInfo(record);
     if (decoded._tag !== "Success") {
-      agent.schemaDecoded = false;
-      agent.schemaIssue = issueText(decoded.failure);
+      agent.schemaIssue = flattenIssue(decoded.failure);
       audit.violations.push(`agent ${name} does not decode against @opencode/schema Agent.Info: ${agent.schemaIssue}`);
     }
     if (!SUITE_MODES.has(agent.mode)) audit.violations.push(`agent ${name} has unsupported mode "${agent.mode}"`);
@@ -174,7 +172,7 @@ export class V2HostHarness {
   }
 }
 
-function serverKindEntry(directory: string, name: string | null): string | null {
+function resolveServerKindEntrypoint(directory: string, name: string | null): string | null {
   for (const subpath of SERVER_SUBPATHS) {
     const specifier =
       name === null ? path.resolve(directory, subpath || "index") : [name, subpath].filter(Boolean).join("/");
@@ -216,14 +214,6 @@ function normalizeAgent(record: unknown): HostAgentRecord {
     system: candidate.system ?? "",
     description: candidate.description ?? "",
     permissions: Array.isArray(candidate.permissions) ? candidate.permissions : [],
-    schemaDecoded: true,
     schemaIssue: null,
   };
-}
-
-function issueText(failure: unknown): string {
-  const issue = (failure as { issue?: unknown } | null)?.issue;
-  const message = (issue as { message?: unknown } | null)?.message;
-  if (typeof message === "string" && message.length > 0) return message;
-  return JSON.stringify(failure).slice(0, 300);
 }
