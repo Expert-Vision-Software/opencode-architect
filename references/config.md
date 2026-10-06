@@ -1,8 +1,8 @@
 # OpenCode config — fundamentals
 
 OpenCode v2 is configured with `opencode.json` or `opencode.jsonc` — legacy
-`config.json` is no longer read anywhere. Schema key: `"$schema":
-"https://opencode.ai/config.json"`. Facts per
+`config.json` is no longer read anywhere. Schema key:
+`"$schema": "https://opencode.ai/config.json"`. Facts per
 `docs/reference/opencode-v2-facts.md` §5 (schema, discovery), §4
 (permissions), §6 (v1→v2 mapping), §13 row 3.
 

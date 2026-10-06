@@ -49,7 +49,7 @@ and an `execute` handler). Facts §12.
 > against the pinned source before relying on specifics.
 
 - `$ARGUMENTS` — full argument string: `/component Button` → `Button`.
-- `$1`, `$2`, `$3` — positional args: `/create-file config.json src "content"` → `$1`=`config.json`, `$2`=`src`, `$3`=`content`.
+- `$1`, `$2`, `$3` — positional args: `/create-file notes.txt src "content"` → `$1`=`notes.txt`, `$2`=`src`, `$3`=`content`.
 - `` !`command` `` — inject shell output into the prompt (runs in the project root), e.g. ``!`git log --oneline -10` ``.
 - `@path/to/file` — include file content in the prompt.
 
