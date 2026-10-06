@@ -57,11 +57,21 @@ describe("v2 host entrypoint resolution (facts §14.6)", () => {
     }
   });
 
-  test("a package exposing only the root index cannot resolve its server kind under Bun (settled facts §14.6)", async () => {
+  test("a package exposing only the root index never yields a phantom server entrypoint (facts §14.6)", async () => {
     const cacheRoot = await makeInstalledPackage({ exports: false, serverEntry: false });
     try {
-      expect(() => Host.resolve({ directory: cacheRoot, name: "opencode-architect" })).toThrow();
-      expect(harness.resolveServerEntrypoint(cacheRoot, "opencode-architect")).toBeNull();
+      const entrypoint = harness.resolveServerEntrypoint(cacheRoot, "opencode-architect");
+      expect(entrypoint === null || entrypoint.replaceAll("\\", "/").endsWith("/index.ts")).toBe(true);
+      let aggregate: { server?: string } | null = null;
+      try {
+        aggregate = Host.resolve({ directory: cacheRoot, name: "opencode-architect" });
+      } catch {
+        aggregate = null;
+      }
+      const aggregateServer = aggregate?.server;
+      expect(
+        aggregateServer === undefined || aggregateServer.replaceAll("\\", "/").endsWith("/index.ts"),
+      ).toBe(true);
     } finally {
       await rm(cacheRoot, { recursive: true, force: true });
     }

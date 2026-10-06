@@ -14,7 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- **Registration loss under v2**: `package.json` now declares `exports["./server"]` pointing at the package entry — without it the host's server-kind resolution misses its only resolvable candidate under Bun (Bun's `ResolveMessage` is not an `Error`, so the root-index fallback's catch never fires) and the plugin is disabled at the entry stage; every consumer install was silently registering nothing
+- **Registration loss under v2**: `package.json` now declares `exports["./server"]` pointing at the package entry — without it, server-kind resolution depends on the root-index fallback, which is dead on Bun 1.3.x runtimes (Bun's `ResolveMessage` is not an `Error`, so the fallback's catch never fires) and the plugin is disabled at the entry stage; with the export declared, resolution is deterministic on every observed runtime
 
 ## [0.9.2] - 2026-10-04
 
