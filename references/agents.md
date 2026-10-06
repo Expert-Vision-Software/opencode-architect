@@ -1,11 +1,12 @@
 # OpenCode agents — fundamentals
 
-Agents are markdown-defined AI assistants. Locations (plural directory names):
-
-- Project: `.opencode/agents/`
-- Global: `~/.config/opencode/agents/`
-
-The filename becomes the agent name (`review.md` → `review` agent). The markdown body is the system prompt.
+Agents are markdown-defined AI assistants. Discovery scans config roots for
+`agent/` and `agents/` directories (`**/*.md`), plus `mode/` and `modes/`
+files (mode files are primary agents). Project: `.opencode/agents/` —
+global: `~/.config/opencode/agents/`. The filename becomes the agent name
+(`review.md` → `review` agent); the markdown body is the system prompt.
+Facts per `docs/reference/opencode-v2-facts.md` §3 (runtime record), §5
+(config-agent fields), §6 (v1→v2 frontmatter mapping).
 
 ## Types
 
@@ -15,56 +16,62 @@ The filename becomes the agent name (`review.md` → `review` agent). The markdo
 
 ## Frontmatter fields
 
-Every frontmatter property value is enclosed in double quotation marks — `description: "..."`, `mode: "subagent"` — never bare values; the only exception is a value the schema requires as a native boolean or number (checklist D6).
+Every frontmatter property value is enclosed in double quotation marks —
+`description: "..."`, `mode: "subagent"` — never bare values; the only
+exception is a value the schema requires as a native boolean or number
+(checklist D6).
+
+v1 fields are mapped, not dropped: `prompt` → `system` (the markdown body),
+`temperature`/`top_p`/provider extras → `request` (passthrough into request
+options/body), `tools` boolean map → `permissions` rules, `maxSteps` →
+`steps`, `disable` → `disabled`. Facts §6.
 
 | Field | Required | Notes |
 | --- | --- | --- |
-| `description` | yes | What the agent does and when to use it. Drives subagent selection. |
-| `mode` | no | `primary`, `subagent`, or `all` (default `all`). |
-| `model` | no | `provider/model-id` (e.g. `anthropic/claude-sonnet-4-5`). Unset: primary uses the configured global model; subagents inherit the invoking agent's model. |
-| `temperature` | no | 0.0–1.0. Low (0.0–0.2) focused/deterministic; high (0.6+) creative. Model-specific defaults apply if unset. |
-| `steps` | no | Max agentic iterations before forced text-only summary. `maxSteps` is deprecated. |
-| `tools` | no | **Deprecated** boolean map (`write: false`, `bash: false`, `mymcp_*: false`). Prefer `permission`. |
-| `permission` | no | Allow/ask/deny control, per key or per glob pattern (see below). |
-| `hidden` | no | `true` hides a `subagent` from the `@` menu; still invokable via Task tool. |
-| `disable` | no | `true` disables the agent. |
-| `color` | no | Hex (e.g. `#ff6b6b`) or theme color (`primary`, `accent`, ...). |
-| `top_p` | no | Alternative randomness control, 0.0–1.0. |
-| other keys | no | Passed through to the provider as model options (e.g. `reasoningEffort`). |
+| `description` | no | Optional in v2 — but keep writing it: it drives subagent selection. |
+| `mode` | no | `"primary"`, `"subagent"`, or `"all"` (default `"all"`). |
+| `model` | no | A selection object: `{ "providerID": "anthropic", "model": "claude-sonnet-4-5" }` (optional `"variant"`). Unset: primary uses the configured global model; subagents inherit the invoking agent's model. |
+| `request` | no | Provider request options — sampling controls like temperature live here, not as top-level fields. |
+| `steps` | no | Max agentic iterations before forced text-only summary. (`maxSteps` is deprecated.) |
+| `permissions` | no | Ordered ruleset array (see below) — replaces v1 `permission`/`tools`. |
+| `hidden` | no | `true` hides a `"subagent"` from the `@` menu; still invokable via Task tool. |
+| `disabled` | no | `true` disables the agent. |
+| `color` | no | Hex only (e.g. `"#ff6b6b"`) — v2 accepts no theme color names. |
+| `system` | no | Inline system prompt (JSON config; in markdown the body is the system prompt). |
 
 ## Permissions
 
-Values: `"allow"`, `"ask"`, `"deny"`. Either shorthand or an object of glob/pattern → action.
-
-Keys: `read`, `edit`, `glob`, `grep`, `list`, `bash`, `task`, `webfetch`, `websearch`, `external_directory`, `todowrite`, `skill`, `lsp`, `question`, `doom_loop`.
-
-- `edit` gates all file modifications: `write`, `edit`, `apply_patch`.
-- `todowrite` gates `todowrite` and `todoread`.
-- Shorthand-only keys: `webfetch`, `websearch`, `external_directory`, `question`, `doom_loop`, `lsp` (also accepts patterns — check schema when in doubt).
-
-Bash command scoping (last matching rule wins; put `*` first, specific rules after):
+v2 permissions are an **ordered array** of `{ action, resource, effect }`
+rules. The last matching rule wins; wildcards are allowed in both action and
+resource. Actions include the tool names (`read`, `edit`, `shell`,
+`subagent`, `glob`, `grep`, `webfetch`, `websearch`, `question`, `skill`)
+plus `*`, `external_directory`, and `provider.use` — the vocabulary is an
+open string. `edit` gates all file modification (`write`, `edit`, `patch`).
+Facts §4.
 
 ```yaml
-permission:
-  bash:
-    "*": ask
-    "git status *": allow
-    "git push": ask
-  webfetch: deny
+permissions:
+  - { action: "*", resource: "*", effect: "allow" }
+  - { action: "shell", resource: "*", effect: "ask" }
+  - { action: "shell", resource: "git status*", effect: "allow" }
+  - { action: "shell", resource: "git push", effect: "ask" }
 ```
 
-Task (subagent) scoping with globs — denied subagents are removed from the Task tool description:
+Subagent (Task) scoping with resource globs:
 
 ```yaml
-permission:
-  task:
-    "*": deny
-    "orchestrator-*": allow
-    "code-reviewer": ask
+permissions:
+  - { action: "subagent", resource: "*", effect: "deny" }
+  - { action: "subagent", resource: "orchestrator-*", effect: "allow" }
+  - { action: "subagent", resource: "code-reviewer", effect: "ask" }
 ```
 
-Users can always invoke any subagent directly via `@` regardless of task permissions.
+Built-in agent defaults allow everything except: `external_directory`
+(asks, with batch approval and glob resources) and `read` on `.env` files.
+Facts §3–4.
 
 ## JSON alternative
 
-Agents can also be configured under the `agent` key in `opencode.json` with the same options plus `prompt` (inline string or `{file:./path}` relative to the config file). Markdown files are preferred for readability.
+Agents can also be configured under the `agents` key in `opencode.json` —
+same fields, with the system prompt in `system` (inline string or file
+reference). Markdown files are preferred for readability. Facts §5.
