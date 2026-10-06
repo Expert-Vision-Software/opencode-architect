@@ -96,9 +96,17 @@ describe("cli", () => {
     if (process.getuid?.() === 0) return;
     const dir = await mkdtemp(path.join(tmpdir(), "oa-cli-"));
     const cacheDir = await mkdtemp(path.join(tmpdir(), "oa-cli-cache-"));
-    const blocked = path.join(cacheDir, "opencode", "npm", "opencode-architect@latest", "nested");
+    const blocked = path.join(
+      cacheDir,
+      "opencode",
+      "npm",
+      "opencode-architect@latest",
+      "1738848000000",
+      "node_modules",
+      "opencode-architect",
+    );
     await mkdir(blocked, { recursive: true });
-    await writeFile(path.join(blocked, "file.txt"), "cached");
+    await writeFile(path.join(blocked, "index.ts"), "cached");
     await chmod(blocked, 0o500);
     try {
       const run = await runCli(["install"], dir, { XDG_CACHE_HOME: cacheDir });
@@ -108,7 +116,7 @@ describe("cli", () => {
       expect(run.stderr).toContain(`Could not clear cached package ${path.join(cacheDir, "opencode", "npm", "opencode-architect@latest")}`);
       expect(existsSync(path.join(cacheDir, "opencode", "npm", "opencode-architect"))).toBe(false);
     } finally {
-      await chmod(blocked, 0o700);
+      await chmod(blocked, 0o700).catch(() => {});
       await rm(dir, { recursive: true, force: true });
       await rm(cacheDir, { recursive: true, force: true });
     }
@@ -148,7 +156,7 @@ describe("cli clear-cache", () => {
 
       expect(run.exitCode).toBe(0);
       expect(existsSync(ours)).toBe(false);
-      expect(existsSync(path.join(cacheDir, "opencode", "packages", "opencode-architect@latest"))).toBe(false);
+      expect(existsSync(path.join(cacheDir, "opencode", "npm", "opencode-architect@latest"))).toBe(false);
       expect(existsSync(other)).toBe(true);
     } finally {
       await rm(cacheDir, { recursive: true, force: true });

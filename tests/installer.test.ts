@@ -471,7 +471,13 @@ describe("Installer.install cache pruning", () => {
 
   test("removal failure warns but the install still succeeds", async () => {
     await seedCache();
-    const blocked = path.join(cacheRoot(), "opencode-architect@latest", "nested");
+    const blocked = path.join(
+      cacheRoot(),
+      "opencode-architect@latest",
+      "1738848000000",
+      "node_modules",
+      "opencode-architect",
+    );
     await chmod(blocked, 0o500);
     try {
       const outcome = await install("local");
@@ -482,7 +488,7 @@ describe("Installer.install cache pruning", () => {
       expect(existsSync(path.join(cacheRoot(), "opencode-architect"))).toBe(false);
       expect(existsSync(path.join(cacheRoot(), "opencode-architect@latest"))).toBe(true);
     } finally {
-      await chmod(blocked, 0o700);
+      await chmod(blocked, 0o700).catch(() => {});
     }
   });
 

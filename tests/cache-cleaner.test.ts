@@ -198,7 +198,7 @@ describe("clearCache failure tolerance", () => {
       expect(outcome.warnings.length).toBe(1);
       expect(outcome.warnings[0]).toContain(kept);
     } finally {
-      await chmod(kept, 0o700);
+      await chmod(kept, 0o700).catch(() => {});
     }
   });
 });
