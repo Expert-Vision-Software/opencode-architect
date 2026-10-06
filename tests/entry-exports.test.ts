@@ -16,10 +16,11 @@ describe("package entry module", () => {
     expect(nonDefaultKeys(mod)).toEqual([]);
   });
 
-  test("default export is callable without new and yields a config hook", async () => {
+  test("default export is a v2 plugin definition with a stable id and an effect", async () => {
     const mod = await importEntry();
-    const factory = mod.default as unknown as () => Promise<Record<string, unknown>>;
-    const hooks = await factory();
-    expect(typeof hooks.config).toBe("function");
+    const definition = mod.default as unknown as { id: unknown; effect: unknown };
+    expect(typeof definition.id).toBe("string");
+    expect((definition.id as string).length).toBeGreaterThan(0);
+    expect(typeof definition.effect).toBe("function");
   });
 });
