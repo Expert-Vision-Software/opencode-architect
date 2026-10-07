@@ -5,16 +5,19 @@
 | `EXTENSION NAME` → "myextension" | Yes | Extension identifier used in the advisory text | — |
 | `SKILL NAME` → "myextension" | Yes | Must match the folder name in skills/ at the package root | — |
 | `COMMAND NAME` → "my-command.md" | Yes | Command file name in commands/ at the package root | — |
-| `PACKAGE NAME` → "opencode-myextension" | Yes | npm package name; must match package.json | — |
+| `PACKAGE NAME` → "opencode-myextension" | Yes | npm package name; must match package.json; also the stable plugin id | — |
 
-**Load-bearing — do not simplify:** scope detection is read-only config inspection (both `opencode.json` and `opencode.jsonc`, global and project, plus global `config.json` via the detector), never launch-directory checks and never any directory-identity comparison (`import.meta.dirname`, `process.cwd()`, realpath) — a maintainer's own checkout is served by that repo's own config registration; the hook calls only `ensureAssets` — it never resolves an install mode, never edits `plugin` arrays, permission, or any config file, and writes stay inside the detected registration scope(s) only; assets-only and code-backed packages share this hook unchanged: assets are ensured in registered scopes either way, and code-backed assets resolve from the package at load; the **entire hook body** (detection, ensures, advisory) is wrapped in try/catch so a failure degrades to a warning and OpenCode still launches — hooks must never throw; the failure advisory names both the remediation command (`bunx <package> install --scope global`) and the package-qualified cache dir (`~/.cache/opencode/packages/<package>@<version>`), tells the consumer to run `bunx <package> clear-cache` for a partial cache artifact instead of describing manual removal, is built inside its own try/catch with a static fallback, and each emitter swallows independently; the failure advisory and the not-installed advisory carry **separate** once-guards so neither suppresses the other; the zero-write no-op covers a fully matching manifest **and** a present plugin entry (an up-to-date manifest alone is not enough for plugin installs), so a healthy startup performs no writes at all; the hook never deletes the cache — it instructs only.
+**Load-bearing — do not simplify:** the entry is an Effect-first v2 plugin definition (`Plugin.define({ id, effect })` from `@opencode/plugin/effect`) whose `id` is the stable package name — duplicate ids die activation and storage is scoped per id (facts §2); scope detection is read-only config inspection (both `opencode.json` and `opencode.jsonc`, global and project, plus global `config.json` via the detector), reading the launch directory from `context.location.directory` — never directory-identity comparisons (`import.meta.dirname`, `process.cwd()`, realpath) — a maintainer's own checkout is served by that repo's own config registration; the effect body calls only `ensureAssets` — it never resolves an install mode, never edits `plugins` arrays, permission, or any config file, and writes stay inside the detected registration scope(s) only; assets-only and code-backed packages share this body unchanged: assets are ensured in registered scopes either way, and code-backed assets resolve from the package at load; the **entire effect body** (detection, ensures, advisory) is wrapped so a failure degrades to a warning and OpenCode still launches — the effect's error channel stays `never` and it must never interrupt startup (ADR-0007); the failure advisory names both the remediation command (`bunx <package> install --scope global`) and the package-qualified cache dir (`<cacheRoot>/opencode/npm/<package>@<version>`), tells the consumer to run `bunx <package> clear-cache` for a partial cache artifact instead of describing manual removal, is built inside its own guarded effect with a static fallback, and each emitter swallows independently; the failure advisory and the not-installed advisory carry **separate** once-guards so neither suppresses the other; the zero-write no-op covers a fully matching manifest **and** a present plugin entry (an up-to-date manifest alone is not enough for plugin installs), so a healthy startup performs no writes at all; the effect never deletes the cache — it instructs only.
 
 ---
-import type { Plugin } from "@opencode-ai/plugin";
-import { ensureAssets, isInstalledAnywhere } from "./installer.ts";
+import { sep } from "node:path";
+import { Effect, type Scope } from "effect";
+import { Plugin } from "@opencode/plugin/effect";
+import { ensureAssets, isInstalledAnywhere, packageCacheRoot } from "./installer.ts";
 import { RegistrationDetector, type RegistrationScope } from "./registration.ts";
 
 const PACKAGE_NAME = "opencode-myextension";
+const EXTENSION_TITLE = "MyExtension";
 
 let notInstalledAdvised = false;
 let failureAdvised = false;
@@ -22,7 +25,7 @@ let failureAdvised = false;
 async function adviseNotInstalledOnce(): Promise<void> {
   if (notInstalledAdvised) return;
   notInstalledAdvised = true;
-  console.log(`\nOpenCode MyExtension is not registered in any scope.`);
+  console.log(`\nOpenCode ${EXTENSION_TITLE} is not registered in any scope.`);
   console.log(`  Install globally: bunx ${PACKAGE_NAME} install --scope global`);
   console.log(`  Install locally:  bunx ${PACKAGE_NAME} install\n`);
 }
@@ -36,35 +39,54 @@ async function adviseFailureOnce(message: string): Promise<void> {
     try {
       version = JSON.parse(await Bun.file(`${import.meta.dirname}/../package.json`).text()).version ?? version;
     } catch {}
-    text = `MyExtension load-time install failed. Run: bunx ${PACKAGE_NAME} clear-cache, then: bunx ${PACKAGE_NAME} install --scope global. The stale cache copy is ~/.cache/opencode/packages/${PACKAGE_NAME}@${version}. Cause: ${message}`;
+    const cacheCopy = `${packageCacheRoot()}${sep}${PACKAGE_NAME}@${version}`;
+    text = `${EXTENSION_TITLE} load-time install failed. Run: bunx ${PACKAGE_NAME} clear-cache, then: bunx ${PACKAGE_NAME} install --scope global. The stale cache copy is ${cacheCopy}. Cause: ${message}`;
   } catch {
-    text = `MyExtension load-time install failed. Run: bunx ${PACKAGE_NAME} clear-cache, then: bunx ${PACKAGE_NAME} install --scope global (the stale copy lives under ~/.cache/opencode/packages/)`;
+    text = `${EXTENSION_TITLE} load-time install failed. Run: bunx ${PACKAGE_NAME} clear-cache, then: bunx ${PACKAGE_NAME} install --scope global (the stale copy lives under the OpenCode npm cache)`;
   }
   try {
     console.warn(`[${PACKAGE_NAME}] ${text}`);
   } catch {}
 }
 
-const plugin: Plugin = async ({ directory }) => ({
-  config: async () => {
-    try {
-      const scope: RegistrationScope = await new RegistrationDetector(PACKAGE_NAME).detect(directory);
-      if (scope === "none") {
-        await adviseNotInstalledOnce();
-        return;
-      }
-      if (scope === "global" || scope === "both") {
-        await ensureAssets("global", directory, false);
-      }
-      if (scope === "repo-local" || scope === "both") {
-        await ensureAssets("local", directory, false);
-      }
-      if (await isInstalledAnywhere(directory)) return;
-      await adviseNotInstalledOnce();
-    } catch (error) {
-      await adviseFailureOnce(error instanceof Error ? error.message : String(error));
-    }
-  },
+function advisoryEffect(run: () => Promise<void>): Effect.Effect<void, never, never> {
+  return Effect.asVoid(
+    Effect.orElseSucceed(Effect.tryPromise({ try: run, catch: () => "advisory failed" }), () => undefined),
+  );
+}
+
+function ensureRegisteredScopeAssets(context: Plugin.Context): Effect.Effect<void, never, Scope.Scope> {
+  return Effect.asVoid(
+    Effect.catchAll(
+      Effect.tryPromise({
+        try: async () => {
+          const directory = context.location.directory;
+          const scope: RegistrationScope = await new RegistrationDetector(PACKAGE_NAME).detect(directory);
+          if (scope === "none") {
+            await adviseNotInstalledOnce();
+            return;
+          }
+          if (scope === "global" || scope === "both") {
+            await ensureAssets("global", directory, false);
+          }
+          if (scope === "repo-local" || scope === "both") {
+            await ensureAssets("local", directory, false);
+          }
+          if (await isInstalledAnywhere(directory)) return;
+          await adviseNotInstalledOnce();
+        },
+        catch: (error) => (error instanceof Error ? error.message : String(error)),
+      }),
+      (message) => advisoryEffect(() => adviseFailureOnce(message)),
+    ),
+  );
+}
+
+const plugin = Plugin.define({
+  id: PACKAGE_NAME,
+  effect: Effect.fn(function* (context) {
+    yield* ensureRegisteredScopeAssets(context);
+  }),
 });
 
 export default plugin;
