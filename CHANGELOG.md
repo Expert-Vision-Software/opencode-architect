@@ -7,14 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-10-07
+
+### Changed
+
+- **Breaking:** The package targets the OpenCode **v2 line only** ([ADR-0012](docs/adr/0012-v2-native-only.md)). v2 replaced the extension SDK — a v1 plugin implementation does not run under a v2 host — and a dual-target package would keep a dead code path alive while forcing the teaching surface (our actual product) to serve two vocabularies at once. No dual entrypoint and no v1 host support; consumers on v1 hosts must stay on a pre-1.0 release. Superseding notes land on [ADR-0010](docs/adr/0010-plugin-entry-module-default-only.md) and [ADR-0011](docs/adr/0011-package-root-holds-only-the-entry.md) — their structural rules survive under the v2 contract.
+- **Breaking:** The plugin runtime is ported to the **v2 Effect-first plugin API** (issue #25). The entry default-exports a plugin definition (`Plugin.define({ id, effect })`) built against `@opencode/plugin/effect`; agents register through the agent-domain transform, skills and commands through their own domain transforms, and the external-directory allow is re-derived as a permission `evaluate` hook (the v1 `permission-registrar` is gone). Prompt-path rewriting, at-most-once advisories, and the startup non-interference invariant are preserved.
+- **Breaking:** The entire guidance suite is rewritten in place to v2 facts (issue #28): references, worked one-shots, and the conformance checklist now teach the v2 `plugins` registration key, Effect-first plugin definitions, the hook-family map, ruleset permissions, plugin-registered tools with JSON-Schema arguments, and v2 config/agent/command/skill/MCP shapes. No v1 archive ships — git history is the archive — and v1 names appear only inside explicit v1→v2 migration mappings.
+- **Breaking:** All ten agent definitions are updated to v2 (issue #30): the packager and publisher emit v2-native `plugins`-key registration snippets and consumer instructions; the tool-builder pivots to plugin-registered tools with a v1 tool-file port path; the plugin-engineer teaches Effect-first authoring and the hook-family map; the extension-auditor inventories and judges v2 targets.
+- **Breaking:** Generated packages are v2-native and Effect-first (issue #29): the plugin-entry template renders `Plugin.define` with a never-throw effect, package manifests declare `exports["./server"]`, the registration/manifest templates read and write the `plugins` key, and the installer follows the v2 npm cache location.
+- Installer and config machinery write v2-native registrations and tolerate legacy v1 `plugin` entries read-only with an upgrade advisory — never migrated silently, never written back (issue #26). Manifest gating, registration-scope detection, the zero-write no-op, partial-cache-artifact detection, and the copy-mode refusal for code-backed packages are preserved.
+- Repo content is v2-consistent: README, CONTRIBUTING, and AGENTS.md; the domain glossary gains the v2 vocabulary (plugin registration key, plugin definition shape, tool registration).
+
 ### Added
 
-- V2 verification harness (issue #27, child of spec #23): `tests/v2-host.test.ts` loads the built package entry the way the v2 host does — real `@opencode/plugin` Effect activation, registrations audited against `@opencode/schema` `Agent.Info` (all ten agents, permission `evaluate` hook) and fails on registration loss; `tests/fixture-config-schema.test.ts` validates every produced fixture config (created default, splices, legacy-tolerated no-ops, README quick-start snippet) against the pinned `Config.Info`; a dedicated `V2 verification harness` CI job gates both
-- `docs/reference/opencode-v2-facts.md` §14 dispositions from the harness run: root-index entrypoint fallback settled negative under Bun (§13 row 9) with per-item reachability for the remaining open flags
+- One-shot consumer v1→v2 upgrade (issue #31): the bundled `opencode-v2-upgrade` skill and the `/upgrade-opencode-v2` slash command, both registered at load. Say "upgrade my plugin/extensions package to opencode v2" and the suite inventories the extensions, ports v1 plugin code to the Effect-first v2 API, ports v1 file-based tools to plugin-registered tools, rewrites consumer configs to v2-native keys, and closes with a report recommending v2 capabilities worth adopting (richer session hooks, plugin RPC, TUI plugins, MCP Code Mode, saved approvals). It no-ops byte-for-byte on already-v2 projects, skips consumer-modified files by hash, and never touches the OpenCode application installation.
+- `docs/reference/opencode-v2-facts.md` (issue #24): the verified-facts record for opencode v2.0.23 — every API fact the suite teaches traced to a pinned source snapshot, with doc-vs-source contradictions adjudicated.
+- V2 verification harness (issue #27): `tests/v2-host.test.ts` loads the built package entry the way a v2 host does — real `@opencode/plugin` Effect activation, registrations audited against `@opencode/schema` `Agent.Info` (all ten agents, permission `evaluate` hook) — and `tests/fixture-config-schema.test.ts` validates every produced fixture config against the pinned `Config.Info`; a dedicated `V2 verification harness` CI job gates both.
+- Docs-fact gate (issue #28): `tests/docs-fact-gate.test.ts` fails the build when a known-false v1 claim re-enters `references/` or a changed fact is not cited to the verified-facts record.
+- `CONTRIBUTING.md`: the v2 fact policy, the gates, and the Effect-first house style.
 
 ### Fixed
 
-- **Registration loss under v2**: `package.json` now declares `exports["./server"]` pointing at the package entry — without it, server-kind resolution depends on the root-index fallback, which is dead on Bun 1.3.x runtimes (Bun's `ResolveMessage` is not an `Error`, so the fallback's catch never fires) and the plugin is disabled at the entry stage; with the export declared, resolution is deterministic on every observed runtime
+- **Registration loss under v2**: `package.json` declares `exports["./server"]` pointing at the package entry. Without it, server-kind resolution depended on the root-index fallback, which is dead on Bun 1.3.x (`ResolveMessage` is not an `Error`, so the fallback's catch never fires) and the plugin was disabled at the entry stage; with the export declared, resolution is deterministic on every observed runtime.
+- Windows test suite (issue #36): cache-removal and tarball tests pass on Windows — deterministic removal-failure injection through an `rm` seam and win32-safe tarball root resolution.
 
 ## [0.9.2] - 2026-10-04
 
