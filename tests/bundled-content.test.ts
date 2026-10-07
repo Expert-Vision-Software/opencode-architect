@@ -3,10 +3,12 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { CommandLoader, COMMAND_FILENAMES } from "../src/command-loader";
 import { SkillLoader, UPGRADE_SKILL_ID } from "../src/skill-loader";
+import { ConfigSchemaValidator } from "./config-schema-validator";
 import { DocsFactGate } from "./docs-fact-gate";
 
 const ROOT = path.resolve(import.meta.dirname, "..");
 const FIXTURE = path.join(ROOT, "tests", "fixtures", "v1-extension-package");
+const V2_FIXTURE = path.join(ROOT, "tests", "fixtures", "v2-extension-package");
 const gate = new DocsFactGate(ROOT);
 
 const SKILL_PATHS = [path.join(ROOT, "skills", UPGRADE_SKILL_ID, "SKILL.md")];
@@ -56,9 +58,6 @@ describe("bundled upgrade command", () => {
     expect(command.description.length).toBeGreaterThan(0);
     expect(command.template).toContain("$ARGUMENTS");
     expect(command.template).toContain(UPGRADE_SKILL_ID);
-
-    const raw = await readFile(COMMAND_PATHS[0] as string, "utf-8");
-    expect(raw).toContain('agent: "opencode-architect"');
   });
 });
 
@@ -97,5 +96,67 @@ describe("the upgrade guidance covers the v1 fixture package", () => {
     expect(content).toContain("v1 plugin file");
     expect(content).toContain(".opencode/tools");
     expect(content).toContain("tool.schema");
+  });
+});
+
+describe("the golden v2 fixture is the upgraded output of the v1 fixture", () => {
+  test("the rewritten config validates against the pinned v2 schema", async () => {
+    const text = await readFile(path.join(V2_FIXTURE, ".opencode", "opencode.json"), "utf-8");
+    const verdict = new ConfigSchemaValidator().validateText(text, false);
+    expect(verdict.issue).toBeNull();
+    expect(verdict.ok).toBe(true);
+  });
+
+  test("the upgraded config carries no v1 key", async () => {
+    const text = await readFile(path.join(V2_FIXTURE, ".opencode", "opencode.json"), "utf-8");
+    const config = JSON.parse(text) as Record<string, unknown>;
+
+    for (const key of [
+      "plugin",
+      "permission",
+      "agent",
+      "command",
+      "tools",
+      "autoupdate",
+      "small_model",
+      "attachment",
+      "snapshot",
+      "reference",
+    ]) {
+      expect(config, `v1 key ${key} survived the upgrade`).not.toHaveProperty(key);
+    }
+    expect(config).toHaveProperty("plugins");
+    expect(config).toHaveProperty("permissions");
+    expect(config).toHaveProperty("agents");
+    expect(config).toHaveProperty("commands");
+  });
+
+  test("the ported plugin uses the Effect-first v2 API and no v1 authoring package", async () => {
+    const plugin = await readFile(path.join(V2_FIXTURE, ".opencode", "plugins", "notify.ts"), "utf-8");
+    expect(plugin).toContain("Plugin.define");
+    expect(plugin).toContain("@opencode/plugin/effect");
+    expect(plugin).not.toContain("@opencode-ai/plugin");
+  });
+
+  test("the ported agent drops top-level v1 frontmatter fields", async () => {
+    const agent = await readFile(path.join(V2_FIXTURE, ".opencode", "agents", "pr-reviewer.md"), "utf-8");
+    expect(agent).not.toMatch(/^(prompt|maxSteps|disable|temperature|top_p|tools|permission):/m);
+    expect(agent).toMatch(/^request:/m);
+    expect(agent).toMatch(/^steps:/m);
+    expect(agent).toMatch(/^permissions:/m);
+  });
+
+  test("the ported skill drops the v1-only license and metadata fields", async () => {
+    const skill = await readFile(path.join(V2_FIXTURE, ".opencode", "skills", "release-notes", "SKILL.md"), "utf-8");
+    expect(skill).not.toMatch(/^(license|metadata|compatibility):/m);
+  });
+
+  test("the upgrade produced a recommendations report naming the v2 capabilities", async () => {
+    const report = await readFile(path.join(V2_FIXTURE, "upgrade-report.md"), "utf-8");
+    for (const capability of ["session hooks", "RPC", "TUI plugins", "Code Mode", "Saved approvals"]) {
+      expect(report).toContain(capability);
+    }
+    expect(report).toContain("application installation was not touched");
+    expect(report).toContain("clean no-op");
   });
 });

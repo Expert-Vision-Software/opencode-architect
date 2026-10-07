@@ -6,9 +6,11 @@ description: "Upgrades a consumer's OpenCode v1 extension package or .opencode/ 
 # OpenCode v2 one-shot consumer upgrade
 
 Run a v1 → v2 upgrade for one project in a single pass. Every opencode API
-claim below traces to `docs/reference/opencode-v2-facts.md` (cited as
-"facts §n"); cite the fact, do not restate fragile API details. When the
-suite's facts record is not on disk, say so before asserting any API shape.
+claim below traces to the suite's verified-facts record (cited as "facts §n");
+the mapping and rules in this skill are self-contained, so cite the fact
+number rather than restating fragile API details. The facts record itself
+lives in the suite repository as `opencode-v2-facts.md` — a maintainer source
+of truth, not a consumer runtime dependency.
 
 ## Done when
 
@@ -164,9 +166,9 @@ Write one report with these sections:
 
 ## References
 
-- `docs/reference/opencode-v2-facts.md` — the single source of truth for
-  every opencode v2 fact cited above.
-- `references/config.md`, `references/plugins.md`, `references/tools.md`,
-  `references/agents.md` — v2 fundamentals.
+- The suite's verified-facts record (`opencode-v2-facts.md`) — the source of
+  truth behind every "facts §n" citation above (maintainer copy).
+- The suite's bundled v2 fundamentals: `references/config.md`,
+  `references/plugins.md`, `references/tools.md`, `references/agents.md`.
 - `references/conformance-checklist.md` — the v2 conformance rubric to
   check the upgraded package against.

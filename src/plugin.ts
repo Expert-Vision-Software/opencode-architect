@@ -82,31 +82,18 @@ export class OpencodeArchitectPlugin {
     content: BundledContent,
   ): Effect.Effect<void, never, Scope.Scope> {
     const plugin = this;
-    return Effect.flatMap(
-      context.agent.transform((editor) => {
+    return Effect.gen(function* () {
+      yield* context.agent.transform((editor) => {
         for (const agent of Object.values(content.agents)) plugin.injectAgent(editor, agent);
-      }),
-      () =>
-        Effect.flatMap(
-          context.skill.transform((editor) => {
-            for (const skill of content.skills) editor.add(plugin.toSkillInfo(skill));
-          }),
-          () =>
-            Effect.flatMap(
-              context.command.transform((editor) => {
-                for (const command of content.commands) {
-                  editor.add(plugin.toCommandDefinition(context, command));
-                }
-              }),
-              () =>
-                Effect.asVoid(
-                  context.permission.hook("evaluate", (input) =>
-                    Effect.sync(() => plugin.advisor.evaluate(input)),
-                  ),
-                ),
-            ),
-        ),
-    );
+      });
+      yield* context.skill.transform((editor) => {
+        for (const skill of content.skills) editor.add(plugin.toSkillInfo(skill));
+      });
+      yield* context.command.transform((editor) => {
+        for (const command of content.commands) editor.add(plugin.toCommandDefinition(context, command));
+      });
+      yield* context.permission.hook("evaluate", (input) => Effect.sync(() => plugin.advisor.evaluate(input)));
+    });
   }
 
   private injectAgent(editor: AgentEditor, loaded: LoadedAgent): void {

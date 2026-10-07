@@ -1,10 +1,8 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
-import { parse as parseYaml } from "yaml";
+import { FrontmatterParser } from "./frontmatter";
 
 export const COMMAND_FILENAMES: readonly string[] = ["upgrade-opencode-v2.md"];
-
-const FRONTMATTER_REGEX = /^---\r?\n([\s\S]*?)\r?\n---\r?\n([\s\S]*)$/;
 
 export interface LoadedCommand {
   name: string;
@@ -18,6 +16,7 @@ interface CommandFrontmatter {
 
 export class CommandLoader {
   private readonly commandsDir: string;
+  private readonly frontmatter = new FrontmatterParser();
 
   public constructor(commandsDir: string) {
     this.commandsDir = commandsDir;
@@ -36,19 +35,13 @@ export class CommandLoader {
   private async loadCommand(filename: string): Promise<LoadedCommand> {
     const commandPath = path.join(this.commandsDir, filename);
     const content = await readFile(commandPath, "utf-8");
-    const match = content.match(FRONTMATTER_REGEX);
-
-    if (!match || match.length < 3) {
-      throw new Error(`Command ${filename} must have YAML frontmatter`);
-    }
-
-    const frontmatter = parseYaml(match[1] as string) as CommandFrontmatter;
-    const template = (match[2] as string).replace(/^\r?\n/, "").trimEnd();
+    const document = this.frontmatter.parse(content, `Command ${filename}`);
+    const frontmatter = document.attributes as unknown as CommandFrontmatter;
 
     return {
       name: path.basename(filename, ".md"),
       description: this.commandDescription(frontmatter, filename),
-      template,
+      template: document.body.trimEnd(),
     };
   }
 

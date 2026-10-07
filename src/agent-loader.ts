@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
-import { parse as parseYaml } from "yaml";
 import type { Agent } from "@opencode/plugin/effect";
+import { FrontmatterParser } from "./frontmatter";
 
 export const AGENT_FILENAMES: readonly string[] = [
   "opencode-agent-designer.md",
@@ -16,7 +16,6 @@ export const AGENT_FILENAMES: readonly string[] = [
   "opencode-tool-builder.md",
 ];
 
-const FRONTMATTER_REGEX = /^---\r?\n([\s\S]*?)\r?\n---\r?\n([\s\S]*)$/;
 export const RELATIVE_REFERENCE_REGEX = /`((?:\.{1,2})(?:[\\/][^`\\/]+)+)`/g;
 
 export interface LoadedAgent {
@@ -38,6 +37,7 @@ type PermissionEffect = "allow" | "ask" | "deny";
 
 export class AgentLoader {
   private readonly agentsDir: string;
+  private readonly frontmatter = new FrontmatterParser();
 
   public constructor(agentsDir: string) {
     this.agentsDir = agentsDir;
@@ -61,19 +61,9 @@ export class AgentLoader {
     content: string,
     agentName: string,
   ): Promise<LoadedAgent> {
-    const match = content.match(FRONTMATTER_REGEX);
-
-    if (!match || match.length < 3) {
-      throw new Error(`Agent ${agentName} must have YAML frontmatter`);
-    }
-
-    const frontmatterYaml = match[1] as string;
-    const rawPrompt = match[2] as string;
-    const frontmatter = parseYaml(frontmatterYaml) as AgentFrontmatter;
-    const system = this.resolveReferencePaths(
-      rawPrompt.replace(/^\r?\n/, ""),
-      path.dirname(agentPath),
-    );
+    const document = this.frontmatter.parse(content, `Agent ${agentName}`);
+    const frontmatter = document.attributes as unknown as AgentFrontmatter;
+    const system = this.resolveReferencePaths(document.body, path.dirname(agentPath));
 
     return {
       name: agentName,

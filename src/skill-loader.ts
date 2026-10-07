@@ -1,13 +1,12 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
-import { parse as parseYaml } from "yaml";
+import { FrontmatterParser } from "./frontmatter";
 
 export const UPGRADE_SKILL_ID = "opencode-v2-upgrade";
 
 export const SKILL_DIRECTORIES: readonly string[] = [UPGRADE_SKILL_ID];
 
 const SKILL_FILENAME = "SKILL.md";
-const FRONTMATTER_REGEX = /^---\r?\n([\s\S]*?)\r?\n---\r?\n([\s\S]*)$/;
 
 export interface LoadedSkill {
   id: string;
@@ -24,6 +23,7 @@ interface SkillFrontmatter {
 
 export class SkillLoader {
   private readonly skillsDir: string;
+  private readonly frontmatter = new FrontmatterParser();
 
   public constructor(skillsDir: string) {
     this.skillsDir = skillsDir;
@@ -42,21 +42,15 @@ export class SkillLoader {
   private async loadSkill(directory: string): Promise<LoadedSkill> {
     const skillPath = path.join(this.skillsDir, directory, SKILL_FILENAME);
     const content = await readFile(skillPath, "utf-8");
-    const match = content.match(FRONTMATTER_REGEX);
-
-    if (!match || match.length < 3) {
-      throw new Error(`Skill ${directory} must have YAML frontmatter`);
-    }
-
-    const frontmatter = parseYaml(match[1] as string) as SkillFrontmatter;
-    const body = (match[2] as string).replace(/^\r?\n/, "");
+    const document = this.frontmatter.parse(content, `Skill ${directory}`);
+    const frontmatter = document.attributes as unknown as SkillFrontmatter;
 
     return {
       id: directory,
       name: this.skillName(frontmatter, directory),
       description: this.skillDescription(frontmatter, directory),
       path: skillPath,
-      content: body,
+      content: document.body,
     };
   }
 

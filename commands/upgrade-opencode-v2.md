@@ -1,6 +1,5 @@
 ---
 description: "Upgrade this project's OpenCode extensions to v2 — inventory, plugin and tool port, config rewrite, and a v2 recommendations report"
-agent: "opencode-architect"
 ---
 
 Act as `opencode-architect` and run the suite's one-shot OpenCode v1 → v2
