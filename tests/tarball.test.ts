@@ -1,9 +1,11 @@
 import { describe, expect, test } from "bun:test";
 import { execSync } from "node:child_process";
 import { readFileSync, readdirSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 const packageJson = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf-8"));
-const ROOT = new URL("..", import.meta.url).pathname;
+const ROOT = fileURLToPath(new URL("..", import.meta.url));
 
 interface PackFile {
   path: string;
@@ -11,14 +13,16 @@ interface PackFile {
 
 function packDryRun(): PackFile[] {
   const output = execSync("npm pack --dry-run --json", { encoding: "utf-8", cwd: ROOT });
-  return JSON.parse(output)[0].files as PackFile[];
+  const parsed = JSON.parse(output) as Record<string, unknown> | unknown[];
+  const entry = Array.isArray(parsed) ? parsed[0] : parsed[packageJson.name];
+  return (entry as { files: PackFile[] }).files;
 }
 
 function walkDisk(entry: string): string[] {
-  const base = `${ROOT}${entry}`;
+  const base = path.join(ROOT, entry);
   const files: string[] = [];
   const visit = (relative: string) => {
-    for (const item of readdirSync(`${base}${relative}`, { withFileTypes: true })) {
+    for (const item of readdirSync(path.join(base, relative), { withFileTypes: true })) {
       if (item.isDirectory()) visit(`${relative}/${item.name}`);
       else files.push(`${entry}${relative}/${item.name}`);
     }
