@@ -1,0 +1,27 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "plugin": ["./.opencode/plugins/notify.ts"],
+  "permission": {
+    "bash": { "*": "deny", "git status": "allow" },
+    "edit": "ask"
+  },
+  "agent": {
+    "pr-reviewer": {
+      "description": "Reviews pull requests for quality and security",
+      "prompt": "./.opencode/agents/pr-reviewer.md"
+    }
+  },
+  "command": {
+    "review": {
+      "template": "Review the staged changes for correctness and missing tests.",
+      "agent": "pr-reviewer"
+    }
+  },
+  "tools": false,
+  "autoupdate": "notify",
+  "small_model": "anthropic/claude-haiku",
+  "mcp": {
+    "docs": { "type": "local", "command": "npx -y @acme/docs-mcp" }
+  },
+  "skills": { "paths": [".opencode/skills"] }
+}

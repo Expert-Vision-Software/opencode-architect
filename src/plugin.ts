@@ -1,18 +1,29 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { Effect, type Scope } from "effect";
-import { Plugin } from "@opencode/plugin/effect";
+import { Plugin, Skill } from "@opencode/plugin/effect";
 import type { AgentEditor } from "@opencode/plugin/effect/agent";
+import type { CommandDefinition, CommandInvocation } from "@opencode/plugin/effect/command";
 import { AgentLoader, type LoadedAgent } from "./agent-loader";
 import { AssetPermissionAdvisor } from "./asset-permission-advisor";
+import { CommandLoader, type LoadedCommand } from "./command-loader";
 import { Installer } from "./installer";
 import { NpmCache } from "./npm-cache";
+import { SkillLoader, UPGRADE_SKILL_ID, type LoadedSkill } from "./skill-loader";
 
 const PACKAGE_NAME = "opencode-architect";
 const PLUGIN_ID = "opencode-architect";
 
+interface BundledContent {
+  agents: Record<string, LoadedAgent>;
+  skills: LoadedSkill[];
+  commands: LoadedCommand[];
+}
+
 export class OpencodeArchitectPlugin {
   private readonly agentsDir: string;
+  private readonly skillsDir: string;
+  private readonly commandsDir: string;
   private readonly assetsDir: string;
   private readonly readVersion: () => Promise<string>;
   private readonly hasInstall: (projectDir: string) => Promise<boolean>;
@@ -26,8 +37,10 @@ export class OpencodeArchitectPlugin {
     readVersion: (() => Promise<string>) | null = null,
     hasInstall: ((projectDir: string) => Promise<boolean>) | null = null,
   ) {
-    this.agentsDir = agentsDir ?? path.join(import.meta.dirname, "..", "agents");
     this.assetsDir = assetsDir ?? path.join(import.meta.dirname, "..");
+    this.agentsDir = agentsDir ?? path.join(this.assetsDir, "agents");
+    this.skillsDir = path.join(this.assetsDir, "skills");
+    this.commandsDir = path.join(this.assetsDir, "commands");
     this.readVersion = readVersion ?? (() => this.readPackageMetadata());
     this.hasInstall = hasInstall ?? ((projectDir) => new Installer().hasManifestAnywhere(projectDir));
     this.advisor = new AssetPermissionAdvisor(this.assetsDir);
@@ -48,27 +61,50 @@ export class OpencodeArchitectPlugin {
   private registerBundledAssets(context: Plugin.Context): Effect.Effect<boolean, never, Scope.Scope> {
     const plugin = this;
     const loaded = Effect.tryPromise({
-      try: () => new AgentLoader(plugin.agentsDir).loadAgents(),
+      try: () => plugin.loadBundledContent(),
       catch: (error: unknown) => (error instanceof Error ? error.message : String(error)),
     });
     return Effect.matchEffect(loaded, {
       onFailure: (message) => Effect.as(plugin.advisoryEffect(() => plugin.adviseFailureOnce(message)), false),
-      onSuccess: (agents) => Effect.as(plugin.registrationEffect(context, agents), true),
+      onSuccess: (content) => Effect.as(plugin.registrationEffect(context, content), true),
     });
+  }
+
+  private async loadBundledContent(): Promise<BundledContent> {
+    const agents = await new AgentLoader(this.agentsDir).loadAgents();
+    const skills = await new SkillLoader(this.skillsDir).loadSkills();
+    const commands = await new CommandLoader(this.commandsDir).loadCommands();
+    return { agents, skills, commands };
   }
 
   private registrationEffect(
     context: Plugin.Context,
-    agents: Record<string, LoadedAgent>,
+    content: BundledContent,
   ): Effect.Effect<void, never, Scope.Scope> {
     const plugin = this;
     return Effect.flatMap(
       context.agent.transform((editor) => {
-        for (const agent of Object.values(agents)) plugin.injectAgent(editor, agent);
+        for (const agent of Object.values(content.agents)) plugin.injectAgent(editor, agent);
       }),
       () =>
-        context.permission.hook("evaluate", (input) =>
-          Effect.sync(() => plugin.advisor.evaluate(input)),
+        Effect.flatMap(
+          context.skill.transform((editor) => {
+            for (const skill of content.skills) editor.add(plugin.toSkillInfo(skill));
+          }),
+          () =>
+            Effect.flatMap(
+              context.command.transform((editor) => {
+                for (const command of content.commands) {
+                  editor.add(plugin.toCommandDefinition(context, command));
+                }
+              }),
+              () =>
+                Effect.asVoid(
+                  context.permission.hook("evaluate", (input) =>
+                    Effect.sync(() => plugin.advisor.evaluate(input)),
+                  ),
+                ),
+            ),
         ),
     );
   }
@@ -80,6 +116,48 @@ export class OpencodeArchitectPlugin {
       agent.system = loaded.system;
       agent.permissions.push(...loaded.permissions);
     });
+  }
+
+  private toSkillInfo(skill: LoadedSkill): Skill.Info {
+    return {
+      id: Skill.ID.make(skill.id),
+      name: Skill.Name.make(skill.name),
+      description: skill.description,
+      path: skill.path as Skill.Info["path"],
+      content: skill.content,
+    };
+  }
+
+  private toCommandDefinition(context: Plugin.Context, command: LoadedCommand): CommandDefinition {
+    const plugin = this;
+    return {
+      name: command.name,
+      description: command.description,
+      execute: (invocation: CommandInvocation) => plugin.deliverCommand(context, command, invocation),
+    };
+  }
+
+  private deliverCommand(
+    context: Plugin.Context,
+    command: LoadedCommand,
+    invocation: CommandInvocation,
+  ): Effect.Effect<void, unknown> {
+    return Effect.asVoid(
+      context.session.prompt({
+        sessionID: invocation.sessionID,
+        delivery: invocation.delivery,
+        text: this.renderCommandTemplate(command, invocation.prompt.text),
+        skills: [{ id: Skill.ID.make(UPGRADE_SKILL_ID) }],
+      }),
+    );
+  }
+
+  private renderCommandTemplate(command: LoadedCommand, args: string): string {
+    const trimmed = args.trim();
+    if (!command.template.includes("$ARGUMENTS")) {
+      return trimmed.length === 0 ? command.template : `${command.template}\n\n${trimmed}`;
+    }
+    return command.template.replaceAll("$ARGUMENTS", trimmed);
   }
 
   private advisoryEffect(run: () => Promise<void>): Effect.Effect<void, never, never> {
@@ -108,7 +186,7 @@ export class OpencodeArchitectPlugin {
 
   private async emitAdvisory(message: string): Promise<void> {
     const prefix =
-      `Failed to load the bundled agent suite. Run: bunx ${PACKAGE_NAME} clear-cache, then ` +
+      `Failed to load the bundled extension suite. Run: bunx ${PACKAGE_NAME} clear-cache, then ` +
       `reinstall and restart OpenCode. The stale cache copy is `;
     let text: string;
     try {

@@ -5,7 +5,9 @@ import path from "node:path";
 import { Effect } from "effect";
 import { Agent, Plugin } from "@opencode/plugin/effect";
 import type { AgentEditor } from "@opencode/plugin/effect/agent";
+import type { CommandEditor } from "@opencode/plugin/effect/command";
 import type { PermissionEvaluation } from "@opencode/plugin/effect/permission";
+import type { SkillEditor } from "@opencode/plugin/effect/skill";
 import { OpencodeArchitectPlugin } from "../src/plugin";
 import { captureConsole } from "./test-helpers";
 
@@ -32,6 +34,16 @@ interface PermissionDomainSpy {
     callback: (input: PermissionEvaluation) => Effect.Effect<void>,
   ) => Effect.Effect<void>;
   evaluations: Array<(input: PermissionEvaluation) => Effect.Effect<void>>;
+}
+
+interface SkillDomainSpy {
+  transform: (callback: (editor: SkillEditor) => void) => Effect.Effect<void>;
+  registered: Map<string, unknown>;
+}
+
+interface CommandDomainSpy {
+  transform: (callback: (editor: CommandEditor) => void) => Effect.Effect<void>;
+  registered: Map<string, unknown>;
 }
 
 function blankAgent(id: string): RegisteredAgent {
@@ -83,12 +95,52 @@ function permissionDomainSpy(): PermissionDomainSpy {
   return { hook, evaluations };
 }
 
+function skillDomainSpy(): SkillDomainSpy {
+  const registered = new Map<string, unknown>();
+  const transform = (callback: (editor: SkillEditor) => void) =>
+    Effect.sync(() => {
+      const editor: SkillEditor = {
+        list: () => [...registered.values()] as never,
+        get: (id: string) => registered.get(id) as never,
+        add: (skill) => {
+          registered.set(skill.id, skill);
+        },
+        update: (id: string, update: (skill: never) => void) => {
+          const current = registered.get(id);
+          if (current === undefined) return;
+          update(current as never);
+        },
+        remove: (id: string) => {
+          registered.delete(id);
+        },
+      };
+      callback(editor);
+    });
+  return { transform, registered };
+}
+
+function commandDomainSpy(): CommandDomainSpy {
+  const registered = new Map<string, unknown>();
+  const transform = (callback: (editor: CommandEditor) => void) =>
+    Effect.sync(() => {
+      const editor: CommandEditor = {
+        add: (definition) => {
+          registered.set(definition.name, definition);
+        },
+      };
+      callback(editor);
+    });
+  return { transform, registered };
+}
+
 function contextWith(
   agent: AgentDomainSpy,
   permission: PermissionDomainSpy,
   directory: string,
+  skill: SkillDomainSpy = skillDomainSpy(),
+  command: CommandDomainSpy = commandDomainSpy(),
 ): Plugin.Context {
-  return { location: { directory }, agent, permission } as unknown as Plugin.Context;
+  return { location: { directory }, agent, skill, command, permission } as unknown as Plugin.Context;
 }
 
 async function activate(definition: Plugin.Plugin, context: Plugin.Context): Promise<void> {
