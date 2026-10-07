@@ -1,0 +1,38 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "plugins": ["./.opencode/plugins/notify.ts"],
+  "permissions": [
+    { "action": "edit", "resource": "*", "effect": "ask" },
+    { "action": "shell", "resource": "*", "effect": "deny" },
+    { "action": "shell", "resource": "git status", "effect": "allow" }
+  ],
+  "agents": {
+    "pr-reviewer": {
+      "description": "Reviews pull requests for quality and security",
+      "mode": "subagent",
+      "model": { "providerID": "anthropic", "model": "claude-sonnet-4-5" },
+      "request": { "temperature": 0.2 },
+      "steps": 25,
+      "disabled": false,
+      "permissions": [
+        { "action": "read", "resource": "*", "effect": "allow" },
+        { "action": "edit", "resource": "*", "effect": "deny" },
+        { "action": "shell", "resource": "*", "effect": "deny" }
+      ]
+    },
+    "title": {
+      "model": { "providerID": "anthropic", "model": "claude-haiku" }
+    }
+  },
+  "commands": {
+    "review": {
+      "template": "Review the staged changes for correctness and missing tests.",
+      "agent": "pr-reviewer"
+    }
+  },
+  "update": "notify",
+  "mcp": {
+    "docs": { "type": "local", "command": ["npx", "-y", "@acme/docs-mcp"] }
+  },
+  "skills": [".opencode/skills"]
+}

@@ -137,6 +137,8 @@ describe("built plugin under the v2 host contract", () => {
     }
     expect(audit.agentsRegistered).toContain("opencode-architect");
     expect(audit.agentsRegistered).toContain("opencode-skill-creator");
+    expect(audit.skillsRegistered).toEqual(["opencode-v2-upgrade"]);
+    expect(audit.commandsRegistered).toEqual(["upgrade-opencode-v2"]);
     logs.restore();
     warnings.restore();
   });
@@ -181,6 +183,8 @@ describe("the harness fails on registration loss", () => {
     expect(audit.permissionHookCount).toBe(0);
     expect(audit.violations.length).toBeGreaterThanOrEqual(10);
     expect(audit.violations).toContain("permission evaluate hook registered 0 times, expected 1");
+    expect(audit.violations).toContain("skill not registered: opencode-v2-upgrade");
+    expect(audit.violations).toContain("command not registered: upgrade-opencode-v2");
     expect(audit.missingAgents).toContain("opencode-architect");
     expect(warnings.lines[0]).toContain("bunx opencode-architect clear-cache");
     await rm(scratch, { recursive: true, force: true });

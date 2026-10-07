@@ -6,8 +6,12 @@ import { resolveModule } from "@opencode/util/runtime-import";
 import * as Host from "@opencode/plugin/host";
 import { Agent, Plugin } from "@opencode/plugin/effect";
 import type { AgentEditor } from "@opencode/plugin/effect/agent";
+import type { CommandEditor } from "@opencode/plugin/effect/command";
 import type { PermissionEvaluation } from "@opencode/plugin/effect/permission";
+import type { SkillEditor } from "@opencode/plugin/effect/skill";
 import { AGENT_FILENAMES } from "../src/agent-loader";
+import { COMMAND_FILENAMES } from "../src/command-loader";
+import { SKILL_DIRECTORIES } from "../src/skill-loader";
 import { flattenIssue } from "./config-schema-validator";
 
 const REPO_ROOT = path.resolve(import.meta.dirname, "..");
@@ -46,6 +50,12 @@ export interface RegistrationAudit {
   agentsRegistered: string[];
   missingAgents: string[];
   unexpectedAgents: string[];
+  skillsExpected: string[];
+  skillsRegistered: string[];
+  missingSkills: string[];
+  commandsExpected: string[];
+  commandsRegistered: string[];
+  missingCommands: string[];
   permissionHookCount: number;
   violations: string[];
 }
@@ -53,6 +63,8 @@ export interface RegistrationAudit {
 export interface RecordingContext {
   context: Plugin.Context;
   agents: Map<string, unknown>;
+  skills: Map<string, unknown>;
+  commands: Map<string, unknown>;
   permissionHooks: Array<(input: PermissionEvaluation) => Effect.Effect<void>>;
 }
 
@@ -63,6 +75,14 @@ const decodeAgentInfo = Schema.decodeUnknownResult(Agent.Info);
 export class V2HostHarness {
   public suiteAgentNames(): string[] {
     return AGENT_FILENAMES.map((filename) => path.basename(filename, ".md"));
+  }
+
+  public suiteSkillNames(): string[] {
+    return [...SKILL_DIRECTORIES];
+  }
+
+  public suiteCommandNames(): string[] {
+    return COMMAND_FILENAMES.map((filename) => path.basename(filename, ".md"));
   }
 
   public resolveServerEntrypoint(directory: string, name: string | null): string | null {
@@ -112,10 +132,14 @@ export class V2HostHarness {
 
   public recordingContext(directory: string): RecordingContext {
     const agents = new Map<string, unknown>();
+    const skills = new Map<string, unknown>();
+    const commands = new Map<string, unknown>();
     const permissionHooks: Array<(input: PermissionEvaluation) => Effect.Effect<void>> = [];
     const context = {
       location: { directory },
       agent: { transform: (callback: (editor: AgentEditor) => void) => Effect.sync(() => callback(recordingAgentEditor(agents))) },
+      skill: { transform: (callback: (editor: SkillEditor) => void) => Effect.sync(() => callback(recordingSkillEditor(skills))) },
+      command: { transform: (callback: (editor: CommandEditor) => void) => Effect.sync(() => callback(recordingCommandEditor(commands))) },
       permission: {
         hook: (_name: string, callback: (input: PermissionEvaluation) => Effect.Effect<void>) =>
           Effect.sync(() => {
@@ -123,7 +147,7 @@ export class V2HostHarness {
           }),
       },
     } as unknown as Plugin.Context;
-    return { context, agents, permissionHooks };
+    return { context, agents, skills, commands, permissionHooks };
   }
 
   public activate(definition: Plugin.Plugin, recording: RecordingContext): Promise<void> {
@@ -133,6 +157,10 @@ export class V2HostHarness {
   public audit(recording: RecordingContext, pluginId: string, entrypointResolved: boolean): RegistrationAudit {
     const agentsExpected = this.suiteAgentNames();
     const agentsRegistered = [...recording.agents.keys()];
+    const skillsExpected = this.suiteSkillNames();
+    const skillsRegistered = [...recording.skills.keys()];
+    const commandsExpected = this.suiteCommandNames();
+    const commandsRegistered = [...recording.commands.keys()];
     const audit: RegistrationAudit = {
       pluginId,
       entrypointResolved,
@@ -140,6 +168,12 @@ export class V2HostHarness {
       agentsRegistered,
       missingAgents: agentsExpected.filter((name) => !recording.agents.has(name)),
       unexpectedAgents: agentsRegistered.filter((name) => !agentsExpected.includes(name)),
+      skillsExpected,
+      skillsRegistered,
+      missingSkills: skillsExpected.filter((name) => !recording.skills.has(name)),
+      commandsExpected,
+      commandsRegistered,
+      missingCommands: commandsExpected.filter((name) => !recording.commands.has(name)),
       permissionHookCount: recording.permissionHooks.length,
       violations: [],
     };
@@ -147,6 +181,8 @@ export class V2HostHarness {
     for (const name of audit.missingAgents) audit.violations.push(`agent not registered: ${name}`);
     for (const name of audit.unexpectedAgents) audit.violations.push(`unexpected agent registered: ${name}`);
     for (const name of agentsRegistered) this.auditAgent(audit, name, recording.agents.get(name));
+    for (const name of audit.missingSkills) audit.violations.push(`skill not registered: ${name}`);
+    for (const name of audit.missingCommands) audit.violations.push(`command not registered: ${name}`);
     if (recording.permissionHooks.length !== 1) {
       audit.violations.push(`permission evaluate hook registered ${recording.permissionHooks.length} times, expected 1`);
     }
@@ -201,6 +237,32 @@ function recordingAgentEditor(registered: Map<string, unknown>): AgentEditor {
     },
     remove: (id: string) => {
       registered.delete(id);
+    },
+  };
+}
+
+function recordingSkillEditor(registered: Map<string, unknown>): SkillEditor {
+  return {
+    list: () => [...registered.values()] as never,
+    get: (id: string) => registered.get(id) as never,
+    add: (skill) => {
+      registered.set(skill.id, skill);
+    },
+    update: (id: string, update: (skill: never) => void) => {
+      const current = registered.get(id);
+      if (current === undefined) return;
+      update(current as never);
+    },
+    remove: (id: string) => {
+      registered.delete(id);
+    },
+  };
+}
+
+function recordingCommandEditor(registered: Map<string, unknown>): CommandEditor {
+  return {
+    add: (definition) => {
+      registered.set(definition.name, definition);
     },
   };
 }

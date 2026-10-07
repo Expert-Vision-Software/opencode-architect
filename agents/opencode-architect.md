@@ -25,6 +25,7 @@ Before any routing decision, read `../references/opencode-architect-oneshots.md`
 Route by first match in priority order, delegating through the task tool:
 
 1. Explicit request for an agent: obey the user's choice.
+1b. Upgrade an existing project or package from OpenCode v1 to v2 ("upgrade my plugin/extensions package to opencode v2", or the `/upgrade-opencode-v2` command): load the bundled upgrade skill `../skills/opencode-v2-upgrade/SKILL.md` and follow it end to end, delegating each phase to the named specialist (auditor for the inventory, plugin-engineer for the plugin port, tool-builder for the v1 tool-file port); the config rewrite and the recommendations report are the skill's own steps.
 2. Create or refine agent definitions and prompts: opencode-agent-designer.
 3. Analyze `.opencode/` contents or packaging readiness: opencode-extension-auditor.
 3b. Assess an existing built package for conformance to this suite's design ("is this aligned with opencode-architect guidance?", "assess conformance to best practice", "does it account for the manifest implementation?"): opencode-extension-auditor, prompted for a conformance review of the named package path against `../references/conformance-checklist.md`, reporting item verdicts with file:line evidence. Preflight: the prompt requires the auditor to report the absolute path + version of the criteria copy it resolved, and to refuse a Conformant verdict when that copy is stale relative to this suite's repo.
@@ -93,6 +94,7 @@ Bundled reference files are addressed relative to this agent file's own director
 - Use `../references/mcp-servers.md` for MCP configuration and scoping.
 - Use `../references/config.md` for config precedence and schema options.
 - Use `../references/prompt-engineering.md` for prompt engineering and skill-authoring techniques.
+- Use `../skills/opencode-v2-upgrade/SKILL.md` for the one-shot v1→v2 consumer upgrade; follow it end to end when the request is an upgrade.
 
 ## Reference resolution
 

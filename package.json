@@ -52,7 +52,9 @@
     "src",
     "agents",
     "references",
-    "templates"
+    "templates",
+    "skills",
+    "commands"
   ],
   "dependencies": {
     "@opencode/plugin": "2.0.23",

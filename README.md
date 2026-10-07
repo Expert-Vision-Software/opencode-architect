@@ -74,6 +74,13 @@ Also bundled and installed with the agents:
 
 - **References** — self-contained docs covering stable OpenCode fundamentals: agents, commands, config, MCP servers, plugins, prompt engineering, skills, tools, plus worked one-shot examples
 - **Templates** — starter files for new skills, plugins, package manifests, and TypeScript configs
+- **Upgrade skill and command** — the `opencode-v2-upgrade` skill plus the `/upgrade-opencode-v2` slash command, registered at load
+
+## One-shot upgrade from OpenCode v1 to v2
+
+Say "upgrade my plugin/extensions package to opencode v2" (or run `/upgrade-opencode-v2`) and the suite upgrades one project in a single pass: it inventories your extensions, ports v1 plugin files to the Effect-first v2 plugin API, ports v1 file-based tool files to plugin-registered tools, rewrites your configs to v2-native keys, and finishes with a report recommending v2 capabilities to adopt — richer session hooks, plugin RPC, TUI plugins, MCP Code Mode, and saved approvals.
+
+The upgrade is safe by construction: an already-v2 project is a clean no-op, files you modified after install are skipped with a warning rather than clobbered, and the OpenCode application installation is never touched. The bundled `opencode-v2-upgrade` skill defines the full procedure and every phase's completion criteria.
 
 ## When to use these OpenCode agents
 

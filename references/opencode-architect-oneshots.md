@@ -317,3 +317,39 @@ export default Plugin.define({
 3. Sequential: `opencode-packager` (package for local sharing first)
 4. Ask: "Package ready. Publish to npm?"
 5. If yes, Sequential: `opencode-publisher` (transform and publish)
+
+---
+
+## Example 10: One-Shot v1 → v2 Consumer Upgrade
+
+**User Request:**
+> Upgrade my plugin/extensions package to opencode v2.
+
+**Analysis:**
+- Whole-project v1→v2 upgrade → the bundled `opencode-v2-upgrade` skill
+  (registered by this package at load), executed by the architect and its
+  specialists
+- Inventory → `opencode-extension-auditor`
+- Plugin port → `opencode-plugin-engineer`
+- V1 tool-file port → `opencode-tool-builder`
+- Config rewrite and recommendations report → the skill's own steps
+
+**Execution:**
+1. Load `opencode-v2-upgrade` (SKILL.md) and run it end to end.
+2. Sequential: `opencode-extension-auditor` — inventory skills, commands,
+   agents, plugins, v1 file-based tool files, and configs (facts §12).
+3. If the inventory finds no v1 remnant: report the clean no-op and stop.
+4. Sequential: `opencode-plugin-engineer` — port v1 plugin files to the
+   Effect-first v2 plugin API (facts §1, §2, §9).
+5. Sequential: `opencode-tool-builder` — port v1 file-based tool files to
+   plugin-registered tools (facts §8).
+6. Rewrite each config to v2-native keys per the verified mapping
+   (facts §5, §6).
+7. Report: consumer-modified files skipped by manifest hash, then the v2
+   recommendations — session hooks, plugin RPC, TUI plugins, MCP Code Mode,
+   saved approvals (facts §4, §9, §10, §11).
+
+Honor the safety contract throughout: a clean no-op on an already-v2
+project, modified files skipped with a warning rather than clobbered, and the
+OpenCode application installation never touched (facts §7).
+

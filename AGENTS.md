@@ -27,7 +27,7 @@ When encountering file references (e.g., @references/workflow.md), use Read tool
 
 <product_overview>
   <entry_point>index.ts</entry_point>
-  <auto_init>agent registration from bundled assets on startup</auto_init>
+  <auto_init>agent, skill, and command registration from bundled assets on startup</auto_init>
   <build_output>ESM + type declarations</build_output>
 </product_overview>
 
@@ -48,6 +48,10 @@ When encountering file references (e.g., @references/workflow.md), use Read tool
   <stage name="Publish" trigger="public sharing (npm registry)">
     - Delegate to `opencode-publisher`, fed by the packager's output
     - Transforms to npm-ready structure, adds CLI entry point, extracts installer module
+  </stage>
+  <stage name="Upgrade" trigger="existing consumer project still on opencode v1">
+    - Delegate from `architect` to the bundled `opencode-v2-upgrade` skill
+    - Inventories extensions, ports v1 plugin code and v1 tool files, rewrites configs to v2-native keys, and reports v2 recommendations; no-ops on already-v2 projects, skips consumer-modified files, and never touches the OpenCode app installation
   </stage>
 </happy_path>
 
