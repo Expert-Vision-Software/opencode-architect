@@ -57,7 +57,7 @@ function advisoryEffect(run: () => Promise<void>): Effect.Effect<void, never, ne
 
 function ensureRegisteredScopeAssets(context: Plugin.Context): Effect.Effect<void, never, Scope.Scope> {
   return Effect.asVoid(
-    Effect.catchAll(
+    Effect.catch(
       Effect.tryPromise({
         try: async () => {
           const directory = context.location.directory;

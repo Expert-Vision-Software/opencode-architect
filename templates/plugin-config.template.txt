@@ -2,7 +2,7 @@
 
 None — emit as-is as src/plugin-config.ts.
 
-**Load-bearing — do not simplify:** the editor is a surgical text splice into the v2 `plugins` array with every other byte of the config untouched — never a parse-then-reserialize (comments, key order, and formatting survive); candidates are consulted in priority order: for local scope the nested `.opencode/opencode.json` then `opencode.jsonc`, then the repo-root `opencode.json` then `opencode.jsonc`; for global scope the same pair in the global scope base; and finally the global `config.json` which is read-only (detection only, never written); every candidate is read up front and every unparseable one is warned about **before** any short-circuit on a successful match; a config that fails to parse blocks the edit — never rewrite config from `{}`; `.jsonc` parses leniently (comments blanked string-aware so `$schema` URLs and escaped quotes survive, trailing commas removed) and `.json` stays strict; both array shapes are read: the v2 `plugins` key is authoritative and the legacy v1 `plugin` key is tolerated read-only — a semantically matching legacy entry is a zero-write no-op with an upgrade advisory, and a legacy entry in `config.json` is reported as inert (v2 never reads that file); entries match by package name whether written as strings or `{ "package": ... }` objects; matching is semantic (`name`, `name@latest`, `name@x.y.z` are the same package) and new entries are written canonically as `name@latest` under `plugins`; an existing v2 entry is a zero-write no-op; when no config exists a minimal `opencode.jsonc` is created; every splice re-parses the result and aborts untouched if the entry is not present after the edit.
+**Load-bearing — do not simplify:** the editor is a surgical text splice into the v2 `plugins` array with every other byte of the config untouched — never a parse-then-reserialize (comments, key order, and formatting survive); candidates are consulted in priority order: for local scope the nested `.opencode/opencode.json` then `opencode.jsonc`, then the repo-root `opencode.json` then `opencode.jsonc`; for global scope the same pair in the global scope base; and finally the global `config.json` which is read-only (detection only, never written); every candidate is read up front and every unparseable one is warned about **before** any short-circuit on a successful match; a config that fails to parse blocks the edit — never rewrite config from `{}`; `.jsonc` parses leniently (comments blanked string-aware so `$schema` URLs and escaped quotes survive, trailing commas removed) and `.json` stays strict; both array shapes are read: the v2 `plugins` key is authoritative and the legacy v1 `plugin` key is tolerated read-only — a semantically matching legacy entry is a zero-write no-op with an upgrade advisory, and a legacy entry in `config.json` is reported as inert (v2 never reads that file); entries match by package name whether written as strings or `{ "package": ... }` objects; matching is semantic (`name`, `name@latest`, `name@x.y.z` are the same package) and new entries are written canonically as `name@latest` under `plugins`; an existing v2 entry is a zero-write no-op; when no config exists a minimal `opencode.jsonc` is created; every splice re-parses the result and aborts untouched if the entry is not present after the edit. Two deliberate divergences from the suite's own `src/plugin-config.ts` keep every `config.json` mention self-labelling as read-only (the `LEGACY_READ_ONLY_GLOBAL` constant and the `!candidate.writable` inert-advisory branch — `config.json` is the only candidate declared `writable: false`); preserve them when re-syncing.
 
 ---
 import { exists, mkdir, readFile, writeFile } from "node:fs/promises";
@@ -55,6 +55,8 @@ const DEFAULT_CONFIG_TEMPLATE = `{
   "plugins": ["__PACKAGE_NAME__"]
 }
 `;
+
+const LEGACY_READ_ONLY_GLOBAL = "config.json";
 
 export class PluginConfigEditor {
   public async ensurePluginEntry(
@@ -214,7 +216,7 @@ export class PluginConfigEditor {
         configs.push({ path: path.join(scopeBase, file), lenient: file.endsWith(".jsonc"), writable: true });
       }
     }
-    configs.push({ path: path.join(scopeBase, "config.json"), lenient: false, writable: false });
+    configs.push({ path: path.join(scopeBase, LEGACY_READ_ONLY_GLOBAL), lenient: false, writable: false });
     return configs;
   }
 
@@ -254,7 +256,7 @@ export class PluginConfigEditor {
   }
 
   private legacyEntryAdvisory(candidate: CandidateConfig, packageName: string): string {
-    if (path.basename(candidate.path) === "config.json") {
+    if (!candidate.writable) {
       return (
         `${candidate.path} registers ${packageName} under the legacy v1 "plugin" key. ` +
         `OpenCode v2 no longer reads config.json, so the entry is inert, and this installer never edits it. ` +

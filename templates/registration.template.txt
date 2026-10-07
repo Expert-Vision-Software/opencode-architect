@@ -12,6 +12,8 @@ import { PluginNameNormalizer } from "./plugin-name.ts";
 
 export type RegistrationScope = "none" | "global" | "repo-local" | "both";
 
+const LEGACY_READ_ONLY_GLOBAL = "config.json";
+
 function getGlobalConfigPath(): string {
   const xdgConfig = process.env.XDG_CONFIG_HOME;
   if (xdgConfig) return join(xdgConfig, "opencode");
@@ -118,7 +120,7 @@ async function readEntriesForBase(base: string): Promise<PluginEntries | null> {
 async function readGlobalEntries(): Promise<PluginEntries | null> {
   const entries = await readEntriesForBase(getGlobalConfigPath());
   if (entries !== null) return entries;
-  return readPluginEntries(join(getGlobalConfigPath(), "config.json"));
+  return readPluginEntries(join(getGlobalConfigPath(), LEGACY_READ_ONLY_GLOBAL));
 }
 
 export class RegistrationDetector {
