@@ -103,6 +103,17 @@ publishes it.
 The reference routing examples (request → analysis → agent selection →
 execution order) the architect reads before delegating.
 
+**Upgrade skill**:
+The bundled `opencode-v2-upgrade` SKILL.md the plugin registers at load. It
+defines the one-shot consumer v1→v2 upgrade: inventory, plugin and tool port,
+config rewrite, and a recommendations report.
+_Avoid_: migration guide (it is a procedure, not prose documentation)
+
+**Upgrade command**:
+The bundled `upgrade-opencode-v2` slash command the plugin registers at load.
+It submits the upgrade prompt and attaches the upgrade skill.
+_Avoid_: upgrade tool
+
 ### Distribution
 
 **Consumer**:
