@@ -1,30 +1,28 @@
 TEMPLATE INSTRUCTIONS
-====================
+=====================
 Replace the following placeholders before use:
 
-EXTENSION NAME
-  "myextension"  → your extension identifier
-
-VERSION
-  "1.0.0"        → initial version
-
-TOPICS
-  "topic1"       → your skill topics
-  "topic2"
+NAME
+  "myextension"  → your skill identifier (defaults to the folder-derived id
+                   when omitted, but naming it explicitly is the house rule)
 
 DESCRIPTION
   "Use this skill when the user asks about..." → your skill description
+                   (required for authoring — selection quality depends on it)
+
+OPTIONAL
+  disable-model-invocation: "true" → add only when the skill must never be
+                   auto-invoked by the model (maps to v2 `autoinvoke`)
+
+Do not add v1 frontmatter fields: `license`, `compatibility`, and free-form
+`metadata` are dropped by the v2 skill loader — they are not carried into the
+skill record (per opencode-v2-facts §12). Every frontmatter property value is
+enclosed in double quotation marks.
 
 ---
 ---
 name: "myextension"
 description: "Use this skill when the user asks about..."
-license: "MIT"
-compatibility: "opencode"
-metadata:
-  version: "1.0.0"
-  audience: "agents"
-  topic: "topic1, topic2"
 ---
 
 ## Activation Triggers

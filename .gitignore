@@ -27,6 +27,9 @@ report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
 .cache
 *.tsbuildinfo
 
+# rendered-package fixture (tests/templates.test.ts)
+.rendered-fixture
+
 # IntelliJ based IDEs
 .idea
 

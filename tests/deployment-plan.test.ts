@@ -93,7 +93,8 @@ describe("generated-package cache hygiene (issue #14)", () => {
     expect(source).toContain("const cache = await prunePackageCache();");
     expect(source).toContain("clearPackageCache");
     expect(source).toMatch(/Could not clear cached package/);
-    expect(source).toContain('"opencode", "packages"');
+    expect(source).toContain('"opencode", "npm"');
+    expect(source).not.toContain('"opencode", "packages"');
   });
 
   test("installer prunes every invocation including no-ops, before mode dispatch", async () => {
@@ -242,7 +243,10 @@ describe("frontmatter hygiene (mandatory double-quoting)", () => {
   test("references and templates model quoted frontmatter", async () => {
     const structure = await readTemplate("skill-structure.template.md");
     expect(structure).toContain('name: "myextension"');
-    expect(structure).toContain('audience: "agents"');
+    expect(structure).toContain('description: "Use this skill when the user asks about..."');
+    expect(structure).not.toMatch(/^license:/m);
+    expect(structure).not.toMatch(/^compatibility:/m);
+    expect(structure).not.toMatch(/^metadata:/m);
     const commands = await readReference("commands.md");
     expect(commands).toContain('description: "Run tests with coverage"');
     const skills = await readReference("skills.md");

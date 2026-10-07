@@ -4,7 +4,7 @@
 |---|---|---|---|
 | `PACKAGE NAME` → "opencode-myextension" | Yes | npm package name; the manifest file is `<configBase>/<package>.manifest.json` | — |
 
-**Load-bearing — do not simplify:** idempotency is per-file sha256 (`Bun.CryptoHasher`), never a `.version` marker; a missing or malformed manifest reads as "not installed" (drift), never as a reason to write without an ensure path; a manifest without a `mode` field reads as `"copy"` so pre-generalization copy installs migrate cleanly; the manifest is one record per scope for BOTH install modes — `mode` and the registration fields record the deployment plan, while `files` records whatever payload the load-time hook has ensured (so a plugin-mode manifest gains payload hashes after the first load, and the CLI must preserve them when it rewrites registration); plugin-mode up-to-dateness includes the registration — the recorded entry must still be present in the recorded config file (semantic name match, `@latest`-aware) — plus the recorded payload hashes; consumer-modified files that were skipped during install are recorded with their **packaged** hash — never the consumer's on-disk content — so the modification stays detectable and `--force` can still take ownership of it.
+**Load-bearing — do not simplify:** idempotency is per-file sha256 (`Bun.CryptoHasher`), never a `.version` marker; a missing or malformed manifest reads as "not installed" (drift), never as a reason to write without an ensure path; a manifest without a `mode` field reads as `"copy"` so pre-generalization copy installs migrate cleanly; the manifest is one record per scope for BOTH install modes — `mode` and the registration fields record the deployment plan, while `files` records whatever payload the load-time hook has ensured (so a plugin-mode manifest gains payload hashes after the first load, and the CLI must preserve them when it rewrites registration); plugin-mode up-to-dateness includes the registration — the recorded entry must still be present in the recorded config file (semantic name match, `@latest`-aware) — plus the recorded payload hashes; consumer-modified files that were skipped during install are recorded with their **packaged** hash — never the consumer's on-disk content — so the modification stays detectable and `--force` can still take ownership of it; registration presence is checked against the v2 `plugins` key first and the legacy v1 `plugin` key read-only, with entries matched by package name whether written as strings or `{ "package": ... }` objects.
 
 ---
 import { readdir, readFile, writeFile, mkdir } from "node:fs/promises";
@@ -133,12 +133,26 @@ export class InstallManifest {
 
 function pluginEntries(text: string, configPath: string): string[] {
   try {
-    const config = (configPath.endsWith(".jsonc") ? parseJsonc(text) : JSON.parse(text)) as { plugin?: unknown };
-    if (!Array.isArray(config.plugin)) return [];
-    return config.plugin.filter((entry): entry is string => typeof entry === "string");
+    const config = (configPath.endsWith(".jsonc") ? parseJsonc(text) : JSON.parse(text)) as Record<string, unknown>;
+    const v2 = entryNames(config.plugins);
+    if (v2.length > 0) return v2;
+    return entryNames(config.plugin);
   } catch {
     return [];
   }
+}
+
+function entryNames(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((entry) => (typeof entry === "string" ? entry : entryPackage(entry)))
+    .filter((entry): entry is string => entry !== null);
+}
+
+function entryPackage(entry: unknown): string | null {
+  if (entry === null || typeof entry !== "object") return null;
+  const pkg = (entry as { package?: unknown }).package;
+  return typeof pkg === "string" ? pkg : null;
 }
 
 export async function listFilesRecursive(rootDir: string): Promise<string[]> {
