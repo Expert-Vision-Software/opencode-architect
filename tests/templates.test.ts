@@ -41,6 +41,18 @@ function templateBody(name: string): Promise<string> {
   });
 }
 
+const SMOKE_TEST = `import { describe, expect, test } from "bun:test";
+import plugin from "../index.ts";
+
+describe("${PACKAGE_NAME}", () => {
+  test("exports a v2 Effect plugin definition", () => {
+    const definition = plugin as { id: string; effect: unknown };
+    expect(definition.id).toBe("${PACKAGE_NAME}");
+    expect(typeof definition.effect).toBe("function");
+  });
+});
+`;
+
 async function renderPackage(): Promise<void> {
   const write = async (relative: string, content: string): Promise<void> => {
     const target = path.join(RENDERED_PACKAGE, relative);
@@ -63,6 +75,9 @@ async function renderPackage(): Promise<void> {
     "commands/my-command.md",
     `---\ndescription: "Rendered command stub"\n---\n\nSay hello from ${PACKAGE_NAME}.\n`,
   );
+  // The packager (not a template) provides the package's tests/ dir; simulate its
+  // minimal contract smoke test so the rendered package's own test gate can run.
+  await write("tests/plugin.contract.test.ts", SMOKE_TEST);
 }
 
 interface SpawnOutcome {
@@ -172,6 +187,14 @@ describe("rendered package passes its own gates", () => {
     if (outcome.exitCode !== 0) failWithOutput("rendered package typecheck", outcome);
     expect(outcome.exitCode).toBe(0);
   }, 180_000);
+
+  test("the package's own test gate runs green", async () => {
+    const outcome = await runBun(["test"], RENDERED_PACKAGE, isolatedEnv(isolatedBase));
+    if (outcome.exitCode !== 0) failWithOutput("rendered package bun test", outcome);
+    const report = `${outcome.stdout}\n${outcome.stderr}`;
+    expect(report).toMatch(/1 pass/);
+    expect(report).not.toMatch(/[1-9]\d* fail/);
+  }, 120_000);
 
   test("the rendered entry satisfies the v2 Module contract", async () => {
     const entrypoint = path.join(RENDERED_PACKAGE, "index.ts");
