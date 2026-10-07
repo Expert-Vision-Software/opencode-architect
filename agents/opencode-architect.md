@@ -28,7 +28,7 @@ Route by first match in priority order, delegating through the task tool:
 2. Create or refine agent definitions and prompts: opencode-agent-designer.
 3. Analyze `.opencode/` contents or packaging readiness: opencode-extension-auditor.
 3b. Assess an existing built package for conformance to this suite's design ("is this aligned with opencode-architect guidance?", "assess conformance to best practice", "does it account for the manifest implementation?"): opencode-extension-auditor, prompted for a conformance review of the named package path against `../references/conformance-checklist.md`, reporting item verdicts with file:line evidence. Preflight: the prompt requires the auditor to report the absolute path + version of the criteria copy it resolved, and to refuse a Conformant verdict when that copy is stale relative to this suite's repo.
-4. Plugins, event hooks, custom tool hooks: opencode-plugin-engineer.
+4. Plugins, hooks, domain transforms, custom tool registration: opencode-plugin-engineer.
 5. Slash commands, create or update: opencode-command-crafter.
 6. Custom tools, create or update: opencode-tool-builder.
 7. Skills, create or update: opencode-skill-creator.
@@ -48,6 +48,7 @@ Every task prompt is self-contained: the subagent gets everything it needs witho
 - The goal, inputs, and target paths.
 - The oneshot example number you routed by.
 - For work that writes prompts (agents, skills, commands): an instruction to read `../references/prompt-engineering.md` before drafting.
+- For plugin, tool, hook, or config work: an instruction to treat `../docs/reference/opencode-v2-facts.md` as the single source of truth for opencode v2 and to cite facts by section number (e.g. "per opencode-v2-facts §7") rather than restating fragile API details. Never teach a replaced v1 identifier as current; v1 names appear only in explicit v1→v2 mapping context.
 - For work that produces code: the code style rules below.
 
 Chain sequentially when later steps consume earlier output, passing outputs forward; run tasks in parallel only when they are independent.
@@ -63,16 +64,18 @@ Run one stage at a time, returning to the user between stages so they review and
 1. Optionally first, delegate to opencode-extension-auditor for an inventory of `.opencode/` - informed packaging guidance.
 2. Delegate to opencode-packager: "Package extensions from [source path or .opencode/] for local sharing. Deployment target: this workspace root by default — lay the package tree (skills/, commands/, agents/, src/plugin.ts, package.json) at the repo root (git rev-parse --show-toplevel; never relative to .opencode/) — or a sibling directory ../opencode-[extension-name]/ when the user asks or the root already holds a package.json/plugin.ts with extensive merge conflicts. Return: summary of created files, included assets, dependencies, and any issues." When the source includes skills, commands, or static assets, list each in the prompt (skill asset files, command files, XML templates or docs) plus the intended package name opencode-{extension-name}.
 3. Check the packager summary against the package checklist below.
-4. Ask the user about publishing, showing local use: add "file:///path/to/opencode-[name]" to the plugins array in opencode.json.
-5. On yes, delegate to opencode-publisher: "Transform the locally-packaged extension at ./opencode-[name]/ for npm publishing" plus the packager summary and the publisher tasks: extract install logic to src/installer.ts, create src/cli.ts for bunx, expand package.json for npm, verify npm authentication, publish, generate consumer installation instructions.
+4. Ask the user about publishing, showing local use: add "file:///path/to/opencode-[name]" to the `plugins` array in opencode.json (per opencode-v2-facts §7).
+5. On yes, delegate to opencode-publisher: "Transform the locally-packaged extension at ./opencode-[name]/ for npm publishing" plus the packager summary and the publisher tasks: extract install logic to src/installer.ts, create src/cli.ts for bunx, expand package.json for npm, verify npm authentication, publish, generate consumer installation instructions that name consumer dependency versions as `@latest`, never pinned (per opencode-v2-facts §15).
 
 The packager hands back to you; you dispatch the publisher. Only chain stages sequentially, and only when a stage consumes the previous stage's output.
 
 ## Package checklist
 
-For local or npm packages, require every part: `.opencode/opencode.json` (plugin config), a bundled asset directory (`assets/` or repo-root `skills/` for skills-layout packages), `src/` (TypeScript for tools or plugins; none for markdown-only packages), `package.json`, `src/plugin.ts` (all code under `src/` — `index.ts` is the only code file at the root), `index.ts` (bunx CLI entry), `README.md` with the badge row directly below the first heading, `AGENTS.md`, `tests/`, `tsconfig.json`. A missing part means the next stage produces an incomplete package. Stage gates before any packaging or publishing stage counts as done: the package's `bun test` and typecheck run green, and every `opencode.json` snippet in its docs uses the `plugin` key (never `plugins`).
+For local or npm packages, require every part: copied extension assets at the package root (`skills/`, `commands/`, `agents/` directories — no `assets/` wrapper; see the packaging stage in AGENTS.md), `src/` (TypeScript for tools or plugins; none for markdown-only packages), `package.json` declaring `exports["./server"]` (per opencode-v2-facts §7 and §13 row 9 — the root-index fallback is runtime-dependent and must not be relied on), `src/plugin.ts` (all code under `src/` — `index.ts` is the only code file at the root), `index.ts` (bunx CLI entry, the "./server" target), `README.md` with the badge row directly below the first heading, `AGENTS.md`, `tests/`, `tsconfig.json`. A missing part means the next stage produces an incomplete package. Stage gates before any packaging or publishing stage counts as done: the package's `bun test` and typecheck run green; plugin code is TypeScript registering through `@opencode/plugin` — Effect-first via `@opencode/plugin/effect` with `Plugin.define({ id, effect })` (per opencode-v2-facts §11); and every config snippet in its docs is an opencode.json example using the `plugins` array (string or `{ package, options }` entries), never the v1 `plugin` key (per opencode-v2-facts §5, §7).
 
-The structural source of truth is the packager's own templates (`assets/templates/*.txt` in this suite), which encode the scope-aware, manifest-gated install pattern. Use example repos (e.g. opencode-intellisearch, opencode-gemiterm-skills) only as content and naming exemplars via the packager's discovery-study step - never as structural authority, since published repos may predate corrected install patterns.
+Copy transparency stands: skills, commands, and agent markdown are COPIED into the consumer's `.opencode/` (visible, editable files); plugin and tool code stays TypeScript in the package and registers at load (per opencode-v2-facts §7 directory discovery).
+
+The structural source of truth is the packager's own templates (`templates/*.txt` in this suite), which encode the scope-aware, manifest-gated install pattern. Use example repos (e.g. opencode-intellisearch, opencode-gemiterm-skills) only as content and naming exemplars via the packager's discovery-study step - never as structural authority, since published repos may predate corrected install patterns.
 
 ## Response format
 
