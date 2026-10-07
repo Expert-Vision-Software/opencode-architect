@@ -28,6 +28,11 @@ CONTENT DECLARATION
                                  other plugin integration (code-backed packages may also
                                  ship skills/commands)
 
+BIN
+  "src/cli.ts"               → the bunx entry point; keeps every
+                               `bunx <package> ...` advisory working at
+                               packager time, not only after publishing
+
 EXPORTS
   "./server"                 → keep pointing at ./index.ts — OpenCode v2 resolves
                                the plugin entrypoint through the ./server export

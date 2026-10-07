@@ -33,11 +33,13 @@ const gate = new DocsFactGate(REPO_ROOT);
 const validator = new ConfigSchemaValidator();
 const harness = new V2HostHarness();
 
+const TEMPLATE_SEPARATOR = "---";
+
 function templateBody(name: string): Promise<string> {
   return readFile(path.join(TEMPLATES_DIR, name), "utf-8").then((source) => {
     const separator = source.match(/^---$/m);
     if (separator === null || separator.index === undefined) return source;
-    return source.slice(separator.index + 4).trimStart();
+    return source.slice(separator.index + TEMPLATE_SEPARATOR.length + 1).trimStart();
   });
 }
 
@@ -75,8 +77,6 @@ async function renderPackage(): Promise<void> {
     "commands/my-command.md",
     `---\ndescription: "Rendered command stub"\n---\n\nSay hello from ${PACKAGE_NAME}.\n`,
   );
-  // The packager (not a template) provides the package's tests/ dir; simulate its
-  // minimal contract smoke test so the rendered package's own test gate can run.
   await write("tests/plugin.contract.test.ts", SMOKE_TEST);
 }
 
@@ -185,10 +185,9 @@ describe("rendered package passes its own gates", () => {
       isolatedEnv(isolatedBase),
     );
     if (outcome.exitCode !== 0) failWithOutput("rendered package typecheck", outcome);
-    expect(outcome.exitCode).toBe(0);
   }, 180_000);
 
-  test("the package's own test gate runs green", async () => {
+  test("the package's own test gate runs green (tests/ is packager-provided, simulated in the fixture)", async () => {
     const outcome = await runBun(["test"], RENDERED_PACKAGE, isolatedEnv(isolatedBase));
     if (outcome.exitCode !== 0) failWithOutput("rendered package bun test", outcome);
     const report = `${outcome.stdout}\n${outcome.stderr}`;

@@ -265,8 +265,8 @@ export class PluginConfigEditor {
     }
     return (
       `${candidate.path} registers ${packageName} under the legacy v1 "plugin" key. ` +
-      `OpenCode v2 still loads it through config migration, and this installer leaves legacy entries ` +
-      `read-only. Move the entry to the v2 "plugins" key to upgrade, then re-run the install.`
+      `This installer leaves legacy entries read-only; the v2 "plugins" key is the authoritative registration. ` +
+      `Move the entry to the v2 "plugins" key to upgrade, then re-run the install.`
     );
   }
 

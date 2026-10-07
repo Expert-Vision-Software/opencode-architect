@@ -93,7 +93,7 @@ function entryNames(value: unknown): string[] {
 
 function entryPackage(entry: unknown): string | null {
   if (entry === null || typeof entry !== "object") return null;
-  const pkg = (entry as { package?: unknown }).package;
+  const pkg = (entry as { package: unknown }).package;
   return typeof pkg === "string" ? pkg : null;
 }
 
