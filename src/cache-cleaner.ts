@@ -21,6 +21,8 @@ export interface ClearCacheOutcome {
 export class CacheCleaner {
   private readonly cache = new NpmCache();
 
+  constructor(private readonly rmFn: typeof rm = rm) {}
+
   public isUnsafePackageName(name: string): boolean {
     return name.includes("/") || name.includes("\\") || name.includes("..") || name === ".";
   }
@@ -84,7 +86,7 @@ export class CacheCleaner {
 
   private async removeTarget(target: string, removed: string[], warnings: string[], force: boolean): Promise<void> {
     try {
-      await rm(target, { recursive: true, force });
+      await this.rmFn(target, { recursive: true, force });
       removed.push(target);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);

@@ -72,7 +72,7 @@ export class Installer {
   private readonly cache = new NpmCache();
   private readonly assetsDir: string;
 
-  constructor(assetsDir: string | null = null) {
+  constructor(assetsDir: string | null = null, private readonly rmFn: typeof rm = rm) {
     this.assetsDir = assetsDir ?? path.join(import.meta.dirname, "..");
   }
 
@@ -171,7 +171,7 @@ export class Installer {
     for (const target of targets) {
       if (!(await exists(target))) continue;
       try {
-        await rm(target, { recursive: true });
+        await this.rmFn(target, { recursive: true });
         removed.push(target);
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
