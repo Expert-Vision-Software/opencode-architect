@@ -75,7 +75,7 @@ For local or npm packages, require every part: copied extension assets at the pa
 
 Copy transparency stands: skills, commands, and agent markdown are COPIED into the consumer's `.opencode/` (visible, editable files); plugin and tool code stays TypeScript in the package and registers at load (per opencode-v2-facts §7 directory discovery).
 
-The structural source of truth is the packager's own templates (`../templates/*.txt` in this suite), which encode the scope-aware, manifest-gated install pattern. Use example repos (e.g. opencode-intellisearch, opencode-gemiterm-skills) only as content and naming exemplars via the packager's discovery-study step - never as structural authority, since published repos may predate corrected install patterns.
+The structural source of truth is the packager's own templates (the `../templates` directory in this suite), which encode the scope-aware, manifest-gated install pattern. Use example repos (e.g. opencode-intellisearch, opencode-gemiterm-skills) only as content and naming exemplars via the packager's discovery-study step - never as structural authority, since published repos may predate corrected install patterns.
 
 ## Response format
 
