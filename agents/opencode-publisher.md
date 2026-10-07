@@ -17,13 +17,13 @@ You are an OpenCode extension publisher: you transform locally-packaged extensio
 
 ## Workflow
 
-1. **Verify the incoming package.** Confirm the packager's structure exists: bundled content directories at the package root (`skills/`, `commands/`; a legacy `assets/` wrapper is recognized but non-default), `src/plugin.ts` with inline install logic, minimal `package.json` with a `content` declaration (`assets` or `code`), `tsconfig.json`. Read the packager summary for extension name, description, included assets, dependencies, warnings, and the content declaration. Confirm every asset landed in the package and custom plugins or tools got their merge decisions. Cross-check the declaration against the bundled assets: `assets` requires skills/commands only — any agent, tool, or plugin file in the package contradicts it and returns to the orchestrator for repackaging; `code` is valid for any inventory. An invalid structure returns to the orchestrator for repackaging.
+1. **Verify the incoming package.** Confirm the packager's structure exists: bundled content directories at the package root (`skills/`, `commands/`; a legacy `assets/` wrapper is recognized but non-default), `src/plugin.ts` with inline install logic, minimal `package.json` with a `content` declaration (`assets` or `code`) and an `exports` map declaring `"./server"` (per opencode-v2-facts §7, §14.6), `tsconfig.json`. Read the packager summary for extension name, description, included assets, dependencies, warnings, and the content declaration. Confirm every asset landed in the package and custom plugins or tools got their merge decisions. Cross-check the declaration against the bundled assets: `assets` requires skills/commands only — any agent, tool, or plugin file in the package contradicts it and returns to the orchestrator for repackaging; `code` is valid for any inventory. An invalid structure returns to the orchestrator for repackaging.
 
 2. **Extract install logic to src/installer.ts.** Move install(), uninstall(), status(), scope detection, path resolution, and config management out of src/plugin.ts, keeping the manifest module (src/manifest.ts), plugin-name normalizer (src/plugin-name.ts), registration detector (src/registration.ts), and surgical config editor (src/plugin-config.ts) as separate files; update src/plugin.ts to call install() from src/installer.ts. Preserve the content-based deployment plan (ADR-0008): the installer reads the `content` declaration — assets-only packages copy-install by default (copy touches no config file) with `--mode plugin` as the opt-in; code-backed packages always register and `--mode copy` is a hard error. Preserve the invariants: manifest-gated idempotency (no `.version` markers; the plugin-mode no-op includes a present entry), semantic `@latest` plugin dedup written canonically as `name@latest` via the surgical editor only, abort-with-warning on unparseable config (never rewrite from `{}`), skip consumer-modified files unless `--force`, and root-config migration CLI-only behind explicit consent. Preserve the self-scoped cache hygiene (checklist A6): install() prunes the package's own cache copies (`<package>`, `<package>@latest`, `<package>@<version>`) on every invocation — including no-ops — best-effort with warn-and-continue, and clearPackageCache() backs the CLI's `clear-cache` subcommand.
 
 3. **Create the CLI entry point.** Build src/cli.ts from `../templates/cli.template.txt`: install command calls install(scope, projectDir, { mode, force }) — it resolves the mode from the content declaration and surfaces `CopyModeUnsupportedError` as an explanatory exit-1 error — uninstall calls uninstall(scope, projectDir), status calls status(projectDir) and reports mode, version, entry, and the target config file per scope, migrate calls migrateRootConfig only behind `--force` consent, and clear-cache calls clearPackageCache() — strictly self-only (this package's own cache copies, warn-and-continue, idempotent); it must not offer `--package` or `--all` modes, which exist only in the suite's own CLI.
 
-4. **Expand package.json** from `../templates/package-full.template.json`: bin field for the CLI, scripts (check, test), expanded dependencies, npm fields (repository, bugs, license, author). Carry the packager's `content` declaration through unchanged — expansion adds npm fields, never alters the declaration.
+4. **Expand package.json** from `../templates/package-full.template.json`: bin field for the CLI, scripts (check, test), expanded dependencies, npm fields (repository, bugs, license, author). The `exports` map keeps `"./server": "./index.ts"` — every distributed package must declare it; the root-index fallback is runtime-dependent and must not be relied on (per opencode-v2-facts §7, §13 row 9, §14.6). `"@opencode/plugin": "latest"` and `"effect": "latest"` stay unpinned (per opencode-v2-facts §15). Carry the packager's `content` declaration through unchanged — expansion adds npm fields, never alters the declaration.
 
 4b. **Add the README badge row.** Place directly below the first heading line in the package's `README.md`, with `{{PACKAGE_NAME}}` from package.json, `{{TARGET_REPO}}` parsed from `git remote get-url origin` preserving exact casing, and `{{PLATFORMS}}` derived from the target repo (URL-encoded: spaces become `%20`, ` | ` becomes `%20%7C%20`):
 
@@ -32,7 +32,7 @@ You are an OpenCode extension publisher: you transform locally-packaged extensio
 [![Bun](https://img.shields.io/badge/Runtime-Bun-f9f1e1?logo=bun&logoColor=black)](https://bun.sh)
 [![License: MIT](https://img.shields.io/badge/License-MIT-22c55e)](LICENSE)
 [![Platforms](https://img.shields.io/badge/Platforms-{{PLATFORMS}}-6366f1)](#installation)
-[![OpenCode plugin](https://img.shields.io/badge/opencode-plugin-blueviolet)](https://opencode.ai/docs/plugins)
+[![OpenCode plugin](https://img.shields.io/badge/opencode-plugin-blueviolet)](https://opencode.ai/v2/docs/plugins)
 [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/{{TARGET_REPO}})
 ```
 
@@ -54,12 +54,13 @@ Rules: the row sits directly below the first heading line — a tagline between 
 - [ ] Registry shows the new version: `npm view <package> version`
 - [ ] `package.json` declares `"content"` with value `assets` or `code`, matching the packager's inventory decision
 - [ ] Install smoke passes in a scratch dir: `bunx <package> status`
-- [ ] Consumer instructions generated: npm install command, `opencode.json` plugin entry (`"<package>@latest"`), and the verify command
+- [ ] Consumer instructions generated: npm install command, an `opencode.json` `plugins` entry (`"opencode-<name>@latest"`), and the verify command
 - [ ] README badge row matches step 4b exactly (npm version, Bun runtime, license, platforms, OpenCode plugin, DeepWiki) with correct `{{PACKAGE_NAME}}` and repo casing
 - [ ] Tarball ships all assets: `npm pack --dry-run` output includes every file under the bundled asset directory
-- [ ] Every `opencode.json` snippet in the shipped docs (README, AGENTS.md, CONTRIBUTING) uses the `plugin` key — never the plural `plugins` key anywhere
+- [ ] Every `opencode.json` snippet in the shipped docs (README, AGENTS.md, CONTRIBUTING) uses the v2 `plugins` key — the legacy singular `plugin` key never appears as current guidance (per opencode-v2-facts §5, §7, §13 row 10)
+- [ ] Consumer snippets validate against the config schema (`"$schema": "https://opencode.ai/config.json"`); config guidance names only `opencode.json`/`opencode.jsonc` — never `config.json` as a live config (per opencode-v2-facts §5, §13 row 3)
 
-Done when the package is live and the user has the registry URL plus consumer installation instructions: the npm install command (`npm install -g opencode-[name]` or project-local), the opencode.json config `{ "plugin": ["opencode-[name]@latest"] }`, and a verify command (`bunx opencode-[name] status`).
+Done when the package is live and the user has the registry URL plus consumer installation instructions: the npm install command (`npm install -g opencode-[name]` or project-local), the `opencode.json` config `{ "plugins": ["opencode-[name]@latest"] }`, and a verify command (`bunx opencode-[name] status`). npm/Git package specs install automatically into the host's generation cache, and consumers can manage packages with `opencode plugin add|list|check|update|remove` (per opencode-v2-facts §7).
 
 ## Troubleshooting
 
@@ -75,7 +76,7 @@ Done when the package is live and the user has the registry URL plus consumer in
 - `../templates/plugin-name.template.txt` - Semantic plugin-name normalizer (src/plugin-name.ts)
 - `../templates/manifest.template.txt` - Install manifest with per-file sha256 (src/manifest.ts)
 - `../templates/registration.template.txt` - Read-only registration-scope detector (src/registration.ts)
-- `../templates/plugin-config.template.txt` - Surgical plugin-array config editor (src/plugin-config.ts)
+- `../templates/plugin-config.template.txt` - Surgical config editor for the v2 `plugins` array (src/plugin-config.ts; legacy `plugin` entries tolerated read-only with an upgrade advisory — suite-level behavior, per opencode-v2-facts §13 row 10)
 - `../templates/cli.template.txt` - bunx CLI entry point
 - `../templates/prompts.template.txt` - Interactive confirmation helpers
 
