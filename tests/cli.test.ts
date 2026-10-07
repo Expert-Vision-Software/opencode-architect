@@ -107,7 +107,10 @@ describe("cli", () => {
     );
     await mkdir(blocked, { recursive: true });
     await writeFile(path.join(blocked, "index.ts"), "cached");
-    await chmod(blocked, 0o500);
+    const holder = process.platform === "win32"
+      ? await spawnCwdHolder(blocked)
+      : null;
+    if (holder === null) await chmod(blocked, 0o500);
     try {
       const run = await runCli(["install"], dir, { XDG_CACHE_HOME: cacheDir });
 
@@ -116,7 +119,8 @@ describe("cli", () => {
       expect(run.stderr).toContain(`Could not clear cached package ${path.join(cacheDir, "opencode", "npm", "opencode-architect@latest")}`);
       expect(existsSync(path.join(cacheDir, "opencode", "npm", "opencode-architect"))).toBe(false);
     } finally {
-      await chmod(blocked, 0o700).catch(() => {});
+      if (holder) holder.kill();
+      else await chmod(blocked, 0o700).catch(() => {});
       await rm(dir, { recursive: true, force: true });
       await rm(cacheDir, { recursive: true, force: true });
     }
@@ -278,3 +282,17 @@ describe("cli clear-cache", () => {
     expect(run.stdout).toContain("clear-cache");
   });
 });
+
+async function spawnCwdHolder(dir: string): Promise<Bun.Subprocess> {
+  const readyFile = path.join(dir, ".holder-ready");
+  const holder = Bun.spawn(
+    [process.execPath, "-e", "require('node:fs').writeFileSync(process.env.READY_FILE, '1'); setInterval(() => {}, 1e9)"],
+    { cwd: dir, env: { ...process.env, READY_FILE: readyFile }, stdout: "ignore", stderr: "ignore" },
+  );
+  const deadline = Date.now() + 5000;
+  while (!existsSync(readyFile)) {
+    if (Date.now() > deadline || holder.exitCode !== null) throw new Error("cwd holder failed to start");
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+  return holder;
+}

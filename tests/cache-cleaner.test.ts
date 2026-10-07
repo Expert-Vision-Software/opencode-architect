@@ -1,6 +1,6 @@
 import { describe, expect, test, beforeEach, afterEach } from "bun:test";
 import { existsSync } from "node:fs";
-import { chmod, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { CacheCleaner } from "../src/cache-cleaner";
@@ -188,17 +188,17 @@ describe("clearCache failure tolerance", () => {
   test("warns and continues when a removal fails", async () => {
     const kept = await seedCachedPackage(cacheRoot(), "opencode-architect");
     const removed = await seedCachedPackage(cacheRoot(), "opencode-architect@0.1.0");
-    await chmod(kept, 0o500);
+    const failingCleaner = new CacheCleaner(async (target, options) => {
+      if (target === kept) throw new Error("EPERM: simulated removal failure");
+      await rm(target, options);
+    });
 
-    try {
-      const outcome = await cleaner.clear({ packageName: null, all: false, yes: false, dryRun: false });
+    const outcome = await failingCleaner.clear({ packageName: null, all: false, yes: false, dryRun: false });
 
-      expect(outcome.removed).toContain(removed);
-      expect(existsSync(removed)).toBe(false);
-      expect(outcome.warnings.length).toBe(1);
-      expect(outcome.warnings[0]).toContain(kept);
-    } finally {
-      await chmod(kept, 0o700).catch(() => {});
-    }
+    expect(outcome.removed).toContain(removed);
+    expect(existsSync(removed)).toBe(false);
+    expect(existsSync(kept)).toBe(true);
+    expect(outcome.warnings.length).toBe(1);
+    expect(outcome.warnings[0]).toContain(kept);
   });
 });

@@ -1,6 +1,6 @@
 import { describe, expect, test, beforeEach, afterEach } from "bun:test";
 import { existsSync } from "node:fs";
-import { chmod, mkdir, mkdtemp, readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { Installer, contentHash, type Manifest, type Scope } from "../src/installer";
@@ -471,25 +471,19 @@ describe("Installer.install cache pruning", () => {
 
   test("removal failure warns but the install still succeeds", async () => {
     await seedCache();
-    const blocked = path.join(
-      cacheRoot(),
-      "opencode-architect@latest",
-      "1738848000000",
-      "node_modules",
-      "opencode-architect",
-    );
-    await chmod(blocked, 0o500);
-    try {
-      const outcome = await install("local");
+    const blocked = path.join(cacheRoot(), "opencode-architect@latest");
+    const failingInstaller = new Installer(null, async (target, options) => {
+      if (target === blocked) throw new Error("EPERM: simulated removal failure");
+      await rm(target, options);
+    });
 
-      expect(outcome.action).toBe("installed");
-      expect(outcome.cacheWarnings).toHaveLength(1);
-      expect(outcome.cacheWarnings[0]).toContain(path.join(cacheRoot(), "opencode-architect@latest"));
-      expect(existsSync(path.join(cacheRoot(), "opencode-architect"))).toBe(false);
-      expect(existsSync(path.join(cacheRoot(), "opencode-architect@latest"))).toBe(true);
-    } finally {
-      await chmod(blocked, 0o700).catch(() => {});
-    }
+    const outcome = await failingInstaller.install("local", { force: false, mode: "plugin", projectDir });
+
+    expect(outcome.action).toBe("installed");
+    expect(outcome.cacheWarnings).toHaveLength(1);
+    expect(outcome.cacheWarnings[0]).toContain(blocked);
+    expect(existsSync(path.join(cacheRoot(), "opencode-architect"))).toBe(false);
+    expect(existsSync(blocked)).toBe(true);
   });
 
   test("cache root honors XDG_CACHE_HOME with no cache present", async () => {
