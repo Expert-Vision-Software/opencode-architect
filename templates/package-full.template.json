@@ -27,6 +27,18 @@ CONTENT DECLARATION
                                 other plugin integration (code-backed packages may also
                                 ship skills/commands)
 
+EXPORTS
+  "./server"                 → keep pointing at ./index.ts — OpenCode v2 resolves
+                               the plugin entrypoint through the ./server export
+                               on every runtime; never rely on the root-index
+                               fallback (per opencode-v2-facts §14.6)
+
+DEPENDENCIES
+  "@opencode/plugin": "latest" and "effect": "latest" must stay "latest" —
+                               generated packages resolve current versions at
+                               time of use; never pin a consumer version
+                               (per opencode-v2-facts §15)
+
 METADATA
   "Publisher Name"           → your name or organization
   "Author Name <email@example.com>" → your name and email
@@ -40,6 +52,10 @@ METADATA
   "content": "assets",
   "type": "module",
   "module": "index.ts",
+  "exports": {
+    ".": "./index.ts",
+    "./server": "./index.ts"
+  },
   "bin": {
     "opencode-myextension": "src/cli.ts"
   },
