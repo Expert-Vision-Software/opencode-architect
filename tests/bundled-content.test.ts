@@ -125,7 +125,9 @@ describe("the golden v2 fixture is the upgraded output of the v1 fixture", () =>
     ]) {
       expect(config, `v1 key ${key} survived the upgrade`).not.toHaveProperty(key);
     }
-    expect(config).toHaveProperty("plugins");
+    // notify.ts lives in .opencode/plugins/ — auto-discovery loads it, and a
+    // configured file-path entry would be skipped by the host (facts §7).
+    expect(config).not.toHaveProperty("plugins");
     expect(config).toHaveProperty("permissions");
     expect(config).toHaveProperty("agents");
     expect(config).toHaveProperty("commands");

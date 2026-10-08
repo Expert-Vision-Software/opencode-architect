@@ -58,7 +58,11 @@ export default Plugin.define({
   — v2 never reads `config.json`. Entries: a package spec string, or
   `{ package, options }`. A `-target` entry removes/disables; `file://`,
   `./`, `../`, or absolute specs load from disk (resolved from the config
-  file's directory); anything else is an npm/Git spec. Facts §5, §7.
+  file's directory); anything else is an npm/Git spec. A configured local
+  entry must be a **directory** — a file path (e.g. `./.opencode/plugins/x.ts`)
+  is skipped with the host warning "configured plugin path must be a
+  directory"; single-file plugins load via `{plugin,plugins}` auto-discovery
+  instead. Facts §5, §7.
 - Directory discovery: every config root is scanned for `plugin/` and
   `plugins/` children; `.ts`/`.js` files, directories, and symlinks load.
   Project: `.opencode/plugin/` (or `plugins/`). Global:
@@ -66,6 +70,14 @@ export default Plugin.define({
 - **Precedence**: auto-discovered directories activate first; explicit config
   applies last (so config can remove auto-discovered packages); config files
   merge lowest→highest (global → explicit → direct → project). Facts §7.
+- **Hot reload**: edits to plugin files inside `{plugin,plugins}` dirs — and to
+  configured plugin directories — re-activate the plugin without a restart
+  (revision = max mtime over entrypoints + the plugin's `package.json`; facts
+  §7). Author for it: keep the plugin `id` stable, make cleanup functions
+  complete, and keep helper modules **inside the plugin directory** — imports
+  from outside the watched dirs do not trigger a reload. A broken save
+  disables the plugin until the file changes again; TUI plugins keep the last
+  good generation and swap in ~100ms (facts §11).
 
 ## Domains: how plugins change behavior
 

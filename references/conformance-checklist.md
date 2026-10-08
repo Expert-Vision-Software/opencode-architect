@@ -262,19 +262,23 @@ item; an item with no evidence found is a finding.
   (runtime-dependent — dead on Bun 1.3.x, which disables the plugin at the
   entry stage). Facts §7, §13 row 9, §14.6;
   `harness: tests/v2-host.test.ts`.
-- **F5 Root export optional.** The `exports` map is a closed allowlist:
-  with no `"."` key, `import "<pkg>"` by bare name fails with
-  `ERR_PACKAGE_PATH_NOT_EXPORTED` on Node and Bun (deep imports fail too
-  unless the map adds `"./*"`); resolvers that honor `exports` ignore
-  `module` and `main`, and `bin` entries bypass `exports` so the CLI keeps
-  working without `"."`. The root export therefore stays **optional**:
-  OpenCode v2 resolves server plugins only through `exports["./server"]`
-  (F4; `resolvePackageEntrypoint`, `packages/opencode/src/plugin/shared.ts`
-  in sst/opencode) and skill discovery is file-based only
-  (`discoverNodeModuleSkills` in vercel-labs/skills — it never imports the
-  entry or reads `exports`). When present, point `"."` at `./index.ts`.
-  `harness: tests/v2-host.test.ts` ("does not use npm package exports dot
-  for server entry").
+- **F5 Root export kept; map stays closed.** The `exports` map is a closed
+  allowlist: with no `"."` key, `import "<pkg>"` by bare name fails with
+  `ERR_PACKAGE_PATH_NOT_EXPORTED` on Node and Bun; resolvers that honor
+  `exports` ignore `module` and `main`, and `bin` entries bypass `exports`
+  so the CLI keeps working regardless. OpenCode v2 resolves server plugins
+  only through `exports["./server"]` (F4; facts §7 — the host reads
+  `./server` plus the `./tui`/`./rpc` feature flags, never `"."`), and
+  skill discovery is file-based only (external: `vercel-labs/skills`
+  `discoverNodeModuleSkills` — it never imports the entry or reads
+  `exports`). Keep both `"."` and `"./server"` declared (template default),
+  `"."` pointing at `./index.ts`; cover any further public subpath with an
+  explicit key — never `"./*"`, which would expose every internal file as
+  importable API. Node `exports` semantics per the Node.js documentation
+  (external source, outside the opencode facts ladder); opencode-side
+  evidence: `harness: tests/v2-host.test.ts` ("a package exposing only the
+  root index never yields a phantom server entrypoint"; "an explicit
+  ./server export wins over the root index").
 
 ## Verdict scale
 

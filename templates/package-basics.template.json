@@ -38,15 +38,16 @@ EXPORTS
                                the plugin entrypoint through the ./server export
                                on every runtime; never rely on the root-index
                                fallback (per opencode-v2-facts §14.6)
-  "."                        → optional — OpenCode and skill discovery never use
-                               it, but `exports` is a closed allowlist: without
-                               it, `import "opencode-myextension"` fails with
-                               ERR_PACKAGE_PATH_NOT_EXPORTED on Node and Bun
-                               (consumers importing by bare name require it);
-                               keep pointing at ./index.ts when present. The
-                               `module` field does not fill this gap — resolvers
-                               honoring `exports` ignore it. `bin` entries
-                               bypass `exports` and keep working either way
+  "."                        → keep alongside "./server" (both keys ship by
+                               default): OpenCode v2 itself never reads "."
+                               (facts §7), but `exports` acts as a closed
+                               allowlist — without it, a bare-name
+                               `import "opencode-myextension"` fails with
+                               ERR_PACKAGE_PATH_NOT_EXPORTED on Node and Bun.
+                               The `module` field does not fill this gap —
+                               resolvers honoring `exports` ignore it. `bin`
+                               entries bypass `exports` and keep working
+                               either way (facts §7)
 
 DEPENDENCIES
   "@opencode/plugin": "latest" and "effect": "latest" must stay "latest" —

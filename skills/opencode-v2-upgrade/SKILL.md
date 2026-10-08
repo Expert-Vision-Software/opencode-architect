@@ -71,7 +71,7 @@ Rewrite each config to v2-native keys. All facts §5 unless noted.
 
 | v1 key | v2 destination |
 | --- | --- |
-| `plugin` (singular) | `plugins` (array: `name@latest` strings or `{ package, options }`) |
+| `plugin` (singular) | `plugins` (array: `name@latest` strings or `{ package, options }`) — but **drop** entries pointing at files under `.opencode/{plugin,plugins}/`: auto-discovery loads them, and a configured file path is skipped with the host warning "configured plugin path must be a directory" (facts §7). Configured local entries must point at plugin directories. |
 | `permission` (keyed record) | `permissions` (ordered `{ action, resource, effect }` ruleset array, facts §4) |
 | `tools` (config map) | `permissions` rules (allow/deny per tool) |
 | `agent` | `agents` |
