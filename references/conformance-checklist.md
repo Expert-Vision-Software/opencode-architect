@@ -262,11 +262,24 @@ item; an item with no evidence found is a finding.
   (runtime-dependent — dead on Bun 1.3.x, which disables the plugin at the
   entry stage). Facts §7, §13 row 9, §14.6;
   `harness: tests/v2-host.test.ts`.
+- **F5 Root export optional.** The `exports` map is a closed allowlist:
+  with no `"."` key, `import "<pkg>"` by bare name fails with
+  `ERR_PACKAGE_PATH_NOT_EXPORTED` on Node and Bun (deep imports fail too
+  unless the map adds `"./*"`); resolvers that honor `exports` ignore
+  `module` and `main`, and `bin` entries bypass `exports` so the CLI keeps
+  working without `"."`. The root export therefore stays **optional**:
+  OpenCode v2 resolves server plugins only through `exports["./server"]`
+  (F4; `resolvePackageEntrypoint`, `packages/opencode/src/plugin/shared.ts`
+  in sst/opencode) and skill discovery is file-based only
+  (`discoverNodeModuleSkills` in vercel-labs/skills — it never imports the
+  entry or reads `exports`). When present, point `"."` at `./index.ts`.
+  `harness: tests/v2-host.test.ts` ("does not use npm package exports dot
+  for server entry").
 
 ## Verdict scale
 
 - **Conformant** — every item evidenced.
 - **Partially conformant** — violations are latent (dead code, fallback
   paths not yet exercised); list item IDs with evidence.
-- **Non-conformant** — any A1–A4, B1, B4–B6, C1–C3, E1–E4, F1–F4 violation
+- **Non-conformant** — any A1–A4, B1, B4–B6, C1–C3, E1–E4, F1–F5 violation
   on a live code path; these are the historically destructive patterns.
