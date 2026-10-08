@@ -21,6 +21,7 @@ const TEMPLATE_FILES = [
   "package-basics.template.json",
   "package-full.template.json",
   "plugin-config.template.txt",
+  "plugin-entry.template.txt",
   "plugin-local.template.txt",
   "plugin-name.template.txt",
   "prompts.template.txt",
@@ -68,6 +69,7 @@ async function renderPackage(): Promise<void> {
   await write("src/manifest.ts", await templateBody("manifest.template.txt"));
   await write("src/registration.ts", await templateBody("registration.template.txt"));
   await write("src/plugin-config.ts", await templateBody("plugin-config.template.txt"));
+  await write("src/plugin-entry.ts", await templateBody("plugin-entry.template.txt"));
   await write("src/installer.ts", await templateBody("installer.template.txt"));
   await write("src/cli.ts", await templateBody("cli.template.txt"));
   await write("package.json", await templateBody("package-basics.template.json"));
@@ -225,6 +227,26 @@ describe("rendered package passes its own gates", () => {
     expect(manifest.mode).toBe("plugin");
     expect(manifest.entry).toBe(`${PACKAGE_NAME}@latest`);
     expect(manifest.entryConfigPath.replaceAll("\\", "/")).toContain("opencode.jsonc");
+  }, 60_000);
+
+  test("a live path-form entry prevents a duplicate name entry", async () => {
+    const pathProject = path.join(RENDER_ROOT, "path-consumer");
+    await mkdir(pathProject, { recursive: true });
+    const entry = pathToFileURL(RENDERED_PACKAGE).href;
+    const configPath = path.join(pathProject, "opencode.json");
+    await writeFile(configPath, `{\n  "plugins": [{ "package": ${JSON.stringify(entry)} }]\n}\n`);
+    const before = await readFile(configPath, "utf-8");
+
+    const outcome = await runBun(
+      [path.join(RENDERED_PACKAGE, "src", "cli.ts"), "install", "--scope", "local", "--mode", "plugin"],
+      pathProject,
+      isolatedEnv(isolatedBase),
+    );
+    if (outcome.exitCode !== 0) failWithOutput("rendered package path-form install", outcome);
+
+    const after = await readFile(configPath, "utf-8");
+    expect(after).toBe(before);
+    expect(after).not.toContain(`${PACKAGE_NAME}@latest`);
   }, 60_000);
 
   test("status reports the plugin registration per scope", async () => {

@@ -2,13 +2,14 @@
 
 None — emit as-is as src/registration.ts.
 
-**Load-bearing — do not simplify:** detection is read-only (no writes, ever); it checks the global config base (`opencode.json`, `opencode.jsonc`, and the legacy `config.json`), the repo's `.opencode/opencode.json(c)`, and a repo-root `opencode.json(c)` — both extensions at every base plus global `config.json` — with `@latest`-aware name matching, never the launch directory, which opencode always sets to the consumer repo, and never any directory-identity comparison (plugin dir vs `directory`, `import.meta.dirname`, `process.cwd()`, realpath); a maintainer's own checkout is served by that repo's own config registration, not by a directory check. The v2 `plugins` key is authoritative and the legacy v1 `plugin` key is tolerated read-only — an entry under either key counts as registered, and entries match by package name whether written as strings or `{ "package": ... }` objects. `.jsonc` parses leniently (string-aware `//` and `/* */` comment stripping plus trailing-comma removal, so a `$schema` URL's `//` and escaped quotes survive); `.json` stays strict. Every unparseable candidate is warned about before any short-circuit. Nested and root configs combine with OR — a present-but-unregistered nested file never masks a repo-root registration.
+**Load-bearing — do not simplify:** detection is read-only (no writes, ever); it checks the global config base (`opencode.json`, `opencode.jsonc`, and the legacy `config.json`), the repo's `.opencode/opencode.json(c)`, and a repo-root `opencode.json(c)` — both extensions at every base plus global `config.json` — with `@latest`-aware name matching, never the launch directory, which opencode always sets to the consumer repo, and never any directory-identity comparison (plugin dir vs `directory`, `import.meta.dirname`, `process.cwd()`, realpath); a maintainer's own checkout is served by that repo's own config registration, not by a directory check. The v2 `plugins` key is authoritative and the legacy v1 `plugin` key is tolerated read-only — an entry under either key counts as registered, and entries match by package name whether written as strings or `{ "package": ... }` objects. A path-form entry (`file://` URL or filesystem path, string or `{ package }` object form) counts as registered too when it resolves to this package — `PluginEntryResolver.resolvesToPackage` (src/plugin-entry.ts) supplies that best-effort, memoized resolution. `.jsonc` parses leniently (string-aware `//` and `/* */` comment stripping plus trailing-comma removal, so a `$schema` URL's `//` and escaped quotes survive); `.json` stays strict. Every unparseable candidate is warned about before any short-circuit. Nested and root configs combine with OR — a present-but-unregistered nested file never masks a repo-root registration.
 
 ---
 import { exists, readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { PluginNameNormalizer } from "./plugin-name.ts";
+import { PluginEntryResolver } from "./plugin-entry.ts";
 
 export type RegistrationScope = "none" | "global" | "repo-local" | "both";
 
@@ -82,6 +83,8 @@ export function parseJsonc(text: string): unknown {
 interface PluginEntries {
   plugins: string[];
   legacyPlugins: string[];
+  rawPlugins: unknown[];
+  rawLegacyPlugins: unknown[];
 }
 
 function entryNames(value: unknown): string[] {
@@ -102,7 +105,12 @@ async function readPluginEntries(path: string): Promise<PluginEntries | null> {
   try {
     const raw = await readFile(path, "utf-8");
     const config = (path.endsWith(".jsonc") ? parseJsonc(raw) : JSON.parse(raw)) as Record<string, unknown>;
-    return { plugins: entryNames(config.plugins), legacyPlugins: entryNames(config.plugin) };
+    return {
+      plugins: entryNames(config.plugins),
+      legacyPlugins: entryNames(config.plugin),
+      rawPlugins: Array.isArray(config.plugins) ? config.plugins : [],
+      rawLegacyPlugins: Array.isArray(config.plugin) ? config.plugin : [],
+    };
   } catch {
     console.warn(`Warning: ${path} could not be parsed; ignoring it as a registration candidate.`);
     return null;
@@ -132,18 +140,25 @@ export class RegistrationDetector {
     const globalEntries = await readGlobalEntries();
     const nestedEntries = await readEntriesForBase(join(projectDir, ".opencode"));
     const rootEntries = await readEntriesForBase(projectDir);
-    const inGlobal = this.matchesAny(globalEntries);
-    const inLocal = this.matchesAny(nestedEntries) || this.matchesAny(rootEntries);
+    const inGlobal = await this.matchesAny(globalEntries);
+    const inLocal = (await this.matchesAny(nestedEntries)) || (await this.matchesAny(rootEntries));
     if (inGlobal && inLocal) return "both";
     if (inGlobal) return "global";
     if (inLocal) return "repo-local";
     return "none";
   }
 
-  private matchesAny(entries: PluginEntries | null): boolean {
+  private async matchesAny(entries: PluginEntries | null): Promise<boolean> {
     if (entries === null) return false;
-    return [...entries.plugins, ...entries.legacyPlugins].some((entry) =>
-      this.normalizer.matches(entry, this.packageName),
-    );
+    const names = [...entries.plugins, ...entries.legacyPlugins];
+    if (names.some((entry) => this.normalizer.matches(entry, this.packageName))) return true;
+    return this.resolvesAny([...entries.rawPlugins, ...entries.rawLegacyPlugins]);
+  }
+
+  private async resolvesAny(rawEntries: unknown[]): Promise<boolean> {
+    for (const entry of rawEntries) {
+      if (await PluginEntryResolver.resolvesToPackage(entry, this.packageName)) return true;
+    }
+    return false;
   }
 }

@@ -63,7 +63,11 @@ item; an item with no evidence found is a finding.
 - **B2 Semantic plugin dedup, canonical form.** `name`, `name@latest`, and
   `name@x.y.z` are treated as the same package when deduplicating; new
   entries are written canonically as `name@latest`. Exact-string
-  `includes()` dedup is non-conformant.
+  `includes()` dedup is non-conformant. A path-form entry (`file://` URL or
+  filesystem path, string or `{ package }` object form) that resolves to
+  this package counts as the same package too, through `PluginEntryResolver`
+  (src/plugin-entry.ts) — an installer that adds a duplicate `name@latest`
+  entry beside a live path entry fails this item (aurelia-expert issue #3).
 - **B3 Load hook never edits config registrations.** The load-time path
   never modifies `plugins` arrays and never writes permission or MCP
   configuration — those are CLI operations. A legacy singular `plugin` entry
@@ -121,6 +125,10 @@ item; an item with no evidence found is a finding.
   A global legacy `config.json` is a read-only candidate only — v2 never
   reads it, so an entry there is inert: warn and point the consumer at
   `opencode.json(c)`; never edit it (facts §5, §13 row 3).
+  Detection accepts path-form entries too: an entry that resolves to this
+  package through `PluginEntryResolver` (src/plugin-entry.ts) — a package
+  root, an entrypoint file, or a symlink, matched by `package.json` name —
+  counts as registered.
   Detection that silently treats an unparseable candidate as unregistered
   is also non-conformant: every candidate `opencode.json(c)` that fails to
   parse is preserved byte-for-byte and warned about, before any

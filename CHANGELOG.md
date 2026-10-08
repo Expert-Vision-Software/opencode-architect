@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Path-form plugin-entry recognition (the `aurelia-expert@db0736e` lesson, issue #3): the new `src/plugin-entry.ts` and `templates/plugin-entry.template.txt` resolve a `file://` URL or filesystem config entry to a package by `package.json` name. Registration-scope detection (`templates/registration.template.txt`) and the surgical config editor (`src/plugin-config.ts`, `templates/plugin-config.template.txt`) now count a live path-form entry as registered, so installation never adds a duplicate `name@latest` entry beside it. The packager and publisher template maps gained `src/plugin-entry.ts`, and conformance-checklist items B2 and C1 gained the rule.
+
 ## [1.0.0] - 2026-10-07
 
 ### Changed

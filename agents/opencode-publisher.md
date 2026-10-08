@@ -77,6 +77,7 @@ Done when the package is live and the user has the registry URL plus consumer in
 - `../templates/manifest.template.txt` - Install manifest with per-file sha256 (src/manifest.ts)
 - `../templates/registration.template.txt` - Read-only registration-scope detector (src/registration.ts)
 - `../templates/plugin-config.template.txt` - Surgical config editor for the v2 `plugins` array (src/plugin-config.ts; legacy `plugin` entries tolerated read-only with an upgrade advisory — suite-level behavior, per opencode-v2-facts §13 row 10)
+- `../templates/plugin-entry.template.txt` - Path-form plugin-entry resolver: matches a `file://` URL or filesystem entry to this package by `package.json` name (src/plugin-entry.ts)
 - `../templates/cli.template.txt` - bunx CLI entry point
 - `../templates/prompts.template.txt` - Interactive confirmation helpers
 

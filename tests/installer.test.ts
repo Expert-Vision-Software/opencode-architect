@@ -3,6 +3,7 @@ import { existsSync } from "node:fs";
 import { mkdir, mkdtemp, readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 import { Installer, contentHash, type Manifest, type Scope } from "../src/installer";
 import { CopyModeUnsupportedError } from "../src/copy-mode-unsupported-error";
 
@@ -101,6 +102,18 @@ describe("Installer.install", () => {
     expect(manifest.entry).toBe("opencode-architect@latest");
     expect(manifest.configPath).toBe(configPath);
     expect(manifest["content-hash"]).toBeNull();
+  });
+
+  test("a live path-form entry prevents a duplicate npm-name entry", async () => {
+    const configPath = path.join(scopeBase("local"), "opencode.json");
+    const entry = pathToFileURL(PACKAGE_ROOT).href;
+    await writeText(configPath, `{ "plugins": ["other", { "package": "${entry}" }] }\n`);
+    const before = await readFile(configPath, "utf-8");
+
+    const outcome = await install("local");
+
+    expect(outcome.configAction).toBe("noop");
+    expect(await readFile(configPath, "utf-8")).toBe(before);
   });
 
   test("global install registers in the XDG config base", async () => {
@@ -603,6 +616,19 @@ describe("Installer.status", () => {
   test("detects a registration without a manifest", async () => {
     await writeJson(path.join(scopeBase("local"), "opencode.json"), {
       plugins: ["opencode-architect"],
+    });
+
+    const outcome = await installer.status("local", projectDir);
+
+    expect(outcome.mode).toBe("plugin");
+    expect(outcome.version).toBeNull();
+    expect(outcome.configPath).toBe(path.join(scopeBase("local"), "opencode.json"));
+  });
+
+  test("detects a path-form registration without a manifest", async () => {
+    const entry = pathToFileURL(PACKAGE_ROOT).href;
+    await writeJson(path.join(scopeBase("local"), "opencode.json"), {
+      plugins: [{ package: entry }],
     });
 
     const outcome = await installer.status("local", projectDir);

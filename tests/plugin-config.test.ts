@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 import { PluginConfigEditor } from "../src/plugin-config";
 import { captureConsole } from "./test-helpers";
 
@@ -390,6 +391,108 @@ describe("PluginConfigEditor.ensurePluginEntry", () => {
     const found = await editor().findRegistration("my-pkg", { scope: "local", projectDir });
 
     expect(found).toBe(configPath);
+  });
+});
+
+describe("PluginConfigEditor path-form entries", () => {
+  async function makePackage(name: string): Promise<string> {
+    const dir = await makeDir(`packages/${name}`);
+    await write(`packages/${name}/package.json`, `{ "name": "${name}", "version": "1.0.0" }\n`);
+    return dir;
+  }
+
+  test("a path-form string entry is a zero-write no-op", async () => {
+    const projectDir = await makeDir("project");
+    const pkgDir = await makePackage("my-pkg");
+    const configPath = await write("project/opencode.json", `{ "plugins": ["${pathToFileURL(pkgDir).href}"] }\n`);
+    const before = await readFile(configPath, "utf-8");
+
+    const outcome = await editor().ensurePluginEntry("my-pkg", { scope: "local", projectDir });
+
+    expect(outcome.action).toBe("noop");
+    expect(await readFile(configPath, "utf-8")).toBe(before);
+  });
+
+  test("a path-form object entry is a zero-write no-op", async () => {
+    const projectDir = await makeDir("project");
+    const pkgDir = await makePackage("my-pkg");
+    const configPath = await write(
+      "project/opencode.json",
+      `{ "plugins": [{ "package": "${pathToFileURL(pkgDir).href}", "options": {} }] }\n`,
+    );
+    const before = await readFile(configPath, "utf-8");
+
+    const outcome = await editor().ensurePluginEntry("my-pkg", { scope: "local", projectDir });
+
+    expect(outcome.action).toBe("noop");
+    expect(await readFile(configPath, "utf-8")).toBe(before);
+  });
+
+  test("an entrypoint file path resolves to its containing package", async () => {
+    const projectDir = await makeDir("project");
+    await makePackage("my-pkg");
+    await write("packages/my-pkg/index.ts", "export {};\n");
+    const entry = pathToFileURL(path.join(ROOT, "packages", "my-pkg", "index.ts")).href;
+    const configPath = await write("project/opencode.json", `{ "plugins": ["${entry}"] }\n`);
+    const before = await readFile(configPath, "utf-8");
+
+    const outcome = await editor().ensurePluginEntry("my-pkg", { scope: "local", projectDir });
+
+    expect(outcome.action).toBe("noop");
+    expect(await readFile(configPath, "utf-8")).toBe(before);
+  });
+
+  test("findRegistration reports a path-form entry", async () => {
+    const projectDir = await makeDir("project");
+    const pkgDir = await makePackage("my-pkg");
+    const configPath = await write(
+      "project/opencode.json",
+      `{ "plugins": ["${pathToFileURL(pkgDir).href}"] }\n`,
+    );
+
+    const found = await editor().findRegistration("my-pkg", { scope: "local", projectDir });
+
+    expect(found).toBe(configPath);
+  });
+
+  test("removePluginEntry removes a path-form entry and keeps the rest", async () => {
+    const projectDir = await makeDir("project");
+    const pkgDir = await makePackage("my-pkg");
+    const configPath = await write(
+      "project/opencode.json",
+      `{ "plugins": ["other", "${pathToFileURL(pkgDir).href}"] }\n`,
+    );
+
+    const outcome = await editor().removePluginEntry("my-pkg", { scope: "local", projectDir });
+
+    expect(outcome.action).toBe("removed");
+    expect(outcome.configPath).toBe(configPath);
+    const parsed = JSON.parse(await readFile(configPath, "utf-8"));
+    expect(parsed.plugins).toEqual(["other"]);
+  });
+
+  test("an unrelated path entry never matches and a duplicate is added", async () => {
+    const projectDir = await makeDir("project");
+    const otherDir = await makePackage("other-pkg");
+    await write("project/opencode.json", `{ "plugins": ["${pathToFileURL(otherDir).href}"] }\n`);
+
+    const outcome = await editor().ensurePluginEntry("my-pkg", { scope: "local", projectDir });
+
+    expect(outcome.action).toBe("updated");
+    const parsed = JSON.parse(await readFile(path.join(projectDir, "opencode.json"), "utf-8"));
+    expect(parsed.plugins).toContain("my-pkg@latest");
+  });
+
+  test("a missing path never matches and never throws", async () => {
+    const projectDir = await makeDir("project");
+    const entry = pathToFileURL(path.join(ROOT, "does-not-exist")).href;
+    await write("project/opencode.json", `{ "plugins": ["${entry}"] }\n`);
+
+    const outcome = await editor().ensurePluginEntry("my-pkg", { scope: "local", projectDir });
+
+    expect(outcome.action).toBe("updated");
+    const parsed = JSON.parse(await readFile(path.join(projectDir, "opencode.json"), "utf-8"));
+    expect(parsed.plugins).toContain("my-pkg@latest");
   });
 });
 
