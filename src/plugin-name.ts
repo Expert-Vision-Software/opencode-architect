@@ -1,10 +1,3 @@
-# Inputs
-
-None — emit as-is as src/plugin-name.ts.
-
-**Load-bearing — do not simplify:** `name`, `name@latest`, and `name@x.y.z` are the same package; `normalize` always outputs the canonical `name@latest` form and `matches` compares base names semantically, case-insensitively on Windows. Never replace with exact-string equality.
-
----
 const CANONICAL_SPEC = "latest";
 
 const SPEC_PATTERN = /^(?<base>[^@\s]+)@(?:latest|\d+\.\d+\.\d+(?:[-+][A-Za-z0-9.]+)?)$/;
