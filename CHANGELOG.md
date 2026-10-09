@@ -11,6 +11,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Path-form plugin-entry recognition (the `aurelia-expert@db0736e` lesson, issue #3): the new `src/plugin-entry.ts` and `templates/plugin-entry.template.txt` resolve a `file://` URL or filesystem config entry to a package by `package.json` name. Registration-scope detection (`templates/registration.template.txt`) and the surgical config editor (`src/plugin-config.ts`, `templates/plugin-config.template.txt`) now count a live path-form entry as registered, so installation never adds a duplicate `name@latest` entry beside it. The packager and publisher template maps gained `src/plugin-entry.ts`, and conformance-checklist items B2 and C1 gained the rule.
 
+### Changed
+
+- Path-form resolution refinements from the code review: relative path entries resolve against the config file's directory (facts §7) instead of the process working directory; `package.json` name matching is case-insensitive on Windows in code, as the docs already claimed; resolution memoization is an unbounded map keyed by resolved path; `src/plugin-entry.ts` is byte-identical to its template again, and the suite gains `src/plugin-name.ts` (byte-identical to `templates/plugin-name.template.txt`), both enforced by a new byte-sync test. The registration/config-editor "name match, then path resolve" shape is deduplicated into one shared predicate per file, and the four array fields collapse into keyed records.
+
+### Fixed
+
+- `agents/opencode-plugin-engineer.md` referenced a nonexistent `filterOurEntries`; it now names the real de-dup path (`PluginConfigEditor.ensurePluginEntry`'s zero-write no-op). Historical note: commit `6308389` was labeled `docs:` but also flipped test expectations (the v2 fixture dropped its `plugins` key).
+
 ## [1.0.0] - 2026-10-07
 
 ### Changed
