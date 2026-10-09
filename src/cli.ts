@@ -185,18 +185,22 @@ function resolvedLabel(source: ResolvedSource | null): string {
 }
 
 function verdictLabel(effective: EffectiveVersion): string {
-  const kind =
-    effective.source !== null
-      ? sourceLabel(effective.source)
-      : effective.version !== null
-        ? "manifest"
-        : "unresolved";
-  const latest = effective.latestVersion !== null ? `, latest ${effective.latestVersion}` : "";
+  const latest =
+    effective.latestVersion !== null && effective.versionKind !== "npm" ? `, latest ${effective.latestVersion}` : "";
   const scopeLabel =
     effective.registeredScopes.length > 1
       ? `${effective.registeredScopes.join(" + ")}; both scopes register — double-load`
       : effective.scope;
-  return `${effective.version ?? "unknown"} (${kind}, ${scopeLabel}${latest})`;
+  return `${effective.version ?? "unknown"} (${kindLabel(effective.versionKind)}, ${scopeLabel}${latest})`;
+}
+
+function kindLabel(kind: EffectiveVersion["versionKind"]): string {
+  if (kind === "cache") return "cache copy";
+  if (kind === "checkout") return "checkout copy";
+  if (kind === "spec") return "pinned spec";
+  if (kind === "npm") return "npm latest";
+  if (kind === "manifest") return "manifest";
+  return "unresolved";
 }
 
 function sourceLabel(source: "cache" | "checkout"): string {

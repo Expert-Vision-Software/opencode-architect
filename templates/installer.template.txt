@@ -54,6 +54,7 @@ export interface ScopeStatus {
   mode: InstallMode | null;
   entry: string | null;
   entryName: string | null;
+  entryVersion: string | null;
   entryConfigPath: string | null;
   pluginInConfig: boolean;
   resolvedVersion: string | null;
@@ -67,7 +68,7 @@ export interface ScopeStatus {
 
 export interface EffectiveStatus {
   version: string | null;
-  source: "cache" | "checkout" | null;
+  versionKind: "cache" | "checkout" | "spec" | "npm" | "manifest" | null;
   scope: Scope | null;
   latestVersion: string | null;
   registeredScopes: Scope[];
@@ -414,14 +415,14 @@ export async function status(projectDir: string = process.cwd(), online: boolean
   if (local !== null && global !== null && local.registered && global.registered) {
     warnings.push(`registered in both scopes (double-load risk): ${local.entryConfigPath} and ${global.entryConfigPath}`);
   }
-  let effective = effectiveStatus(local, global);
+  let effective: EffectiveStatus;
   if (online) {
-    const outcome = await applyOnline([local, global], effective, fetchFn);
+    const outcome = await applyOnline([local, global], fetchFn);
     warnings.push(...outcome.warnings);
     local = outcome.scopes[0] ?? null;
     global = outcome.scopes[1] ?? null;
-    effective = outcome.effective;
   }
+  effective = effectiveStatus(local, global);
   return { local, global, effective, warnings };
 }
 
@@ -431,6 +432,7 @@ async function scopeStatus(scope: Scope, projectDir: string, entries: RawConfigE
   const manifestData: ManifestData | null = await manifest.read();
   const matched = await findMatchedRegistration(entries);
   if (manifestData === null && matched === null) return null;
+  const parsedEntry = matched !== null && !isPathSpec(matched.spec) ? parseNpmSpec(matched.spec) : null;
   const warnings: string[] = [];
   let resolvedVersion: string | null = null;
   let resolvedSource: "cache" | "checkout" | null = null;
@@ -459,6 +461,7 @@ async function scopeStatus(scope: Scope, projectDir: string, entries: RawConfigE
     mode: manifestData?.mode ?? (matched !== null ? "plugin" : null),
     entry: matched !== null ? matched.spec : manifestData?.entry ?? null,
     entryName: matched?.name ?? null,
+    entryVersion: parsedEntry?.version ?? null,
     entryConfigPath: matched !== null ? matched.configPath : manifestData?.entryConfigPath ?? null,
     pluginInConfig: matched !== null,
     resolvedVersion,
@@ -575,22 +578,54 @@ function effectiveStatus(local: ScopeStatus | null, global: ScopeStatus | null):
   if (global?.registered) registeredScopes.push("global");
   for (const scopeStatusValue of [local, global]) {
     if (scopeStatusValue === null || !scopeStatusValue.registered) continue;
+    if (scopeStatusValue.resolvedVersion !== null) {
+      return {
+        version: scopeStatusValue.resolvedVersion,
+        versionKind: scopeStatusValue.resolvedSource,
+        scope: scopeStatusValue.scope,
+        latestVersion: scopeStatusValue.publishedVersion,
+        registeredScopes,
+      };
+    }
+    const fallback = specFallback(scopeStatusValue);
+    if (fallback !== null) {
+      return {
+        version: fallback.version,
+        versionKind: fallback.kind,
+        scope: scopeStatusValue.scope,
+        latestVersion: scopeStatusValue.publishedVersion,
+        registeredScopes,
+      };
+    }
     return {
-      version: scopeStatusValue.resolvedVersion ?? scopeStatusValue.version,
-      source: scopeStatusValue.resolvedSource,
+      version: scopeStatusValue.version,
+      versionKind: scopeStatusValue.version !== null ? "manifest" : null,
       scope: scopeStatusValue.scope,
-      latestVersion: null,
+      latestVersion: scopeStatusValue.publishedVersion,
       registeredScopes,
     };
   }
-  return { version: null, source: null, scope: null, latestVersion: null, registeredScopes };
+  return { version: null, versionKind: null, scope: null, latestVersion: null, registeredScopes };
+}
+
+function specFallback(scopeStatusValue: ScopeStatus): { version: string; kind: "spec" | "npm" } | null {
+  if (scopeStatusValue.entryVersion === null || scopeStatusValue.entryVersion === "latest") {
+    if (scopeStatusValue.entryVersion === "latest" && scopeStatusValue.publishedVersion !== null) {
+      return { version: scopeStatusValue.publishedVersion, kind: "npm" };
+    }
+    return null;
+  }
+  return isExactSemver(scopeStatusValue.entryVersion) ? { version: scopeStatusValue.entryVersion, kind: "spec" } : null;
+}
+
+function isExactSemver(version: string): boolean {
+  return /^\d+\.\d+\.\d+(?:-[\w.-]+)?(?:\+[\w.-]+)?$/.test(version);
 }
 
 async function applyOnline(
   scopes: Array<ScopeStatus | null>,
-  effective: EffectiveStatus,
   fetchFn: typeof fetch,
-): Promise<{ warnings: string[]; scopes: Array<ScopeStatus | null>; effective: EffectiveStatus }> {
+): Promise<{ warnings: string[]; scopes: Array<ScopeStatus | null> }> {
   const warnings: string[] = [];
   const lookups = new Map<string, { version: string | null; warning: string | null }>();
   const lookupName = (scopeStatusValue: ScopeStatus): string | null =>
@@ -623,12 +658,7 @@ async function applyOnline(
     }
     updated.push({ ...scopeStatusValue, publishedVersion: lookup.version });
   }
-  const effectiveScopeStatus = updated.find(
-    (scopeStatusValue) => scopeStatusValue !== null && scopeStatusValue.registered && scopeStatusValue.scope === effective.scope,
-  );
-  const effectiveName = effectiveScopeStatus !== null && effectiveScopeStatus !== undefined ? lookupName(effectiveScopeStatus) : null;
-  const latest = effectiveName !== null ? lookups.get(effectiveName)?.version ?? null : null;
-  return { warnings, scopes: updated, effective: { ...effective, latestVersion: latest } };
+  return { warnings, scopes: updated };
 }
 
 async function fetchLatestVersion(name: string, fetchFn: typeof fetch): Promise<{ version: string | null; warning: string | null }> {

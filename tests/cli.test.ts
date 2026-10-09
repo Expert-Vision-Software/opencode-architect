@@ -211,8 +211,24 @@ describe("cli status", () => {
     expect(onlineRun.stderr).toContain("--online");
   });
 
-  test("status annotates the verdict and shows the copy age when both scopes register", async () => {
-    const dir = await mkdtemp(path.join(tmpdir(), "oa-cli-status-both-"));
+  test("a pinned spec answers the verdict without any cached copy", async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), "oa-cli-status-pinned-"));
+    const cacheDir = await mkdtemp(path.join(tmpdir(), "oa-cli-status-pinned-cache-"));
+    try {
+      await mkdir(path.join(dir, ".opencode"), { recursive: true });
+      await writeFile(path.join(dir, ".opencode", "opencode.json"), '{ "plugins": ["opencode-architect@1.0.0"] }\n');
+
+      const run = await runCli(["status"], dir, { XDG_CACHE_HOME: cacheDir });
+
+      expect(run.exitCode).toBe(0);
+      expect(run.stdout).toContain("should load: 1.0.0 (pinned spec, local)");
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+      await rm(cacheDir, { recursive: true, force: true });
+    }
+  });
+
+  test("status annotates the verdict and shows the copy age when both scopes register", async () => {    const dir = await mkdtemp(path.join(tmpdir(), "oa-cli-status-both-"));
     const configDir = await mkdtemp(path.join(tmpdir(), "oa-cli-status-cfg-"));
     const cacheDir = await mkdtemp(path.join(tmpdir(), "oa-cli-status-cache-"));
     try {

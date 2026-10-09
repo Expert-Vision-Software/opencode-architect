@@ -314,8 +314,38 @@ describe("StatusReporter.report", () => {
     expect(local?.registered).toBe(true);
     expect(local?.resolved?.version).toBe("1.0.0");
     expect(report.effective.version).toBe("1.0.0");
+    expect(report.effective.versionKind).toBe("cache");
     expect(report.effective.scope).toBe("local");
     expect(report.effective.registeredScopes).toEqual(["local"]);
+  });
+
+  test("a pinned spec answers the verdict even when no copy is cached", async () => {
+    await writeConfig("local", "opencode.json", '{ "plugins": ["opencode-architect@1.0.0"] }\n');
+
+    const report = await reporter.report(projectDir, { scopes: null, online: false });
+
+    expect(report.effective.version).toBe("1.0.0");
+    expect(report.effective.versionKind).toBe("spec");
+  });
+
+  test("@latest with --online answers the verdict with the published version", async () => {
+    await writeConfig("local", "opencode.json", '{ "plugins": ["opencode-architect@latest"] }\n');
+    const stubFetch = ((input: string | URL | Request) =>
+      Promise.resolve(new Response(JSON.stringify({ version: "2.0.0" }), { status: 200 }))) as unknown as typeof fetch;
+
+    const report = await new StatusReporter(installer, stubFetch).report(projectDir, { scopes: null, online: true });
+
+    expect(report.effective.version).toBe("2.0.0");
+    expect(report.effective.versionKind).toBe("npm");
+  });
+
+  test("a range spec stays unresolved without a cached copy", async () => {
+    await writeConfig("local", "opencode.json", '{ "plugins": ["opencode-architect@^1.7.0"] }\n');
+
+    const report = await reporter.report(projectDir, { scopes: null, online: false });
+
+    expect(report.effective.version).toBeNull();
+    expect(report.effective.versionKind).toBeNull();
   });
 
   test("warns when registered in both scopes and annotates the verdict", async () => {

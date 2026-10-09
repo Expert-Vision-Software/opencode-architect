@@ -23,15 +23,18 @@ export interface ScopeStatusReport {
   configPath: string | null;
   entryText: string | null;
   entryName: string | null;
+  entryVersion: string | null;
   entryForm: "npm" | "path" | null;
   resolved: ResolvedSource | null;
   publishedVersion: string | null;
   warnings: string[];
 }
 
+export type VersionKind = "cache" | "checkout" | "spec" | "npm" | "manifest" | null;
+
 export interface EffectiveVersion {
   version: string | null;
-  source: "cache" | "checkout" | null;
+  versionKind: VersionKind;
   scope: Scope | null;
   latestVersion: string | null;
   registeredScopes: Scope[];
@@ -54,6 +57,7 @@ interface MatchedEntry {
   entry: unknown;
   display: string;
   name: string | null;
+  version: string | null;
   form: "npm" | "path";
 }
 
@@ -73,13 +77,12 @@ export class StatusReporter {
       reports.push(await this.resolveScope(scope, projectDir));
     }
     const warnings = this.crossScopeWarnings(reports);
-    let effective = this.effectiveVersion(reports);
-    const online = options.online ? await this.onlinePass(reports, effective) : null;
-    if (online !== null) {
+    if (options.online) {
+      const online = await this.onlinePass(reports);
       warnings.push(...online.warnings);
       reports = online.reports;
-      effective = online.effective;
     }
+    const effective = this.effectiveVersion(reports);
     return { projectDir, scopes: reports, effective, warnings };
   }
 
@@ -114,6 +117,7 @@ export class StatusReporter {
         configPath: null,
         entryText: null,
         entryName: null,
+        entryVersion: null,
         entryForm: null,
         resolved: null,
         publishedVersion: null,
@@ -141,6 +145,7 @@ export class StatusReporter {
       configPath: matched.configPath,
       entryText: matched.display,
       entryName: matched.name,
+      entryVersion: matched.version,
       entryForm: matched.form,
       resolved,
       publishedVersion: null,
@@ -160,6 +165,7 @@ export class StatusReporter {
               entry: raw,
               display: classified.display,
               name: classified.name,
+              version: classified.version,
               form: "npm",
             };
           }
@@ -171,6 +177,7 @@ export class StatusReporter {
             entry: raw,
             display: classified.display,
             name: null,
+            version: null,
             form: "path",
           };
         }
@@ -192,21 +199,48 @@ export class StatusReporter {
     const registeredScopes = reports.filter((report) => report.registered).map((report) => report.scope);
     for (const report of reports) {
       if (!report.registered) continue;
+      const fallback = this.specFallback(report);
+      if (report.resolved !== null) {
+        return {
+          version: report.resolved.version,
+          versionKind: report.resolved.source,
+          scope: report.scope,
+          latestVersion: report.publishedVersion,
+          registeredScopes,
+        };
+      }
+      if (fallback !== null) {
+        return {
+          version: fallback.version,
+          versionKind: fallback.kind,
+          scope: report.scope,
+          latestVersion: report.publishedVersion,
+          registeredScopes,
+        };
+      }
       return {
-        version: report.resolved?.version ?? report.manifestVersion,
-        source: report.resolved?.source ?? null,
+        version: report.manifestVersion,
+        versionKind: report.manifestVersion !== null ? "manifest" : null,
         scope: report.scope,
-        latestVersion: null,
+        latestVersion: report.publishedVersion,
         registeredScopes,
       };
     }
-    return { version: null, source: null, scope: null, latestVersion: null, registeredScopes };
+    return { version: null, versionKind: null, scope: null, latestVersion: null, registeredScopes };
   }
 
-  private async onlinePass(
-    reports: ScopeStatusReport[],
-    effective: EffectiveVersion,
-  ): Promise<{ warnings: string[]; reports: ScopeStatusReport[]; effective: EffectiveVersion }> {
+  private specFallback(report: ScopeStatusReport): { version: string; kind: "spec" | "npm" } | null {
+    if (report.entryVersion === null || report.entryVersion === "latest") {
+      if (report.entryVersion === "latest" && report.publishedVersion !== null) {
+        return { version: report.publishedVersion, kind: "npm" };
+      }
+      return null;
+    }
+    if (isExactSemver(report.entryVersion)) return { version: report.entryVersion, kind: "spec" };
+    return null;
+  }
+
+  private async onlinePass(reports: ScopeStatusReport[]): Promise<{ warnings: string[]; reports: ScopeStatusReport[] }> {
     const warnings: string[] = [];
     const checker = new RegistryVersionChecker(this.fetchFn);
     const latest = new Map<string, string | null>();
@@ -236,12 +270,7 @@ export class StatusReporter {
       }
       updated.push({ ...report, publishedVersion: published });
     }
-    const effectiveReport = updated.find((report) => report.registered && report.scope === effective.scope);
-    return {
-      warnings,
-      reports: updated,
-      effective: { ...effective, latestVersion: effectiveReport?.publishedVersion ?? null },
-    };
+    return { warnings, reports: updated };
   }
 
   private lookupName(report: ScopeStatusReport): string | null {
@@ -249,4 +278,8 @@ export class StatusReporter {
     if (report.entryName !== null) return report.entryName;
     return report.resolved?.name ?? null;
   }
+}
+
+function isExactSemver(version: string): boolean {
+  return /^\d+\.\d+\.\d+(?:-[\w.-]+)?(?:\+[\w.-]+)?$/.test(version);
 }
