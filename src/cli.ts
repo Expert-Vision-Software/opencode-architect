@@ -45,6 +45,14 @@ export async function runCli(argv: string[]): Promise<number> {
     console.error("--path and --online only apply to the status command.");
     return 1;
   }
+  if (command !== "status" && command !== "clear-cache" && values.package !== undefined) {
+    console.error("--package only applies to the status and clear-cache commands.");
+    return 1;
+  }
+  if (command === "status" && values.package !== undefined && !isSafeLookupName(values.package)) {
+    console.error(`Invalid package name: ${values.package}`);
+    return 1;
+  }
   const scopeInput = values.scope;
   if (scopeInput !== undefined && scopeInput !== "local" && scopeInput !== "global") {
     console.error(`Invalid scope: ${scopeInput}. Must be "local" or "global".`);
@@ -104,7 +112,11 @@ export async function runCli(argv: string[]): Promise<number> {
       case "status": {
         const projectDir = await resolveProjectDir(values.path);
         const scopes: Scope[] | null = scopeInput === undefined ? null : [scope];
-        const report = await new StatusReporter(installer).report(projectDir, { scopes, online: values.online });
+        const report = await new StatusReporter(installer).report(projectDir, {
+          scopes,
+          online: values.online,
+          packageName: values.package,
+        });
         printStatusReport(report);
         break;
       }
@@ -155,6 +167,7 @@ if (import.meta.main) {
 }
 
 function printStatusReport(report: StatusReport): void {
+  console.log(`package: ${report.packageName}`);
   for (const scopeReport of report.scopes) {
     const entry = scopeReport.entryText ?? "-";
     const config = scopeReport.configPath ?? "-";
@@ -227,6 +240,12 @@ function stripQuotes(value: string): string {
   return value;
 }
 
+function isSafeLookupName(value: string): boolean {
+  const trimmed = value.trim();
+  if (trimmed.length === 0) return false;
+  return !trimmed.split(/[\\/]/).includes("..");
+}
+
 function printHelp(): void {
   console.log(`
 opencode-architect v${VERSION}
@@ -241,7 +260,8 @@ Commands:
   uninstall   Remove the plugin entry, the manifest, and any residual payload
   status      Resolve what a session would load: per-scope registration, the
               config file holding it, the raw entry, the resolved source on
-              disk, and an effective verdict
+              disk, and an effective verdict; --package resolves another
+              installed package instead of this one
   clear-cache Remove cached copies from OpenCode's package cache; default
               targets this package only
 
@@ -256,8 +276,10 @@ Options:
                          version and flag staleness; network failures warn and continue
       --path <dir>       status: resolve against another project directory instead of
                          the current working directory; the directory must exist
-      --package <name>   clear-cache: remove <name> and every <name>@* instead;
-                         requires --yes
+      --package <name>   status: resolve <name> instead of this package, so another
+                         installed package can be inspected; also selects the
+                         <name>.manifest.json lookup. clear-cache: remove <name> and
+                         every <name>@* instead; requires --yes
       --all              clear-cache: remove the whole OpenCode cache directory;
                          requires --yes
       --yes              clear-cache: confirm a destructive broad mode
@@ -273,6 +295,7 @@ Examples:
   opencode-architect status --scope global
   opencode-architect status --online
   opencode-architect status --path ../other-project
+  opencode-architect status --online --path ../other-project --package some-pkg
   opencode-architect clear-cache
   opencode-architect clear-cache --package some-pkg --yes
   opencode-architect clear-cache --all --yes

@@ -238,11 +238,13 @@ export class Installer {
     return removed;
   }
 
-  public async manifestAt(scope: Scope, projectDir: string): Promise<ManifestState | null> {
+  public async manifestAt(scope: Scope, projectDir: string, packageName: string = PACKAGE_NAME): Promise<ManifestState | null> {
     const base = this.scopeBase(scope, projectDir);
-    const { manifest } = await this.readManifestRecord(base);
-    if (manifest === null) return null;
-    return { mode: manifest.mode, version: manifest.version };
+    for (const candidate of this.manifestCandidatesFor(base, packageName)) {
+      const manifest = await this.readManifest(candidate);
+      if (manifest !== null) return { mode: manifest.mode, version: manifest.version };
+    }
+    return null;
   }
 
   public async hasManifestAnywhere(projectDir: string): Promise<boolean> {
@@ -286,6 +288,10 @@ export class Installer {
 
   private manifestCandidates(base: string): string[] {
     return [path.join(base, MANIFEST_NAME), path.join(base, LEGACY_MANIFEST_NAME)];
+  }
+
+  private manifestCandidatesFor(base: string, packageName: string): string[] {
+    return [path.join(base, `${packageName}.manifest.json`), path.join(base, `${packageName}.json`)];
   }
 
   private async readManifestRecord(base: string): Promise<{ manifest: Manifest | null; foundPath: string | null }> {

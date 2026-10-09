@@ -3,6 +3,7 @@ import { existsSync } from "node:fs";
 import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 import { seedCachedPackage } from "./test-helpers";
 
 const PACKAGE_ROOT = path.resolve(import.meta.dirname, "..");
@@ -209,6 +210,48 @@ describe("cli status", () => {
 
     expect(onlineRun.exitCode).toBe(1);
     expect(onlineRun.stderr).toContain("--online");
+  });
+
+  test("--package is rejected outside the status and clear-cache commands", async () => {
+    const installRun = await runCli(["install", "--package", "some-pkg"]);
+
+    expect(installRun.exitCode).toBe(1);
+    expect(installRun.stderr).toContain("--package");
+
+    const uninstallRun = await runCli(["uninstall", "--package", "some-pkg"]);
+
+    expect(uninstallRun.exitCode).toBe(1);
+    expect(uninstallRun.stderr).toContain("--package");
+
+    const traversalRun = await runCli(["status", "--package", "../escape"]);
+
+    expect(traversalRun.exitCode).toBe(1);
+    expect(traversalRun.stderr).toContain("Invalid package name");
+  });
+
+  test("--package resolves another registered package", async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), "oa-cli-status-pkg-"));
+    try {
+      const checkout = path.join(dir, "aurelia-checkout");
+      await mkdir(checkout, { recursive: true });
+      await writeFile(
+        path.join(checkout, "package.json"),
+        JSON.stringify({ name: "aurelia-expert", version: "3.0.0" }),
+      );
+      await mkdir(path.join(dir, ".opencode"), { recursive: true });
+      await writeFile(
+        path.join(dir, ".opencode", "opencode.json"),
+        `{ "plugins": [{ "package": "${pathToFileURL(checkout).href}" }] }\n`,
+      );
+
+      const run = await runCli(["status", "--package", "aurelia-expert"], dir);
+
+      expect(run.exitCode).toBe(0);
+      expect(run.stdout).toContain("package: aurelia-expert");
+      expect(run.stdout).toContain("should load: 3.0.0 (checkout copy, local)");
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
   });
 
   test("a pinned spec answers the verdict without any cached copy", async () => {

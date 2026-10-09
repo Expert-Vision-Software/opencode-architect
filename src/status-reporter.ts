@@ -12,7 +12,7 @@ export interface ManifestState {
 }
 
 export interface ManifestLookup {
-  manifestAt(scope: Scope, projectDir: string): Promise<ManifestState | null>;
+  manifestAt(scope: Scope, projectDir: string, packageName?: string): Promise<ManifestState | null>;
 }
 
 export interface ScopeStatusReport {
@@ -42,6 +42,7 @@ export interface EffectiveVersion {
 
 export interface StatusReport {
   projectDir: string;
+  packageName: string;
   scopes: ScopeStatusReport[];
   effective: EffectiveVersion;
   warnings: string[];
@@ -50,6 +51,7 @@ export interface StatusReport {
 export interface StatusReportOptions {
   scopes: Scope[] | null;
   online: boolean;
+  packageName?: string;
 }
 
 interface MatchedEntry {
@@ -72,9 +74,10 @@ export class StatusReporter {
 
   public async report(projectDir: string, options: StatusReportOptions): Promise<StatusReport> {
     const scopes = options.scopes ?? (["local", "global"] as Scope[]);
+    const packageName = options.packageName ?? PACKAGE_NAME;
     let reports: ScopeStatusReport[] = [];
     for (const scope of scopes) {
-      reports.push(await this.resolveScope(scope, projectDir));
+      reports.push(await this.resolveScope(scope, projectDir, packageName));
     }
     const warnings = this.crossScopeWarnings(reports);
     if (options.online) {
@@ -83,7 +86,7 @@ export class StatusReporter {
       reports = online.reports;
     }
     const effective = this.effectiveVersion(reports);
-    return { projectDir, scopes: reports, effective, warnings };
+    return { projectDir, packageName, scopes: reports, effective, warnings };
   }
 
   public static formatAge(modifiedMs: number | null): string | null {
@@ -100,14 +103,14 @@ export class StatusReporter {
     return `${Math.floor(days / 365)}y old`;
   }
 
-  private async resolveScope(scope: Scope, projectDir: string): Promise<ScopeStatusReport> {
+  private async resolveScope(scope: Scope, projectDir: string, packageName: string): Promise<ScopeStatusReport> {
     const warnings: string[] = [];
     const entries = await this.entries.read(scope, projectDir, false);
     for (const candidate of entries) {
       if (candidate.parseError !== null) warnings.push(candidate.parseError);
     }
-    const manifestState = await this.manifests.manifestAt(scope, projectDir);
-    const matched = await this.findMatchedEntry(entries);
+    const manifestState = await this.manifests.manifestAt(scope, projectDir, packageName);
+    const matched = await this.findMatchedEntry(entries, packageName);
     if (matched === null) {
       return {
         scope,
@@ -153,13 +156,13 @@ export class StatusReporter {
     };
   }
 
-  private async findMatchedEntry(entries: ConfigEntries[]): Promise<MatchedEntry | null> {
+  private async findMatchedEntry(entries: ConfigEntries[], packageName: string): Promise<MatchedEntry | null> {
     for (const candidate of entries) {
       for (const raw of candidate.rawEntries) {
         const classified = EntrySpec.classify(raw);
         if (classified === null) continue;
         if (classified.form === "npm") {
-          if (classified.name === PACKAGE_NAME) {
+          if (classified.name === packageName) {
             return {
               configPath: candidate.configPath,
               entry: raw,
@@ -171,7 +174,7 @@ export class StatusReporter {
           }
           continue;
         }
-        if (await PluginEntryResolver.resolvesToPackage(raw, PACKAGE_NAME)) {
+        if (await PluginEntryResolver.resolvesToPackage(raw, packageName)) {
           return {
             configPath: candidate.configPath,
             entry: raw,

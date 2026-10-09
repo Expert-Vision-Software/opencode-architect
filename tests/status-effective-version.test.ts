@@ -301,6 +301,51 @@ describe("StatusReporter registration detection", () => {
 
     expect(report.scopes[0]?.registered).toBe(true);
   });
+
+  test("--package matches a differently named npm registration", async () => {
+    await writeConfig("local", "opencode.json", '{ "plugins": ["aurelia-expert@latest"] }\n');
+
+    const report = await reporter.report(projectDir, {
+      scopes: ["local"],
+      online: false,
+      packageName: "aurelia-expert",
+    });
+
+    expect(report.packageName).toBe("aurelia-expert");
+    expect(report.scopes[0]?.registered).toBe(true);
+    expect(report.scopes[0]?.entryName).toBe("aurelia-expert");
+  });
+
+  test("--package does not match this package's registration", async () => {
+    await writeConfig("local", "opencode.json", '{ "plugins": ["opencode-architect@latest"] }\n');
+
+    const report = await reporter.report(projectDir, {
+      scopes: ["local"],
+      online: false,
+      packageName: "aurelia-expert",
+    });
+
+    expect(report.scopes[0]?.registered).toBe(false);
+  });
+
+  test("--package reads the named manifest rather than this package's", async () => {
+    await writeConfig("local", "opencode.json", '{ "plugins": ["aurelia-expert@latest"] }\n');
+    const manifest = path.join(projectDir, ".opencode", "aurelia-expert.manifest.json");
+    await mkdir(path.dirname(manifest), { recursive: true });
+    await writeFile(
+      manifest,
+      JSON.stringify({ version: "9.9.9", mode: "plugin", entry: "aurelia-expert@latest", configPath: null, "content-hash": null, hashes: null }),
+    );
+
+    const report = await reporter.report(projectDir, {
+      scopes: ["local"],
+      online: false,
+      packageName: "aurelia-expert",
+    });
+
+    expect(report.scopes[0]?.manifestVersion).toBe("9.9.9");
+    expect(report.scopes[0]?.mode).toBe("plugin");
+  });
 });
 
 describe("StatusReporter.report", () => {
@@ -346,6 +391,26 @@ describe("StatusReporter.report", () => {
 
     expect(report.effective.version).toBeNull();
     expect(report.effective.versionKind).toBeNull();
+  });
+
+  test("--package resolves a path-form registration for another checkout", async () => {
+    const checkout = path.join(projectDir, "aurelia-checkout");
+    await mkdir(checkout, { recursive: true });
+    await writeFile(
+      path.join(checkout, "package.json"),
+      JSON.stringify({ name: "aurelia-expert", version: "3.0.0" }),
+    );
+    await writeConfig("local", "opencode.json", `{ "plugins": [{ "package": "${pathToFileURL(checkout).href}" }] }\n`);
+
+    const report = await reporter.report(projectDir, {
+      scopes: ["local"],
+      online: false,
+      packageName: "aurelia-expert",
+    });
+
+    expect(report.scopes[0]?.registered).toBe(true);
+    expect(report.effective.version).toBe("3.0.0");
+    expect(report.effective.versionKind).toBe("checkout");
   });
 
   test("warns when registered in both scopes and annotates the verdict", async () => {
