@@ -25,15 +25,15 @@ export class LoadedVersionResolver {
     return EntrySpec.classify(entry);
   }
 
-  public async resolve(entry: unknown): Promise<EntryResolution> {
+  public async resolve(entry: unknown, baseDir?: string): Promise<EntryResolution> {
     const classified = this.classify(entry);
     if (classified === null) return { status: "unhandled" };
-    if (classified.form === "path") return this.resolvePath(classified);
+    if (classified.form === "path") return this.resolvePath(classified, baseDir);
     return this.resolveNpm(classified);
   }
 
-  private async resolvePath(classified: ClassifiedEntry): Promise<EntryResolution> {
-    const root = await PluginEntryResolver.packageRoot(classified.spec);
+  private async resolvePath(classified: ClassifiedEntry, baseDir: string | undefined): Promise<EntryResolution> {
+    const root = await PluginEntryResolver.packageRoot(classified.spec, baseDir);
     if (root === null) return { status: "missing", attempted: classified.spec };
     const copy = await this.readCheckout(root);
     if (copy === null) return { status: "partial", attempted: root };

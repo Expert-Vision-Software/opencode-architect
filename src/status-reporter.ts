@@ -1,4 +1,5 @@
 import { PACKAGE_NAME } from "./cache-cleaner";
+import path from "node:path";
 import { ConfigEntriesReader, type ConfigEntries } from "./config-entries";
 import { LoadedVersionResolver, type ResolvedSource } from "./loaded-version";
 import { PluginEntryResolver } from "./plugin-entry";
@@ -127,7 +128,7 @@ export class StatusReporter {
         warnings,
       };
     }
-    const resolution = await this.resolver.resolve(matched.entry);
+    const resolution = await this.resolver.resolve(matched.entry, path.dirname(matched.configPath));
     let resolved: ResolvedSource | null = null;
     if (resolution.status === "resolved") {
       resolved = resolution.source;
@@ -174,7 +175,7 @@ export class StatusReporter {
           }
           continue;
         }
-        if (await PluginEntryResolver.resolvesToPackage(raw, packageName)) {
+        if (await PluginEntryResolver.resolvesToPackage(raw, packageName, path.dirname(candidate.configPath))) {
           return {
             configPath: candidate.configPath,
             entry: raw,

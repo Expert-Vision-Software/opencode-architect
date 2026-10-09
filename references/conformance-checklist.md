@@ -281,8 +281,11 @@ item; an item with no evidence found is a finding.
   `discoverNodeModuleSkills` — it never imports the entry or reads
   `exports`). Keep both `"."` and `"./server"` declared (template default),
   `"."` pointing at `./index.ts`; cover any further public subpath with an
-  explicit key — never `"./*"`, which would expose every internal file as
-  importable API. Node `exports` semantics per the Node.js documentation
+  explicit key — the `./*` wildcard exists in the `exports` grammar for
+  packages that intend every subpath as importable API, and this suite
+  forbids it precisely because that is what it would do here (every
+  internal file becomes public surface). Node `exports` semantics per the
+  Node.js documentation
   (external source, outside the opencode facts ladder); opencode-side
   evidence: `harness: tests/v2-host.test.ts` ("a package exposing only the
   root index never yields a phantom server entrypoint"; "an explicit

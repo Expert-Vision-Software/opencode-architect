@@ -26,10 +26,8 @@ interface CandidateConfig {
 interface CandidateRead {
   candidate: CandidateConfig;
   text: string;
-  plugins: string[] | null;
-  legacyPlugins: string[] | null;
-  rawPlugins: unknown[] | null;
-  rawLegacyPlugins: unknown[] | null;
+  entries: Record<PluginConfigKey, string[] | null>;
+  rawEntries: Record<PluginConfigKey, unknown[] | null>;
 }
 
 export interface RemovePluginEntryOutcome {
@@ -59,8 +57,9 @@ export class PluginConfigEditor {
   ): Promise<EnsurePluginEntryOutcome> {
     const canonical = this.canonicalEntry(packageName);
     for (const read of await this.readCandidates(options)) {
-      const { candidate, text, plugins, rawPlugins, rawLegacyPlugins } = read;
-      if (plugins === null) {
+      const { candidate, text, entries, rawEntries } = read;
+      const configDir = path.dirname(candidate.path);
+      if (entries.plugins === null) {
         return {
           action: "blocked",
           configPath: candidate.path,
@@ -69,10 +68,10 @@ export class PluginConfigEditor {
             `Fix or remove the file and re-run the install.`,
         };
       }
-      if (await this.entryResolves(rawPlugins, packageName)) {
+      if (await this.entryResolves(rawEntries.plugins, packageName, configDir)) {
         return { action: "noop", configPath: candidate.path, warning: null };
       }
-      if (await this.entryResolves(rawLegacyPlugins, packageName)) {
+      if (await this.entryResolves(rawEntries.plugin, packageName, configDir)) {
         return {
           action: "noop",
           configPath: candidate.path,
@@ -121,10 +120,11 @@ export class PluginConfigEditor {
     options: EnsurePluginEntryOptions,
   ): Promise<string | null> {
     for (const read of await this.readCandidates(options)) {
-      if (read.plugins === null) continue;
+      if (read.entries.plugins === null) continue;
+      const configDir = path.dirname(read.candidate.path);
       const registered =
-        (await this.entryResolves(read.rawPlugins, packageName)) ||
-        (await this.entryResolves(read.rawLegacyPlugins, packageName));
+        (await this.entryResolves(read.rawEntries.plugins, packageName, configDir)) ||
+        (await this.entryResolves(read.rawEntries.plugin, packageName, configDir));
       if (registered) return read.candidate.path;
     }
     return null;
@@ -137,9 +137,10 @@ export class PluginConfigEditor {
     const reads = await this.readCandidates(options);
     let legacyPath: string | null = null;
     for (const read of reads) {
-      const { candidate, text, plugins } = read;
+      const { candidate, text, entries } = read;
+      const configDir = path.dirname(candidate.path);
       if (!candidate.writable) continue;
-      if (plugins === null) {
+      if (entries.plugins === null) {
         return {
           action: "blocked",
           configPath: candidate.path,
@@ -148,8 +149,8 @@ export class PluginConfigEditor {
             `Fix or remove the file and re-run the uninstall.`,
         };
       }
-      if (await this.entryResolves(read.rawPlugins, packageName)) {
-        const spliced = await this.spliceOutEntry(text, packageName, candidate.lenient);
+      if (await this.entryResolves(read.rawEntries.plugins, packageName, configDir)) {
+        const spliced = await this.spliceOutEntry(text, packageName, candidate.lenient, configDir);
         if (spliced === null) {
           return {
             action: "blocked",
@@ -165,7 +166,7 @@ export class PluginConfigEditor {
           warning: leftover === null ? null : this.legacyRemovalAdvisory(leftover, packageName),
         };
       }
-      if (legacyPath === null && (await this.entryResolves(read.rawLegacyPlugins, packageName))) {
+      if (legacyPath === null && (await this.entryResolves(read.rawEntries.plugin, packageName, configDir))) {
         legacyPath = candidate.path;
       }
     }
@@ -183,19 +184,28 @@ export class PluginConfigEditor {
     return entries.some((entry) => this.matchesEntry(entry, packageName));
   }
 
-  private async entryResolves(rawEntries: unknown[] | null, packageName: string): Promise<boolean> {
+  private async entryResolves(
+    rawEntries: unknown[] | null,
+    packageName: string,
+    configDir: string,
+  ): Promise<boolean> {
     if (rawEntries === null) return false;
     for (const entry of rawEntries) {
-      const name = this.normalizeEntry(entry);
-      if (name !== null && this.matchesEntry(name, packageName)) return true;
-      if (await PluginEntryResolver.resolvesToPackage(entry, packageName)) return true;
+      if (await this.entryMatches(entry, packageName, configDir)) return true;
     }
     return false;
   }
 
+  private async entryMatches(rawEntry: unknown, packageName: string, configDir: string): Promise<boolean> {
+    const name = this.normalizeEntry(rawEntry);
+    if (name !== null && this.matchesEntry(name, packageName)) return true;
+    return PluginEntryResolver.resolvesToPackage(rawEntry, packageName, configDir);
+  }
+
   private async findLegacyConfig(reads: CandidateRead[], packageName: string): Promise<string | null> {
     for (const read of reads) {
-      if (await this.entryResolves(read.rawLegacyPlugins, packageName)) return read.candidate.path;
+      const legacyDir = path.dirname(read.candidate.path);
+      if (await this.entryResolves(read.rawEntries.plugin, packageName, legacyDir)) return read.candidate.path;
     }
     return null;
   }
@@ -236,16 +246,19 @@ export class PluginConfigEditor {
       if (!(await exists(candidate.path))) continue;
       const text = await readFile(candidate.path, "utf-8");
       const config = this.parseConfig(text, candidate.lenient);
-      const plugins = config === null ? null : this.keyEntries(config, "plugins");
-      const legacyPlugins = config === null ? null : this.keyEntries(config, "plugin");
-      const rawPlugins = config === null ? null : this.entriesOf(config, "plugins");
-      const rawLegacyPlugins = config === null ? null : this.entriesOf(config, "plugin");
+      const entries: Record<PluginConfigKey, string[] | null> = { plugins: null, plugin: null };
+      const rawEntries: Record<PluginConfigKey, unknown[] | null> = { plugins: null, plugin: null };
       if (config === null) {
         console.warn(
           `Warning: ${candidate.path} could not be parsed; refusing to treat it as a registration candidate.`,
         );
+      } else {
+        for (const key of ["plugins", "plugin"] as PluginConfigKey[]) {
+          entries[key] = this.keyEntries(config, key);
+          rawEntries[key] = this.entriesOf(config, key);
+        }
       }
-      reads.push({ candidate, text, plugins, legacyPlugins, rawPlugins, rawLegacyPlugins });
+      reads.push({ candidate, text, entries, rawEntries });
     }
     return reads;
   }
@@ -395,20 +408,25 @@ export class PluginConfigEditor {
     return spliced;
   }
 
-  private async spliceOutEntry(text: string, packageName: string, lenient: boolean): Promise<string | null> {
+  private async spliceOutEntry(
+    text: string,
+    packageName: string,
+    lenient: boolean,
+    configDir: string,
+  ): Promise<string | null> {
     const navigable = this.blankComments(text);
     const range = this.findPluginArrayRange(navigable);
     if (range === null) return null;
     const innerStart = range.bracketStart + 1;
     const innerEnd = range.bracketEnd;
     const elements = this.arrayElementRanges(navigable, innerStart, innerEnd);
-    const target = await this.matchingElement(text, elements, packageName);
+    const target = await this.matchingElement(text, elements, packageName, configDir);
     if (!target) return null;
     const withComma = this.dropAdjacentComma(navigable, elements, target, innerStart, innerEnd);
     const result = text.slice(0, withComma.start) + text.slice(withComma.end);
     const config = this.parseConfig(result, lenient);
     if (config === null) return null;
-    if (await this.entryResolves(this.entriesOf(config, "plugins"), packageName)) return null;
+    if (await this.entryResolves(this.entriesOf(config, "plugins"), packageName, configDir)) return null;
     return result;
   }
 
@@ -416,11 +434,11 @@ export class PluginConfigEditor {
     text: string,
     elements: Array<{ start: number; end: number }>,
     packageName: string,
+    configDir: string,
   ): Promise<{ start: number; end: number } | null> {
     for (const element of elements) {
       const spec = this.elementSpec(text.slice(element.start, element.end));
-      if (this.matchesEntry(spec, packageName)) return element;
-      if (await PluginEntryResolver.resolvesToPackage(spec, packageName)) return element;
+      if (await this.entryMatches(spec, packageName, configDir)) return element;
     }
     return null;
   }

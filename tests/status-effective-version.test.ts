@@ -294,6 +294,33 @@ describe("StatusReporter registration detection", () => {
     expect(report.scopes[0]?.entryForm).toBe("path");
   });
 
+  test("detects a string path-form registration without a manifest", async () => {
+    const entry = pathToFileURL(path.resolve(import.meta.dirname, "..")).href;
+    await writeConfig("local", "opencode.json", `{ "plugins": ["${entry}"] }\n`);
+
+    const report = await reporter.report(projectDir, { scopes: ["local"], online: false });
+
+    expect(report.scopes[0]?.registered).toBe(true);
+    expect(report.scopes[0]?.entryForm).toBe("path");
+  });
+
+  test("a relative path entry resolves from the config file's directory", async () => {
+    const checkout = path.join(projectDir, "checkout");
+    await mkdir(checkout, { recursive: true });
+    await writeFile(
+      path.join(checkout, "package.json"),
+      JSON.stringify({ name: "opencode-architect", version: "3.4.5" }),
+    );
+    const relative = path.relative(path.join(projectDir, ".opencode"), checkout).replaceAll("\\", "/");
+    await writeConfig("local", "opencode.json", `{ "plugins": ["${relative}"] }\n`);
+
+    const report = await reporter.report(projectDir, { scopes: ["local"], online: false });
+
+    expect(report.scopes[0]?.registered).toBe(true);
+    expect(report.scopes[0]?.resolved?.version).toBe("3.4.5");
+    expect(report.scopes[0]?.resolved?.source).toBe("checkout");
+  });
+
   test("detects a legacy v1 registration without a manifest", async () => {
     await writeConfig("local", "opencode.json", '{ "plugin": ["opencode-architect"] }\n');
 
