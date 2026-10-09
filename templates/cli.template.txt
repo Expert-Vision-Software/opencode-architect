@@ -9,12 +9,15 @@
 
 The module exports `runCli(argv)` and runs standalone under its shebang via the `import.meta.main` guard — both `bunx <package>` (through the package.json `bin` entry) and the `index.ts` dispatch shim resolve to the same `runCli`.
 
-**Load-bearing — do not simplify:** the deployment plan is content-based, so `install` resolves the mode through `resolveMode` and never forces one: assets-only packages default to copy and accept `--mode plugin`; code-backed packages always register and `--mode copy` surfaces the `CopyModeUnsupportedError` as a hard, explanatory exit-1 error; `install` forwards `force` so consumer-modified files are skipped without it; `status` reports mode, version, entry, entry config file, and registration presence per scope; `migrate` refuses to run without `--force` (root-config deletion is consent-gated and CLI-only); `clear-cache` is self-only — it removes this package's own cache copies (`<package>` and every `<package>@*`) from OpenCode's package cache, is idempotent (nothing cached is a success), warns and continues on per-target removal failures, and must never grow `--package` or `--all` modes (other packages' cache and the shared OpenCode cache dir are out of scope for a generated package); the module lives at `src/cli.ts` and imports `./installer.ts`.
+**Load-bearing — do not simplify:** the deployment plan is content-based, so `install` resolves the mode through `resolveMode` and never forces one: assets-only packages default to copy and accept `--mode plugin`; code-backed packages always register and `--mode copy` surfaces the `CopyModeUnsupportedError` as a hard, explanatory exit-1 error; `install` forwards `force` so consumer-modified files are skipped without it; `status` resolves the effective load per scope — registration, target config file, raw entry as written, resolved source on disk with a relative-age staleness hint, and an effective verdict that annotates a double-scope registration — and the status-only `--online` (registry staleness, warn-and-continue, injectable fetch) and `--path` flags are rejected with an explanatory exit-1 on every other command; `migrate` refuses to run without `--force` (root-config deletion is consent-gated and CLI-only); `clear-cache` is self-only — it removes this package's own cache copies (`<package>` and every `<package>@*`) from OpenCode's package cache, is idempotent (nothing cached is a success), warns and continues on per-target removal failures, and must never grow `--package` or `--all` modes (other packages' cache and the shared OpenCode cache dir are out of scope for a generated package); the module lives at `src/cli.ts` and imports `./installer.ts`.
 
 ---
 #!/usr/bin/env bun
+import type { Stats } from "node:fs";
+import { stat } from "node:fs/promises";
+import { resolve } from "node:path";
 import { parseArgs } from "node:util";
-import { install, uninstall, status, migrateRootConfig, clearPackageCache, CopyModeUnsupportedError, type Scope, type InstallMode } from "./installer.ts";
+import { install, uninstall, status, migrateRootConfig, clearPackageCache, CopyModeUnsupportedError, type Scope, type InstallMode, type EffectiveStatus, type ScopeStatus } from "./installer.ts";
 
 const VERSION = JSON.parse(
   await Bun.file(`${import.meta.dirname}/../package.json`).text()
@@ -27,7 +30,8 @@ opencode-myextension v${VERSION}
 Commands:
   install     Install myextension (copy by default; plugin registration with --mode plugin)
   uninstall   Remove myextension (payload files and/or plugin registration, per manifest)
-  status      Check installation status per scope
+  status      Resolve what a session would load: registration, config file, raw entry,
+              the resolved source on disk, and an effective verdict per scope
   migrate     Migrate root opencode.json into .opencode/ (asks for --force consent)
   clear-cache Remove cached copies of this package from OpenCode's package cache
 
@@ -35,6 +39,10 @@ Options:
   -s, --scope <scope>    Installation scope: "local" or "global" (default: local)
   -m, --mode <mode>      Install mode: "copy" (default for assets-only) or "plugin" (mandatory for code-backed)
   -f, --force           Overwrite consumer-modified files / consent to migration
+      --online          status: also query the npm registry for the latest published
+                        version and flag staleness; network failures warn and continue
+      --path <dir>      status: resolve against another project directory instead of
+                        the current working directory; the directory must exist
   -h, --help            Show this help message
   -v, --version         Show version
 
@@ -44,6 +52,8 @@ Examples:
   opencode-myextension install --mode plugin
   opencode-myextension uninstall --scope local
   opencode-myextension status
+  opencode-myextension status --online
+  opencode-myextension status --path ../other-project
   opencode-myextension migrate --force
   opencode-myextension clear-cache
 `);
@@ -60,6 +70,8 @@ export async function runCli(argv: string[]): Promise<number> {
       scope: { type: "string", short: "s" },
       mode: { type: "string", short: "m" },
       force: { type: "boolean", short: "f", default: false },
+      online: { type: "boolean", default: false },
+      path: { type: "string" },
       help: { type: "boolean", short: "h", default: false },
       version: { type: "boolean", short: "v", default: false },
     },
@@ -71,10 +83,15 @@ export async function runCli(argv: string[]): Promise<number> {
   if (values.help || positionals.length === 0) { printHelp(); return 0; }
 
   const command = positionals[0];
+  if (command !== "status" && (values.path !== undefined || values.online)) {
+    console.error("--path and --online only apply to the status command.");
+    return 1;
+  }
   const scope: Scope | undefined = values.scope as Scope | undefined;
   const mode: InstallMode | undefined =
     values.mode === undefined ? undefined : isInstallMode(values.mode) ? values.mode : ("invalid" as InstallMode);
   const force: boolean = values.force;
+  const online: boolean = values.online;
 
   if (scope && scope !== "local" && scope !== "global") {
     console.error(`Invalid scope: ${scope}. Must be "local" or "global".`);
@@ -114,17 +131,25 @@ export async function runCli(argv: string[]): Promise<number> {
         break;
       }
       case "status": {
-        const result = await status(process.cwd());
+        const projectDir = await resolveProjectDir(values.path);
+        const result = await status(projectDir, online);
         console.log("Status:");
         for (const [label, scopeStatus] of [["Local", result.local], ["Global", result.global]] as const) {
           if (!scopeStatus) continue;
           console.log(
-            `  ${label}: installed=${scopeStatus.installed}, version=${scopeStatus.version ?? "unknown"}, ` +
-              `mode=${scopeStatus.mode ?? "unknown"}, ` +
-              `entry=${scopeStatus.entry ?? "none"} (${scopeStatus.entryConfigPath ?? "no config file"}), ` +
-              `pluginInConfig=${scopeStatus.pluginInConfig}`
+            `  ${label}: mode=${scopeStatus.mode ?? "unknown"}, ` +
+              `config=${scopeStatus.entryConfigPath ?? "-"}, ` +
+              `entry=${scopeStatus.entry ?? "-"}, ` +
+              `resolved=${resolvedLabel(scopeStatus)}`
           );
+          for (const warning of scopeStatus.warnings) console.warn(`Warning: ${warning}`);
         }
+        if (result.effective.scope !== null) {
+          console.log(`  should load: ${verdictLabel(result.effective)}`);
+        } else {
+          console.log("  should load: nothing (not registered in any scope)");
+        }
+        for (const warning of result.warnings) console.warn(`Warning: ${warning}`);
         break;
       }
       case "migrate": {
@@ -165,6 +190,57 @@ export async function runCli(argv: string[]): Promise<number> {
     console.error(`Error: ${message}`);
     return 1;
   }
+}
+
+async function resolveProjectDir(input: string | undefined): Promise<string> {
+  if (input === undefined) return process.cwd();
+  const cleaned = stripQuotes(input.trim());
+  const resolved = resolve(cleaned);
+  let info: Stats | null = null;
+  try {
+    info = await stat(resolved);
+  } catch {
+    throw new Error(`--path does not exist: ${input}`);
+  }
+  if (!info.isDirectory()) throw new Error(`--path is not a directory: ${input}`);
+  return resolved;
+}
+
+function stripQuotes(value: string): string {
+  if (value.length >= 2 && value.startsWith('"') && value.endsWith('"')) return value.slice(1, -1);
+  if (value.length >= 2 && value.startsWith("'") && value.endsWith("'")) return value.slice(1, -1);
+  return value;
+}
+
+function formatAge(modifiedMs: number | null): string | null {
+  if (modifiedMs === null) return null;
+  const minutes = Math.floor((Date.now() - modifiedMs) / 60000);
+  if (minutes < 1) return "just now";
+  if (minutes < 60) return `${minutes}m old`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h old`;
+  const days = Math.floor(hours / 24);
+  if (days < 30) return `${days}d old`;
+  const months = Math.floor(days / 30);
+  if (months < 12) return `${months}mo old`;
+  return `${Math.floor(days / 365)}y old`;
+}
+
+function resolvedLabel(scopeStatus: ScopeStatus): string {
+  if (scopeStatus.resolvedVersion === null) return "-";
+  const source = scopeStatus.resolvedSource === "cache" ? "cache copy" : "checkout copy";
+  const age = formatAge(scopeStatus.resolvedModifiedMs);
+  return `${scopeStatus.resolvedVersion} (${age === null ? source : `${source}, ${age}`})`;
+}
+
+function verdictLabel(effective: EffectiveStatus): string {
+  const kind = effective.source === "cache" ? "cache copy" : effective.source === "checkout" ? "checkout copy" : "manifest";
+  const latest = effective.latestVersion !== null ? `, latest ${effective.latestVersion}` : "";
+  const scopeLabel =
+    effective.registeredScopes.length > 1
+      ? `${effective.registeredScopes.join(" + ")}; both scopes register — double-load`
+      : effective.scope;
+  return `${effective.version ?? "unknown"} (${kind}, ${scopeLabel}${latest})`;
 }
 
 if (import.meta.main) {

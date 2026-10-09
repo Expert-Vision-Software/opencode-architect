@@ -35,6 +35,15 @@ export class PluginEntryResolver {
     return false;
   }
 
+  public static async packageRoot(entry: unknown): Promise<string | null> {
+    if (typeof entry === "string") return PluginEntryResolver.resolveToPackageRoot(entry);
+    if (PluginEntryResolver.isRecord(entry)) {
+      const spec = entry.package;
+      if (typeof spec === "string") return PluginEntryResolver.resolveToPackageRoot(spec);
+    }
+    return null;
+  }
+
   private static isPathLike(entry: string): boolean {
     if (entry.startsWith("file://")) return true;
     if (entry.startsWith(".")) return true;

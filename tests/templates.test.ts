@@ -256,8 +256,8 @@ describe("rendered package passes its own gates", () => {
       isolatedEnv(isolatedBase),
     );
     if (outcome.exitCode !== 0) failWithOutput("rendered package status", outcome);
-    expect(outcome.stdout).toMatch(/Local: installed=true/);
-    expect(outcome.stdout).toMatch(/pluginInConfig=true/);
+    expect(outcome.stdout).toMatch(/Local: mode=plugin/);
+    expect(outcome.stdout).toMatch(/should load:/);
   }, 60_000);
 
   test("activating the rendered plugin under the host contract ensures the payload", async () => {
