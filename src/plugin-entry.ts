@@ -25,6 +25,15 @@ export class PluginEntryResolver {
     return false;
   }
 
+  public static async packageRoot(entry: unknown, baseDir?: string): Promise<string | null> {
+    if (typeof entry === "string") return PluginEntryResolver.resolveToPackageRoot(entry, baseDir);
+    if (PluginEntryResolver.isRecord(entry)) {
+      const spec = entry.package;
+      if (typeof spec === "string") return PluginEntryResolver.resolveToPackageRoot(spec, baseDir);
+    }
+    return null;
+  }
+
   private static hasExplicitPathForm(entry: string): boolean {
     if (entry.startsWith("file://")) return true;
     if (entry.startsWith(".")) return true;

@@ -401,8 +401,8 @@ describe("Installer.install", () => {
     expect(outcome.action).toBe("noop");
     expect(existsSync(manifestPath("local"))).toBe(true);
     expect(existsSync(legacyManifestPath("local"))).toBe(false);
-    const status = await installer.status("local", projectDir);
-    expect(status.version).toBe(await readPackageVersion());
+    const manifestState = await installer.manifestAt("local", projectDir);
+    expect(manifestState?.version).toBe(await readPackageVersion());
   });
 
   test("uninstall removes manifests left at either name", async () => {
@@ -589,78 +589,6 @@ describe("Installer.uninstall", () => {
 
     expect(existsSync(manifestPath("local"))).toBe(true);
     expect(existsSync(path.join(scopeBase("local"), "agents", "opencode-architect.md"))).toBe(true);
-  });
-});
-
-describe("Installer.status", () => {
-  test("reports none for an empty scope", async () => {
-    const outcome = await installer.status("local", projectDir);
-
-    expect(outcome.mode).toBe("none");
-    expect(outcome.version).toBeNull();
-    expect(outcome.configPath).toBeNull();
-  });
-
-  test("reports plugin mode with version and registration file", async () => {
-    const configPath = path.join(scopeBase("local"), "opencode.json");
-    await writeJson(configPath, {});
-    await install("local");
-
-    const outcome = await installer.status("local", projectDir);
-
-    expect(outcome.mode).toBe("plugin");
-    expect(outcome.version).toBe(await readPackageVersion());
-    expect(outcome.configPath).toBe(configPath);
-  });
-
-  test("detects a registration without a manifest", async () => {
-    await writeJson(path.join(scopeBase("local"), "opencode.json"), {
-      plugins: ["opencode-architect"],
-    });
-
-    const outcome = await installer.status("local", projectDir);
-
-    expect(outcome.mode).toBe("plugin");
-    expect(outcome.version).toBeNull();
-    expect(outcome.configPath).toBe(path.join(scopeBase("local"), "opencode.json"));
-  });
-
-  test("detects a path-form registration without a manifest", async () => {
-    const entry = pathToFileURL(PACKAGE_ROOT).href;
-    await writeJson(path.join(scopeBase("local"), "opencode.json"), {
-      plugins: [{ package: entry }],
-    });
-
-    const outcome = await installer.status("local", projectDir);
-
-    expect(outcome.mode).toBe("plugin");
-    expect(outcome.version).toBeNull();
-    expect(outcome.configPath).toBe(path.join(scopeBase("local"), "opencode.json"));
-  });
-
-  test("detects a path-form string registration without a manifest", async () => {
-    const entry = pathToFileURL(PACKAGE_ROOT).href;
-    await writeJson(path.join(scopeBase("local"), "opencode.json"), {
-      plugins: [entry],
-    });
-
-    const outcome = await installer.status("local", projectDir);
-
-    expect(outcome.mode).toBe("plugin");
-    expect(outcome.version).toBeNull();
-    expect(outcome.configPath).toBe(path.join(scopeBase("local"), "opencode.json"));
-  });
-
-  test("detects a legacy v1 registration without a manifest", async () => {
-    await writeJson(path.join(scopeBase("local"), "opencode.json"), {
-      plugin: ["opencode-architect"],
-    });
-
-    const outcome = await installer.status("local", projectDir);
-
-    expect(outcome.mode).toBe("plugin");
-    expect(outcome.version).toBeNull();
-    expect(outcome.configPath).toBe(path.join(scopeBase("local"), "opencode.json"));
   });
 });
 
