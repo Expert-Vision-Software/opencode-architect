@@ -471,6 +471,53 @@ describe("PluginConfigEditor path-form entries", () => {
     expect(parsed.plugins).toEqual(["other"]);
   });
 
+  test("a relative path entry resolves from the config file's directory", async () => {
+    const projectDir = await makeDir("project");
+    const pkgDir = await makePackage("my-pkg");
+    const entry = path.relative(projectDir, pkgDir).replaceAll("\\", "/");
+    const configPath = await write("project/opencode.json", `{ "plugins": ["${entry}"] }\n`);
+    const before = await readFile(configPath, "utf-8");
+
+    const outcome = await editor().ensurePluginEntry("my-pkg", { scope: "local", projectDir });
+
+    expect(outcome.action).toBe("noop");
+    expect(await readFile(configPath, "utf-8")).toBe(before);
+  });
+
+  test("removing a trailing path entry also drops a comment sitting between elements", async () => {
+    const projectDir = await makeDir("project");
+    const pkgDir = await makePackage("my-pkg");
+    const configPath = await write(
+      "project/opencode.jsonc",
+      `{ "plugins": ["other", /* inline */ "${pathToFileURL(pkgDir).href}"] }\n`,
+    );
+
+    const outcome = await editor().removePluginEntry("my-pkg", { scope: "local", projectDir });
+
+    expect(outcome.action).toBe("removed");
+    const parsed = parseJsonc(await readFile(configPath, "utf-8"));
+    expect(parsed.plugins).toEqual(["other"]);
+  });
+
+  test("a path entry matches a cased package.json name case-insensitively on Windows", async () => {
+    const projectDir = await makeDir("project");
+    const pkgDir = await makeDir("packages/case-mismatch");
+    await write("packages/case-mismatch/package.json", '{ "name": "My-Pkg", "version": "1.0.0" }\n');
+    const configPath = await write("project/opencode.json", `{ "plugins": ["${pathToFileURL(pkgDir).href}"] }\n`);
+    const before = await readFile(configPath, "utf-8");
+
+    const outcome = await editor().ensurePluginEntry("my-pkg", { scope: "local", projectDir });
+
+    if (process.platform === "win32") {
+      expect(outcome.action).toBe("noop");
+      expect(await readFile(configPath, "utf-8")).toBe(before);
+      return;
+    }
+    expect(outcome.action).toBe("updated");
+    const parsed = JSON.parse(await readFile(configPath, "utf-8"));
+    expect(parsed.plugins).toContain("my-pkg@latest");
+  });
+
   test("an unrelated path entry never matches and a duplicate is added", async () => {
     const projectDir = await makeDir("project");
     const otherDir = await makePackage("other-pkg");

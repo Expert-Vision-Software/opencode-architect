@@ -638,6 +638,19 @@ describe("Installer.status", () => {
     expect(outcome.configPath).toBe(path.join(scopeBase("local"), "opencode.json"));
   });
 
+  test("detects a path-form string registration without a manifest", async () => {
+    const entry = pathToFileURL(PACKAGE_ROOT).href;
+    await writeJson(path.join(scopeBase("local"), "opencode.json"), {
+      plugins: [entry],
+    });
+
+    const outcome = await installer.status("local", projectDir);
+
+    expect(outcome.mode).toBe("plugin");
+    expect(outcome.version).toBeNull();
+    expect(outcome.configPath).toBe(path.join(scopeBase("local"), "opencode.json"));
+  });
+
   test("detects a legacy v1 registration without a manifest", async () => {
     await writeJson(path.join(scopeBase("local"), "opencode.json"), {
       plugin: ["opencode-architect"],

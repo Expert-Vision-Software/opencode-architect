@@ -296,3 +296,18 @@ describe("rendered package passes its own gates", () => {
     expect(verdict.config?.plugins ?? []).not.toContain(`${PACKAGE_NAME}@latest`);
   }, 60_000);
 });
+
+describe("suite src mirrors template bodies byte-for-byte", () => {
+  const SYNCED_PAIRS = [
+    { template: "plugin-name.template.txt", source: "plugin-name.ts" },
+    { template: "plugin-entry.template.txt", source: "plugin-entry.ts" },
+  ] as const;
+
+  for (const pair of SYNCED_PAIRS) {
+    test(`templates/${pair.template} === src/${pair.source}`, async () => {
+      const body = await templateBody(pair.template);
+      const source = await readFile(path.join(REPO_ROOT, "src", pair.source), "utf-8");
+      expect(source).toBe(body);
+    });
+  }
+});
