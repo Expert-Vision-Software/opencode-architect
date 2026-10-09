@@ -7,6 +7,7 @@ import { BundledAssetsMissingError } from "./bundled-assets-missing-error";
 import { CopyModeUnsupportedError } from "./copy-mode-unsupported-error";
 import { NpmCache } from "./npm-cache";
 import { PluginConfigEditor } from "./plugin-config";
+import type { ManifestState } from "./status-reporter";
 
 export type Scope = "local" | "global";
 export type InstallMode = "none" | "copy" | "plugin";
@@ -52,13 +53,6 @@ export interface UninstallOutcome {
   pluginRemoved: boolean;
   configPath: string | null;
   configWarning: string | null;
-}
-
-export interface StatusOutcome {
-  scope: Scope;
-  mode: InstallMode;
-  version: string | null;
-  configPath: string | null;
 }
 
 const PACKAGE_NAME = "opencode-architect";
@@ -244,17 +238,11 @@ export class Installer {
     return removed;
   }
 
-  public async status(scope: Scope, projectDir: string): Promise<StatusOutcome> {
+  public async manifestAt(scope: Scope, projectDir: string): Promise<ManifestState | null> {
     const base = this.scopeBase(scope, projectDir);
     const { manifest } = await this.readManifestRecord(base);
-    if (manifest !== null) {
-      return { scope, mode: manifest.mode, version: manifest.version, configPath: manifest.configPath };
-    }
-    const registrationPath = await this.editor.findRegistration(PACKAGE_NAME, { scope, projectDir });
-    if (registrationPath !== null) {
-      return { scope, mode: "plugin", version: null, configPath: registrationPath };
-    }
-    return { scope, mode: "none", version: null, configPath: null };
+    if (manifest === null) return null;
+    return { mode: manifest.mode, version: manifest.version };
   }
 
   public async hasManifestAnywhere(projectDir: string): Promise<boolean> {

@@ -1,6 +1,11 @@
 #!/usr/bin/env bun
+import type { Stats } from "node:fs";
+import { stat } from "node:fs/promises";
+import path from "node:path";
 import { parseArgs } from "node:util";
 import { Installer, type Scope } from "./installer";
+import { StatusReporter, type EffectiveVersion, type StatusReport } from "./status-reporter";
+import type { ResolvedSource } from "./loaded-version";
 import { CacheCleaner } from "./cache-cleaner";
 import { ClearCacheUsageError } from "./clear-cache-usage-error";
 
@@ -17,6 +22,8 @@ export async function runCli(argv: string[]): Promise<number> {
       all: { type: "boolean", default: false },
       yes: { type: "boolean", default: false },
       "dry-run": { type: "boolean", default: false },
+      online: { type: "boolean", default: false },
+      path: { type: "string" },
       help: { type: "boolean", short: "h", default: false },
       version: { type: "boolean", short: "v", default: false },
     },
@@ -34,6 +41,10 @@ export async function runCli(argv: string[]): Promise<number> {
   }
 
   const command = positionals[0];
+  if (command !== "status" && (values.path !== undefined || values.online)) {
+    console.error("--path and --online only apply to the status command.");
+    return 1;
+  }
   const scopeInput = values.scope;
   if (scopeInput !== undefined && scopeInput !== "local" && scopeInput !== "global") {
     console.error(`Invalid scope: ${scopeInput}. Must be "local" or "global".`);
@@ -91,10 +102,10 @@ export async function runCli(argv: string[]): Promise<number> {
         break;
       }
       case "status": {
-        const outcome = await installer.status(scope, process.cwd());
-        const version = outcome.version ?? "-";
-        const configPath = outcome.configPath ?? "-";
-        console.log(`${scope} scope: mode=${outcome.mode} version=${version} config=${configPath}`);
+        const projectDir = await resolveProjectDir(values.path);
+        const scopes: Scope[] | null = scopeInput === undefined ? null : [scope];
+        const report = await new StatusReporter(installer).report(projectDir, { scopes, online: values.online });
+        printStatusReport(report);
         break;
       }
       case "clear-cache": {
@@ -143,6 +154,68 @@ if (import.meta.main) {
   process.exitCode = await runCli(process.argv.slice(2));
 }
 
+function printStatusReport(report: StatusReport): void {
+  for (const scopeReport of report.scopes) {
+    const entry = scopeReport.entryText ?? "-";
+    const config = scopeReport.configPath ?? "-";
+    console.log(
+      `${scopeReport.scope} scope: mode=${scopeReport.mode} config=${config} entry=${entry} resolved=${resolvedLabel(scopeReport.resolved)}`,
+    );
+    for (const warning of scopeReport.warnings) {
+      console.warn(`Warning: ${warning}`);
+    }
+  }
+  if (report.effective.scope !== null) {
+    console.log(`should load: ${verdictLabel(report.effective)}`);
+  } else {
+    console.log("should load: nothing (not registered in any scope)");
+  }
+  for (const warning of report.warnings) {
+    console.warn(`Warning: ${warning}`);
+  }
+}
+
+function resolvedLabel(source: ResolvedSource | null): string {
+  if (source === null) return "-";
+  const age = StatusReporter.formatAge(source.modifiedMs);
+  const detail = age === null ? sourceLabel(source.source) : `${sourceLabel(source.source)}, ${age}`;
+  return `${source.version ?? "unknown"} (${detail})`;
+}
+
+function verdictLabel(effective: EffectiveVersion): string {
+  const kind = effective.source !== null ? sourceLabel(effective.source) : "manifest";
+  const latest = effective.latestVersion !== null ? `, latest ${effective.latestVersion}` : "";
+  const scopeLabel =
+    effective.registeredScopes.length > 1
+      ? `${effective.registeredScopes.join(" + ")}; both scopes register — double-load`
+      : effective.scope;
+  return `${effective.version ?? "unknown"} (${kind}, ${scopeLabel}${latest})`;
+}
+
+function sourceLabel(source: "cache" | "checkout"): string {
+  return source === "cache" ? "cache copy" : "checkout copy";
+}
+
+async function resolveProjectDir(input: string | undefined): Promise<string> {
+  if (input === undefined) return process.cwd();
+  const cleaned = stripQuotes(input.trim());
+  const resolved = path.resolve(cleaned);
+  let info: Stats | null = null;
+  try {
+    info = await stat(resolved);
+  } catch {
+    throw new Error(`--path does not exist: ${input}`);
+  }
+  if (!info.isDirectory()) throw new Error(`--path is not a directory: ${input}`);
+  return resolved;
+}
+
+function stripQuotes(value: string): string {
+  if (value.length >= 2 && value.startsWith('"') && value.endsWith('"')) return value.slice(1, -1);
+  if (value.length >= 2 && value.startsWith("'") && value.endsWith("'")) return value.slice(1, -1);
+  return value;
+}
+
 function printHelp(): void {
   console.log(`
 opencode-architect v${VERSION}
@@ -155,16 +228,23 @@ registers the agents and resolves reference paths at load time. Legacy v1
 Commands:
   install     Ensure the plugin entry and write the install manifest
   uninstall   Remove the plugin entry, the manifest, and any residual payload
-  status      Show install mode, version, and the config file holding the entry
+  status      Resolve what a session would load: per-scope registration, the
+              config file holding it, the raw entry, the resolved source on
+              disk, and an effective verdict
   clear-cache Remove cached copies from OpenCode's package cache; default
               targets this package only
 
 Options:
-  -s, --scope <scope>    "local" (project) or "global" (XDG/home config); default local
+  -s, --scope <scope>    status: narrow to "local" or "global"; by default both
+                         scopes are resolved. install/uninstall: default local
   -m, --mode <mode>      "plugin" (default) or "copy"; copy is refused for this
                          code-backed package
   -f, --force            re-register and rewrite the manifest even when it is up to date;
                          consent to migrating a legacy copy install (removes its copied payload)
+      --online           status: also query the npm registry for the latest published
+                         version and flag staleness; network failures warn and continue
+      --path <dir>       status: resolve against another project directory instead of
+                         the current working directory; the directory must exist
       --package <name>   clear-cache: remove <name> and every <name>@* instead;
                          requires --yes
       --all              clear-cache: remove the whole OpenCode cache directory;
@@ -179,6 +259,9 @@ Examples:
   opencode-architect install --scope global
   opencode-architect uninstall
   opencode-architect status
+  opencode-architect status --scope global
+  opencode-architect status --online
+  opencode-architect status --path ../other-project
   opencode-architect clear-cache
   opencode-architect clear-cache --package some-pkg --yes
   opencode-architect clear-cache --all --yes

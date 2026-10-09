@@ -1,6 +1,7 @@
 import { exists, lstat, readFile, realpath } from "node:fs/promises";
-import { dirname, isAbsolute, join } from "node:path";
+import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { EntrySpec } from "./entry-spec";
 
 const MEMO_LIMIT = 100;
 
@@ -8,52 +9,23 @@ const resolvedRootMemo = new Map<string, string | null>();
 
 export class PluginEntryResolver {
   public static async resolvesToPackage(entry: unknown, packageName: string): Promise<boolean> {
-    if (typeof entry === "string") {
-      if (PluginEntryResolver.isNpmSpec(entry)) return false;
-      if (!PluginEntryResolver.isPathLike(entry)) return false;
-      const root = await PluginEntryResolver.resolveToPackageRoot(entry);
-      if (root === null) return false;
-      const name = await PluginEntryResolver.packageNameAt(root);
-      if (name === null) return false;
-      return PluginEntryResolver.matchesName(name, packageName);
-    }
-    if (PluginEntryResolver.isRecord(entry)) {
-      const spec = entry.package;
-      if (typeof spec === "string") return PluginEntryResolver.resolvesToPackage(spec, packageName);
-    }
-    return false;
+    const classified = EntrySpec.classify(entry);
+    if (classified === null || classified.form === "npm") return false;
+    const root = await PluginEntryResolver.resolveToPackageRoot(classified.spec);
+    if (root === null) return false;
+    const name = await PluginEntryResolver.packageNameAt(root);
+    if (name === null) return false;
+    return PluginEntryResolver.matchesName(name, packageName);
   }
 
-  private static isPathLike(entry: string): boolean {
-    if (entry.startsWith("file://")) return true;
-    if (entry.startsWith(".")) return true;
-    if (isAbsolute(entry)) return true;
-    if (entry.includes("/")) return true;
-    if (entry.includes("\\")) return true;
-    return false;
-  }
-
-  private static isNpmSpec(entry: string): boolean {
-    if (!entry.includes("@")) return false;
-    if (entry.startsWith("file://")) return false;
-    if (entry.startsWith(".")) return false;
-    if (isAbsolute(entry)) return false;
-    return true;
-  }
-
-  private static isRecord(value: unknown): value is Record<string, unknown> {
-    return typeof value === "object" && value !== null && !Array.isArray(value);
+  public static async packageRoot(entry: unknown): Promise<string | null> {
+    const spec = EntrySpec.specOf(entry);
+    if (spec === null) return null;
+    return PluginEntryResolver.resolveToPackageRoot(spec);
   }
 
   private static matchesName(candidate: string, packageName: string): boolean {
-    return PluginEntryResolver.baseName(candidate) === PluginEntryResolver.baseName(packageName);
-  }
-
-  private static baseName(raw: string): string {
-    const trimmed = raw.trim();
-    const specIndex = trimmed.lastIndexOf("@");
-    if (specIndex > 0) return trimmed.slice(0, specIndex);
-    return trimmed;
+    return EntrySpec.baseName(candidate) === EntrySpec.baseName(packageName);
   }
 
   private static async resolveToPackageRoot(rawEntry: string): Promise<string | null> {

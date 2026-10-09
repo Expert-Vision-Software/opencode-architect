@@ -145,6 +145,108 @@ describe("cli", () => {
   });
 });
 
+describe("cli status", () => {
+  test("defaults to both scopes and emits an effective verdict", async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), "oa-cli-status-"));
+    try {
+      const run = await runCli(["status"], dir);
+
+      expect(run.exitCode).toBe(0);
+      expect(run.stdout).toContain("local scope:");
+      expect(run.stdout).toContain("global scope:");
+      expect(run.stdout).toContain("should load:");
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("--scope narrows status to one scope", async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), "oa-cli-status-"));
+    try {
+      const run = await runCli(["status", "--scope", "global"], dir);
+
+      expect(run.exitCode).toBe(0);
+      expect(run.stdout).toContain("global scope:");
+      expect(run.stdout).not.toContain("local scope:");
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("--path resolves another project directory", async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), "oa-cli-status-path-"));
+    try {
+      await mkdir(path.join(dir, ".opencode"), { recursive: true });
+      await writeFile(
+        path.join(dir, ".opencode", "opencode.jsonc"),
+        '{\n  // other project\n  "plugins": ["opencode-architect@latest"],\n}\n',
+      );
+
+      const run = await runCli(["status", "--path", dir]);
+
+      expect(run.exitCode).toBe(0);
+      expect(run.stdout).toContain("local scope:");
+      expect(run.stdout).toContain("opencode-architect@latest");
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("--path rejects a directory that does not exist", async () => {
+    const run = await runCli(["status", "--path", path.join(tmpdir(), "oa-cli-status-missing-xyz")]);
+
+    expect(run.exitCode).toBe(1);
+    expect(run.stderr).toContain("does not exist");
+  });
+
+  test("--path and --online are rejected outside the status command", async () => {
+    const pathRun = await runCli(["install", "--path", "somewhere"]);
+
+    expect(pathRun.exitCode).toBe(1);
+    expect(pathRun.stderr).toContain("--path");
+
+    const onlineRun = await runCli(["clear-cache", "--online"]);
+
+    expect(onlineRun.exitCode).toBe(1);
+    expect(onlineRun.stderr).toContain("--online");
+  });
+
+  test("status annotates the verdict and shows the copy age when both scopes register", async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), "oa-cli-status-both-"));
+    const configDir = await mkdtemp(path.join(tmpdir(), "oa-cli-status-cfg-"));
+    const cacheDir = await mkdtemp(path.join(tmpdir(), "oa-cli-status-cache-"));
+    try {
+      await mkdir(path.join(dir, ".opencode"), { recursive: true });
+      await writeFile(path.join(dir, ".opencode", "opencode.json"), '{ "plugins": ["opencode-architect@latest"] }\n');
+      await mkdir(path.join(configDir, "opencode"), { recursive: true });
+      await writeFile(path.join(configDir, "opencode", "opencode.json"), '{ "plugins": ["opencode-architect@latest"] }\n');
+      const copy = path.join(
+        cacheDir,
+        "opencode",
+        "npm",
+        "opencode-architect@latest",
+        "1738848000000",
+        "node_modules",
+        "opencode-architect",
+      );
+      await mkdir(copy, { recursive: true });
+      await writeFile(path.join(copy, "package.json"), '{ "name": "opencode-architect", "version": "1.0.0" }\n');
+
+      const run = await runCli(["status"], dir, { XDG_CACHE_HOME: cacheDir, XDG_CONFIG_HOME: configDir });
+
+      expect(run.exitCode).toBe(0);
+      expect(run.stdout).toContain("local + global");
+      expect(run.stdout).toContain("both scopes register");
+      expect(run.stdout).toMatch(/resolved=1\.0\.0 \(cache copy, just now\)/);
+      expect(run.stderr).toContain("double-load risk");
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+      await rm(configDir, { recursive: true, force: true });
+      await rm(cacheDir, { recursive: true, force: true });
+    }
+  });
+});
+
 describe("cli clear-cache", () => {
   const packagesDir = (cacheDir: string) => path.join(cacheDir, "opencode", "npm");
   const seedCache = seedCachedPackage;
