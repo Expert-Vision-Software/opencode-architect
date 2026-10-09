@@ -158,8 +158,10 @@ function printStatusReport(report: StatusReport): void {
   for (const scopeReport of report.scopes) {
     const entry = scopeReport.entryText ?? "-";
     const config = scopeReport.configPath ?? "-";
+    const npm =
+      scopeReport.publishedVersion !== null ? ` npm-latest=${scopeReport.publishedVersion}` : "";
     console.log(
-      `${scopeReport.scope} scope: mode=${scopeReport.mode} config=${config} entry=${entry} resolved=${resolvedLabel(scopeReport.resolved)}`,
+      `${scopeReport.scope} scope: mode=${scopeReport.mode} config=${config} entry=${entry} resolved=${resolvedLabel(scopeReport.resolved)}${npm}`,
     );
     for (const warning of scopeReport.warnings) {
       console.warn(`Warning: ${warning}`);
@@ -183,7 +185,12 @@ function resolvedLabel(source: ResolvedSource | null): string {
 }
 
 function verdictLabel(effective: EffectiveVersion): string {
-  const kind = effective.source !== null ? sourceLabel(effective.source) : "manifest";
+  const kind =
+    effective.source !== null
+      ? sourceLabel(effective.source)
+      : effective.version !== null
+        ? "manifest"
+        : "unresolved";
   const latest = effective.latestVersion !== null ? `, latest ${effective.latestVersion}` : "";
   const scopeLabel =
     effective.registeredScopes.length > 1

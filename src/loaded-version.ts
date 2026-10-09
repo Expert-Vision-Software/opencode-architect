@@ -6,6 +6,7 @@ import { PluginEntryResolver } from "./plugin-entry";
 
 export interface ResolvedSource {
   version: string | null;
+  name: string | null;
   source: "cache" | "checkout";
   path: string;
   modifiedMs: number | null;
@@ -78,10 +79,11 @@ export class LoadedVersionResolver {
     const manifestPath = join(dir, "package.json");
     if (!(await exists(manifestPath))) return null;
     try {
-      const parsed = JSON.parse(await readFile(manifestPath, "utf-8")) as { version?: unknown };
+      const parsed = JSON.parse(await readFile(manifestPath, "utf-8")) as { name?: unknown; version?: unknown };
       const version = typeof parsed.version === "string" ? parsed.version : null;
+      const name = typeof parsed.name === "string" ? parsed.name : null;
       const info = await stat(dir);
-      return { version, source, path: dir, modifiedMs: info.mtimeMs };
+      return { version, name, source, path: dir, modifiedMs: info.mtimeMs };
     } catch {
       return null;
     }

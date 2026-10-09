@@ -368,8 +368,29 @@ describe("StatusReporter.report", () => {
 
     const report = await new StatusReporter(installer, stubFetch).report(projectDir, { scopes: null, online: true });
 
+    expect(report.scopes[0]?.publishedVersion).toBe("2.0.0");
     expect(report.effective.latestVersion).toBe("2.0.0");
     expect(report.warnings.join("\n")).toContain("stale");
+  });
+
+  test("--online derives the npm name for a path-form registration from the checkout", async () => {
+    const checkout = path.join(projectDir, "checkout");
+    await mkdir(checkout, { recursive: true });
+    await writeFile(
+      path.join(checkout, "package.json"),
+      JSON.stringify({ name: "opencode-architect", version: "3.4.5" }),
+    );
+    const entry = pathToFileURL(checkout).href;
+    await writeConfig("local", "opencode.json", `{ "plugins": [{ "package": "${entry}" }] }\n`);
+    const stubFetch = ((input: string | URL | Request) =>
+      Promise.resolve(new Response(JSON.stringify({ version: "2.0.0" }), { status: 200 }))) as unknown as typeof fetch;
+
+    const report = await new StatusReporter(installer, stubFetch).report(projectDir, { scopes: null, online: true });
+
+    expect(report.scopes[0]?.entryForm).toBe("path");
+    expect(report.scopes[0]?.publishedVersion).toBe("2.0.0");
+    expect(report.effective.latestVersion).toBe("2.0.0");
+    expect(report.warnings.join("\n")).toContain("resolves 3.4.5 but npm publishes 2.0.0");
   });
 
   test("--online warn-and-continues when the registry is unreachable", async () => {
@@ -379,6 +400,7 @@ describe("StatusReporter.report", () => {
 
     const report = await new StatusReporter(installer, failingFetch).report(projectDir, { scopes: null, online: true });
 
+    expect(report.scopes[0]?.publishedVersion).toBeNull();
     expect(report.effective.version).toBe("1.0.0");
     expect(report.warnings.join("\n")).toContain("could not query npm registry");
   });

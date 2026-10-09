@@ -59,6 +59,8 @@ export interface ScopeStatus {
   resolvedVersion: string | null;
   resolvedSource: "cache" | "checkout" | null;
   resolvedModifiedMs: number | null;
+  resolvedName: string | null;
+  publishedVersion: string | null;
   registered: boolean;
   warnings: string[];
 }
@@ -79,6 +81,7 @@ export interface StatusResult {
 }
 
 interface ResolvedEntrySource {
+  name: string | null;
   version: string | null;
   source: "cache" | "checkout";
   path: string;
@@ -405,8 +408,8 @@ export async function uninstall(scope: Scope, projectDir: string = process.cwd()
 export async function status(projectDir: string = process.cwd(), online: boolean = false, fetchFn: typeof fetch = fetch): Promise<StatusResult> {
   const detector = new RegistrationDetector(PLUGIN_NAME);
   const inventory = await detector.inventory(projectDir);
-  const local = await scopeStatus("local", projectDir, inventory.local);
-  const global = await scopeStatus("global", projectDir, inventory.global);
+  let local = await scopeStatus("local", projectDir, inventory.local);
+  let global = await scopeStatus("global", projectDir, inventory.global);
   const warnings: string[] = [];
   if (local !== null && global !== null && local.registered && global.registered) {
     warnings.push(`registered in both scopes (double-load risk): ${local.entryConfigPath} and ${global.entryConfigPath}`);
@@ -415,6 +418,8 @@ export async function status(projectDir: string = process.cwd(), online: boolean
   if (online) {
     const outcome = await applyOnline([local, global], effective, fetchFn);
     warnings.push(...outcome.warnings);
+    local = outcome.scopes[0] ?? null;
+    global = outcome.scopes[1] ?? null;
     effective = outcome.effective;
   }
   return { local, global, effective, warnings };
@@ -430,12 +435,14 @@ async function scopeStatus(scope: Scope, projectDir: string, entries: RawConfigE
   let resolvedVersion: string | null = null;
   let resolvedSource: "cache" | "checkout" | null = null;
   let resolvedModifiedMs: number | null = null;
+  let resolvedName: string | null = null;
   if (matched !== null) {
     const outcome = await resolveEntrySource(matched.spec);
     if (outcome.resolved !== null) {
       resolvedVersion = outcome.resolved.version;
       resolvedSource = outcome.resolved.source;
       resolvedModifiedMs = outcome.resolved.modifiedMs;
+      resolvedName = outcome.resolved.name;
     } else if (outcome.status === "missing") {
       warnings.push(`${scope}: no cached copy for ${matched.spec}`);
     } else {
@@ -457,6 +464,8 @@ async function scopeStatus(scope: Scope, projectDir: string, entries: RawConfigE
     resolvedVersion,
     resolvedSource,
     resolvedModifiedMs: resolvedModifiedMs,
+    resolvedName,
+    publishedVersion: null,
     registered: matched !== null,
     warnings,
   };
@@ -522,10 +531,11 @@ async function readCopyManifest(dir: string, source: "cache" | "checkout"): Prom
   const manifestPath = join(dir, "package.json");
   if (!(await exists(manifestPath))) return null;
   try {
-    const parsed = JSON.parse(await readFile(manifestPath, "utf-8")) as { version?: unknown };
+    const parsed = JSON.parse(await readFile(manifestPath, "utf-8")) as { name?: unknown; version?: unknown };
     const version = typeof parsed.version === "string" ? parsed.version : null;
+    const name = typeof parsed.name === "string" ? parsed.name : null;
     const info = await stat(dir);
-    return { version, source, path: dir, modifiedMs: info.mtimeMs };
+    return { version, name, source, path: dir, modifiedMs: info.mtimeMs };
   } catch {
     return null;
   }
@@ -580,32 +590,45 @@ async function applyOnline(
   scopes: Array<ScopeStatus | null>,
   effective: EffectiveStatus,
   fetchFn: typeof fetch,
-): Promise<{ warnings: string[]; effective: EffectiveStatus }> {
+): Promise<{ warnings: string[]; scopes: Array<ScopeStatus | null>; effective: EffectiveStatus }> {
   const warnings: string[] = [];
   const lookups = new Map<string, { version: string | null; warning: string | null }>();
+  const lookupName = (scopeStatusValue: ScopeStatus): string | null =>
+    scopeStatusValue.entryName ?? scopeStatusValue.resolvedName;
   for (const scopeStatusValue of scopes) {
-    if (scopeStatusValue === null || !scopeStatusValue.registered || scopeStatusValue.entryName === null) continue;
-    if (!lookups.has(scopeStatusValue.entryName)) {
-      lookups.set(scopeStatusValue.entryName, await fetchLatestVersion(scopeStatusValue.entryName, fetchFn));
-    }
+    if (scopeStatusValue === null || !scopeStatusValue.registered) continue;
+    const name = lookupName(scopeStatusValue);
+    if (name === null || lookups.has(name)) continue;
+    lookups.set(name, await fetchLatestVersion(name, fetchFn));
   }
+  const updated: Array<ScopeStatus | null> = [];
   for (const scopeStatusValue of scopes) {
-    if (scopeStatusValue === null || !scopeStatusValue.registered || scopeStatusValue.entryName === null) continue;
-    const lookup = lookups.get(scopeStatusValue.entryName);
-    if (lookup === undefined) continue;
+    if (scopeStatusValue === null || !scopeStatusValue.registered) {
+      updated.push(scopeStatusValue);
+      continue;
+    }
+    const name = lookupName(scopeStatusValue);
+    const lookup = name !== null ? lookups.get(name) : undefined;
+    if (lookup === undefined) {
+      updated.push(scopeStatusValue);
+      continue;
+    }
     if (lookup.warning !== null) {
       warnings.push(lookup.warning);
+      updated.push({ ...scopeStatusValue, publishedVersion: null });
       continue;
     }
     if (lookup.version !== null && scopeStatusValue.resolvedVersion !== null && lookup.version !== scopeStatusValue.resolvedVersion) {
       warnings.push(`${lookup.version} is the latest published version but ${scopeStatusValue.resolvedVersion} resolves (stale)`);
     }
+    updated.push({ ...scopeStatusValue, publishedVersion: lookup.version });
   }
-  const effectiveScopeStatus = scopes.find(
+  const effectiveScopeStatus = updated.find(
     (scopeStatusValue) => scopeStatusValue !== null && scopeStatusValue.registered && scopeStatusValue.scope === effective.scope,
   );
-  const latest = effectiveScopeStatus?.entryName != null ? lookups.get(effectiveScopeStatus.entryName)?.version ?? null : null;
-  return { warnings, effective: { ...effective, latestVersion: latest } };
+  const effectiveName = effectiveScopeStatus !== null && effectiveScopeStatus !== undefined ? lookupName(effectiveScopeStatus) : null;
+  const latest = effectiveName !== null ? lookups.get(effectiveName)?.version ?? null : null;
+  return { warnings, scopes: updated, effective: { ...effective, latestVersion: latest } };
 }
 
 async function fetchLatestVersion(name: string, fetchFn: typeof fetch): Promise<{ version: string | null; warning: string | null }> {

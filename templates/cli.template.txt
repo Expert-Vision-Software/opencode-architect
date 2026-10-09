@@ -9,7 +9,7 @@
 
 The module exports `runCli(argv)` and runs standalone under its shebang via the `import.meta.main` guard — both `bunx <package>` (through the package.json `bin` entry) and the `index.ts` dispatch shim resolve to the same `runCli`.
 
-**Load-bearing — do not simplify:** the deployment plan is content-based, so `install` resolves the mode through `resolveMode` and never forces one: assets-only packages default to copy and accept `--mode plugin`; code-backed packages always register and `--mode copy` surfaces the `CopyModeUnsupportedError` as a hard, explanatory exit-1 error; `install` forwards `force` so consumer-modified files are skipped without it; `status` resolves the effective load per scope — registration, target config file, raw entry as written, resolved source on disk with a relative-age staleness hint, and an effective verdict that annotates a double-scope registration — and the status-only `--online` (registry staleness, warn-and-continue, injectable fetch) and `--path` flags are rejected with an explanatory exit-1 on every other command; `migrate` refuses to run without `--force` (root-config deletion is consent-gated and CLI-only); `clear-cache` is self-only — it removes this package's own cache copies (`<package>` and every `<package>@*`) from OpenCode's package cache, is idempotent (nothing cached is a success), warns and continues on per-target removal failures, and must never grow `--package` or `--all` modes (other packages' cache and the shared OpenCode cache dir are out of scope for a generated package); the module lives at `src/cli.ts` and imports `./installer.ts`.
+**Load-bearing — do not simplify:** the deployment plan is content-based, so `install` resolves the mode through `resolveMode` and never forces one: assets-only packages default to copy and accept `--mode plugin`; code-backed packages always register and `--mode copy` surfaces the `CopyModeUnsupportedError` as a hard, explanatory exit-1 error; `install` forwards `force` so consumer-modified files are skipped without it; `status` resolves the effective load per scope — registration, target config file, raw entry as written, resolved source on disk with a relative-age staleness hint, the published npm latest per scope, and an effective verdict that annotates a double-scope registration — and the status-only `--online` (registry staleness, warn-and-continue, injectable fetch) and `--path` flags are rejected with an explanatory exit-1 on every other command; `migrate` refuses to run without `--force` (root-config deletion is consent-gated and CLI-only); `clear-cache` is self-only — it removes this package's own cache copies (`<package>` and every `<package>@*`) from OpenCode's package cache, is idempotent (nothing cached is a success), warns and continues on per-target removal failures, and must never grow `--package` or `--all` modes (other packages' cache and the shared OpenCode cache dir are out of scope for a generated package); the module lives at `src/cli.ts` and imports `./installer.ts`.
 
 ---
 #!/usr/bin/env bun
@@ -136,11 +136,12 @@ export async function runCli(argv: string[]): Promise<number> {
         console.log("Status:");
         for (const [label, scopeStatus] of [["Local", result.local], ["Global", result.global]] as const) {
           if (!scopeStatus) continue;
+          const npm = scopeStatus.publishedVersion !== null ? ` npm-latest=${scopeStatus.publishedVersion}` : "";
           console.log(
             `  ${label}: mode=${scopeStatus.mode ?? "unknown"}, ` +
               `config=${scopeStatus.entryConfigPath ?? "-"}, ` +
               `entry=${scopeStatus.entry ?? "-"}, ` +
-              `resolved=${resolvedLabel(scopeStatus)}`
+              `resolved=${resolvedLabel(scopeStatus)}${npm}`
           );
           for (const warning of scopeStatus.warnings) console.warn(`Warning: ${warning}`);
         }
@@ -234,7 +235,14 @@ function resolvedLabel(scopeStatus: ScopeStatus): string {
 }
 
 function verdictLabel(effective: EffectiveStatus): string {
-  const kind = effective.source === "cache" ? "cache copy" : effective.source === "checkout" ? "checkout copy" : "manifest";
+  const kind =
+    effective.source !== null
+      ? effective.source === "cache"
+        ? "cache copy"
+        : "checkout copy"
+      : effective.version !== null
+        ? "manifest"
+        : "unresolved";
   const latest = effective.latestVersion !== null ? `, latest ${effective.latestVersion}` : "";
   const scopeLabel =
     effective.registeredScopes.length > 1

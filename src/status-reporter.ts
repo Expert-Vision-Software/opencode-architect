@@ -25,6 +25,7 @@ export interface ScopeStatusReport {
   entryName: string | null;
   entryForm: "npm" | "path" | null;
   resolved: ResolvedSource | null;
+  publishedVersion: string | null;
   warnings: string[];
 }
 
@@ -67,15 +68,16 @@ export class StatusReporter {
 
   public async report(projectDir: string, options: StatusReportOptions): Promise<StatusReport> {
     const scopes = options.scopes ?? (["local", "global"] as Scope[]);
-    const reports: ScopeStatusReport[] = [];
+    let reports: ScopeStatusReport[] = [];
     for (const scope of scopes) {
       reports.push(await this.resolveScope(scope, projectDir));
     }
     const warnings = this.crossScopeWarnings(reports);
     let effective = this.effectiveVersion(reports);
-    if (options.online) {
-      const online = await this.onlinePass(reports, effective);
+    const online = options.online ? await this.onlinePass(reports, effective) : null;
+    if (online !== null) {
       warnings.push(...online.warnings);
+      reports = online.reports;
       effective = online.effective;
     }
     return { projectDir, scopes: reports, effective, warnings };
@@ -114,6 +116,7 @@ export class StatusReporter {
         entryName: null,
         entryForm: null,
         resolved: null,
+        publishedVersion: null,
         warnings,
       };
     }
@@ -140,6 +143,7 @@ export class StatusReporter {
       entryName: matched.name,
       entryForm: matched.form,
       resolved,
+      publishedVersion: null,
       warnings,
     };
   }
@@ -202,37 +206,47 @@ export class StatusReporter {
   private async onlinePass(
     reports: ScopeStatusReport[],
     effective: EffectiveVersion,
-  ): Promise<{ warnings: string[]; effective: EffectiveVersion }> {
+  ): Promise<{ warnings: string[]; reports: ScopeStatusReport[]; effective: EffectiveVersion }> {
     const warnings: string[] = [];
     const checker = new RegistryVersionChecker(this.fetchFn);
     const latest = new Map<string, string | null>();
     const failures = new Map<string, string>();
     for (const report of reports) {
-      if (!report.registered || report.entryName === null || latest.has(report.entryName)) continue;
-      const lookup = await checker.latest(report.entryName);
+      const name = this.lookupName(report);
+      if (name === null || latest.has(name)) continue;
+      const lookup = await checker.latest(name);
       if (lookup.warning !== null) {
-        failures.set(report.entryName, lookup.warning);
-        latest.set(report.entryName, null);
+        failures.set(name, lookup.warning);
+        latest.set(name, null);
       } else {
-        latest.set(report.entryName, lookup.version);
+        latest.set(name, lookup.version);
       }
     }
+    const updated: ScopeStatusReport[] = [];
     for (const report of reports) {
-      if (!report.registered || report.entryName === null) continue;
-      const failure = failures.get(report.entryName);
-      if (failure !== undefined) {
-        warnings.push(`${report.scope}: ${failure}`);
-        continue;
+      const name = this.lookupName(report);
+      const published = name !== null ? latest.get(name) ?? null : null;
+      if (name !== null) {
+        const failure = failures.get(name);
+        if (failure !== undefined) {
+          warnings.push(`${report.scope}: ${failure}`);
+        } else if (published !== null && report.resolved?.version != null && published !== report.resolved.version) {
+          warnings.push(`${report.scope}: resolves ${report.resolved.version} but npm publishes ${published} (stale)`);
+        }
       }
-      const published = latest.get(report.entryName) ?? null;
-      const resolvedVersion = report.resolved?.version ?? null;
-      if (published !== null && resolvedVersion !== null && published !== resolvedVersion) {
-        warnings.push(`${report.scope}: resolves ${resolvedVersion} but npm publishes ${published} (stale)`);
-      }
+      updated.push({ ...report, publishedVersion: published });
     }
-    const effectiveReport = reports.find((report) => report.registered && report.scope === effective.scope);
-    const effectiveName = effectiveReport?.entryName ?? null;
-    const effectiveLatest = effectiveName !== null && !failures.has(effectiveName) ? latest.get(effectiveName) ?? null : null;
-    return { warnings, effective: { ...effective, latestVersion: effectiveLatest } };
+    const effectiveReport = updated.find((report) => report.registered && report.scope === effective.scope);
+    return {
+      warnings,
+      reports: updated,
+      effective: { ...effective, latestVersion: effectiveReport?.publishedVersion ?? null },
+    };
+  }
+
+  private lookupName(report: ScopeStatusReport): string | null {
+    if (!report.registered) return null;
+    if (report.entryName !== null) return report.entryName;
+    return report.resolved?.name ?? null;
   }
 }
