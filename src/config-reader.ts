@@ -24,7 +24,60 @@ export interface CandidateRead {
   rawEntries: Record<PluginConfigKey, unknown[] | null>;
 }
 
+export interface ConfigEntries {
+  path: string;
+  lenient: boolean;
+  writable: boolean;
+  rawEntries: unknown[];
+  parseError: string | null;
+}
+
 export class ConfigReader {
+  public async entries(
+    scope: ConfigScope,
+    projectDir: string,
+    warn = false,
+  ): Promise<ConfigEntries[]> {
+    const results: ConfigEntries[] = [];
+    for (const candidate of this.candidates({ scope, projectDir })) {
+      if (!(await exists(candidate.path))) continue;
+      const text = await readFile(candidate.path, "utf-8");
+      const config = this.losslessParse(text, candidate.lenient);
+      if (config === null) {
+        if (warn) {
+          console.warn(`Warning: ${candidate.path} could not be parsed; its plugin entries are ignored.`);
+        }
+        results.push({
+          path: candidate.path,
+          lenient: candidate.lenient,
+          writable: candidate.writable,
+          rawEntries: [],
+          parseError: `config file ${candidate.path} could not be parsed`,
+        });
+        continue;
+      }
+      results.push({
+        path: candidate.path,
+        lenient: candidate.lenient,
+        writable: candidate.writable,
+        rawEntries: [...this.entriesOf(config, "plugins"), ...this.entriesOf(config, "plugin")],
+        parseError: null,
+      });
+    }
+    return results;
+  }
+
+  private losslessParse(text: string, lenient: boolean): Record<string, unknown> | null {
+    const parseable = lenient ? stripTrailingCommas(stripJsoncComments(text)) : text;
+    try {
+      const parsed = JSON.parse(parseable) as unknown;
+      if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) return null;
+      return parsed as Record<string, unknown>;
+    } catch {
+      return null;
+    }
+  }
+
   public async readCandidates(options: EnsurePluginEntryOptions): Promise<CandidateRead[]> {
     const reads: CandidateRead[] = [];
     for (const candidate of this.candidates(options)) {
@@ -162,4 +215,78 @@ export class ConfigReader {
     if (xdgConfigHome) return path.join(xdgConfigHome, "opencode");
     return path.join(homedir(), ".config", "opencode");
   }
+}
+
+function stripJsoncComments(text: string): string {
+  let out = "";
+  let i = 0;
+  let inString = false;
+  while (i < text.length) {
+    const ch = text[i];
+    if (inString) {
+      out += ch;
+      if (ch === "\\" && i + 1 < text.length) {
+        out += text[i + 1];
+        i += 2;
+        continue;
+      }
+      if (ch === '"') inString = false;
+      i++;
+      continue;
+    }
+    if (ch === '"') {
+      inString = true;
+      out += ch;
+      i++;
+      continue;
+    }
+    if (ch === "/" && text[i + 1] === "/") {
+      while (i < text.length && text[i] !== "\n") i++;
+      continue;
+    }
+    if (ch === "/" && text[i + 1] === "*") {
+      i += 2;
+      while (i < text.length && !(text[i] === "*" && text[i + 1] === "/")) i++;
+      i += 2;
+      continue;
+    }
+    out += ch;
+    i++;
+  }
+  return out;
+}
+
+function stripTrailingCommas(text: string): string {
+  let out = "";
+  let i = 0;
+  while (i < text.length) {
+    const ch = text[i];
+    if (ch === '"') {
+      out += ch;
+      i++;
+      while (i < text.length) {
+        if (text[i] === "\\") {
+          out += text[i] + (text[i + 1] ?? "");
+          i += 2;
+          continue;
+        }
+        out += text[i];
+        const closed = text[i] === '"';
+        i++;
+        if (closed) break;
+      }
+      continue;
+    }
+    if (ch === ",") {
+      let j = i + 1;
+      while (j < text.length && /\s/.test(text[j] ?? "")) j++;
+      if (text[j] === "]" || text[j] === "}") {
+        i++;
+        continue;
+      }
+    }
+    out += ch;
+    i++;
+  }
+  return out;
 }

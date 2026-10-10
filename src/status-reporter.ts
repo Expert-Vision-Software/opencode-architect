@@ -1,6 +1,6 @@
 import { PACKAGE_NAME } from "./cache-cleaner";
 import path from "node:path";
-import { ConfigEntriesReader, type ConfigEntries } from "./config-entries";
+import { ConfigReader, type ConfigEntries } from "./config-reader";
 import { LoadedVersionResolver, type ResolvedSource } from "./loaded-version";
 import { RegistryVersionChecker } from "./registry-version-checker";
 import { EntryPredicate } from "./entry-predicate";
@@ -64,7 +64,7 @@ interface MatchedEntry {
 }
 
 export class StatusReporter {
-  private readonly entries = new ConfigEntriesReader();
+  private readonly configs = new ConfigReader();
   private readonly resolver = new LoadedVersionResolver();
 
   constructor(
@@ -105,7 +105,7 @@ export class StatusReporter {
 
   private async resolveScope(scope: Scope, projectDir: string, packageName: string): Promise<ScopeStatusReport> {
     const warnings: string[] = [];
-    const entries = await this.entries.read(scope, projectDir, false);
+    const entries = await this.configs.entries(scope, projectDir);
     for (const candidate of entries) {
       if (candidate.parseError !== null) warnings.push(candidate.parseError);
     }
@@ -159,10 +159,10 @@ export class StatusReporter {
   private async findMatchedEntry(entries: ConfigEntries[], packageName: string): Promise<MatchedEntry | null> {
     for (const candidate of entries) {
       for (const raw of candidate.rawEntries) {
-        const classified = await EntryPredicate.matched(raw, packageName, path.dirname(candidate.configPath));
+        const classified = await EntryPredicate.matched(raw, packageName, path.dirname(candidate.path));
         if (classified === null) continue;
         return {
-          configPath: candidate.configPath,
+          configPath: candidate.path,
           entry: raw,
           display: classified.display,
           name: classified.name,

@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
-import { ConfigEntriesReader } from "../src/config-entries";
+import { ConfigReader } from "../src/config-reader";
 import { EntryPredicate } from "../src/entry-predicate";
 import { Installer } from "../src/installer";
 import { LoadedVersionResolver } from "../src/loaded-version";
@@ -211,7 +211,7 @@ describe("LoadedVersionResolver cache resolution", () => {
   });
 });
 
-describe("ConfigEntriesReader", () => {
+describe("ConfigReader.entries", () => {
   test("reads raw entries from a jsonc config with comments and trailing commas", async () => {
     await writeConfig(
       "local",
@@ -219,11 +219,27 @@ describe("ConfigEntriesReader", () => {
       '{\n  // keep\n  "plugins": ["other", { "package": "opencode-architect@latest" },],\n}\n',
     );
 
-    const entries = await new ConfigEntriesReader().read("local", projectDir, false);
+    const entries = await new ConfigReader().entries("local", projectDir);
 
     expect(entries).toHaveLength(1);
     expect(entries[0]?.rawEntries).toContain("other");
     expect(entries[0]?.rawEntries).toContainEqual({ package: "opencode-architect@latest" });
+    expect(entries[0]?.parseError).toBeNull();
+  });
+
+  test("reports candidates with path, leniency, writability, and legacy key entries", async () => {
+    await writeConfig(
+      "local",
+      "opencode.json",
+      '{ "plugins": ["a"], "plugin": ["legacy"] }',
+    );
+
+    const entries = await new ConfigReader().entries("local", projectDir);
+
+    const json = entries.find((candidate) => candidate.path.endsWith("opencode.json"));
+    expect(json?.lenient).toBe(false);
+    expect(json?.writable).toBe(true);
+    expect(json?.rawEntries).toEqual(["a", "legacy"]);
   });
 
   test("warns and reports unparseable configs", async () => {
@@ -232,7 +248,7 @@ describe("ConfigEntriesReader", () => {
     const original = console.warn;
     console.warn = (message: string) => warnings.push(String(message));
     try {
-      const entries = await new ConfigEntriesReader().read("local", projectDir, true);
+      const entries = await new ConfigReader().entries("local", projectDir, true);
       expect(entries[0]?.parseError).not.toBeNull();
       expect(warnings).toHaveLength(1);
     } finally {
