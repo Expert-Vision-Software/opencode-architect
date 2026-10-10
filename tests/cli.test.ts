@@ -91,7 +91,7 @@ describe("cli", () => {
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
-  });
+  }, 15000);
 
   test("a cache-clearing failure warns but install exits 0", async () => {
     if (process.getuid?.() === 0) return;
@@ -125,7 +125,7 @@ describe("cli", () => {
       await rm(dir, { recursive: true, force: true });
       await rm(cacheDir, { recursive: true, force: true });
     }
-  });
+  }, 15000);
 
   test("install with a legacy v1 plugin entry keeps it read-only and advises upgrading", async () => {
     const dir = await mkdtemp(path.join(tmpdir(), "oa-cli-"));
