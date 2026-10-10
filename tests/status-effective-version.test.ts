@@ -5,40 +5,38 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { ConfigReader } from "../src/config-reader";
 import { EntryPredicate } from "../src/entry-predicate";
+import type { Environment } from "../src/environment";
 import { Installer } from "../src/installer";
 import { LoadedVersionResolver } from "../src/loaded-version";
+import { NpmCache } from "../src/npm-cache";
 import { StatusReporter } from "../src/status-reporter";
+import { fakeEnvironment } from "./test-helpers";
 
 let projectDir = "";
 let configDir = "";
 let cacheDir = "";
-let originalXdgConfig: string | undefined;
-let originalXdgCache: string | undefined;
-const installer = new Installer();
-const reporter = new StatusReporter(installer);
+let installer: Installer;
+let reporter: StatusReporter;
+let resolver: LoadedVersionResolver;
+
+function isolatedEnvironment(): Environment {
+  return fakeEnvironment({ vars: { XDG_CONFIG_HOME: configDir, XDG_CACHE_HOME: cacheDir } });
+}
 
 beforeEach(async () => {
   projectDir = await mkdtemp(path.join(tmpdir(), "oa-status-project-"));
   configDir = await mkdtemp(path.join(tmpdir(), "oa-status-config-"));
   cacheDir = await mkdtemp(path.join(tmpdir(), "oa-status-cache-"));
-  originalXdgConfig = process.env.XDG_CONFIG_HOME;
-  originalXdgCache = process.env.XDG_CACHE_HOME;
-  process.env.XDG_CONFIG_HOME = configDir;
-  process.env.XDG_CACHE_HOME = cacheDir;
+  installer = new Installer(null, rm, isolatedEnvironment());
+  reporter = new StatusReporter(installer, isolatedEnvironment());
+  resolver = new LoadedVersionResolver(new NpmCache(isolatedEnvironment()));
 });
 
 afterEach(async () => {
-  restoreEnv("XDG_CONFIG_HOME", originalXdgConfig);
-  restoreEnv("XDG_CACHE_HOME", originalXdgCache);
   await rm(projectDir, { recursive: true, force: true });
   await rm(configDir, { recursive: true, force: true });
   await rm(cacheDir, { recursive: true, force: true });
 });
-
-function restoreEnv(name: string, value: string | undefined): void {
-  if (value === undefined) delete process.env[name];
-  else process.env[name] = value;
-}
 
 function cacheRoot(): string {
   return path.join(cacheDir, "opencode", "npm");
@@ -74,8 +72,6 @@ async function writeLocalManifest(version: string, configPath: string | null): P
 }
 
 describe("LoadedVersionResolver classification", () => {
-  const resolver = new LoadedVersionResolver();
-
   test("classifies npm specs, pinning, scopes, and defaults", () => {
     expect(resolver.classify("opencode-architect@latest")).toMatchObject({
       form: "npm",
@@ -140,8 +136,6 @@ describe("StatusReporter.formatAge", () => {
 });
 
 describe("LoadedVersionResolver cache resolution", () => {
-  const resolver = new LoadedVersionResolver();
-
   test("resolves a present cache copy and reports version and mtime", async () => {
     await seedCacheCopy("opencode-architect@latest", "opencode-architect", "1.2.3");
 
@@ -417,7 +411,7 @@ describe("StatusReporter.report", () => {
     const stubFetch = ((input: string | URL | Request) =>
       Promise.resolve(new Response(JSON.stringify({ version: "2.0.0" }), { status: 200 }))) as unknown as typeof fetch;
 
-    const report = await new StatusReporter(installer, stubFetch).report(projectDir, { scopes: null, online: true });
+    const report = await new StatusReporter(installer, { ...isolatedEnvironment(), fetch: stubFetch }).report(projectDir, { scopes: null, online: true });
 
     expect(report.effective.version).toBe("2.0.0");
     expect(report.effective.versionKind).toBe("npm");
@@ -500,7 +494,7 @@ describe("StatusReporter.report", () => {
     const stubFetch = ((input: string | URL | Request) =>
       Promise.resolve(new Response(JSON.stringify({ version: "2.0.0" }), { status: 200 }))) as unknown as typeof fetch;
 
-    const report = await new StatusReporter(installer, stubFetch).report(projectDir, { scopes: null, online: true });
+    const report = await new StatusReporter(installer, { ...isolatedEnvironment(), fetch: stubFetch }).report(projectDir, { scopes: null, online: true });
 
     expect(report.scopes[0]?.publishedVersion).toBe("2.0.0");
     expect(report.effective.latestVersion).toBe("2.0.0");
@@ -519,7 +513,7 @@ describe("StatusReporter.report", () => {
     const stubFetch = ((input: string | URL | Request) =>
       Promise.resolve(new Response(JSON.stringify({ version: "2.0.0" }), { status: 200 }))) as unknown as typeof fetch;
 
-    const report = await new StatusReporter(installer, stubFetch).report(projectDir, { scopes: null, online: true });
+    const report = await new StatusReporter(installer, { ...isolatedEnvironment(), fetch: stubFetch }).report(projectDir, { scopes: null, online: true });
 
     expect(report.scopes[0]?.entryForm).toBe("path");
     expect(report.scopes[0]?.publishedVersion).toBe("2.0.0");
@@ -532,10 +526,12 @@ describe("StatusReporter.report", () => {
     await writeConfig("local", "opencode.json", '{ "plugins": ["opencode-architect@latest"] }\n');
     const failingFetch = (() => Promise.reject(new Error("offline"))) as unknown as typeof fetch;
 
-    const report = await new StatusReporter(installer, failingFetch).report(projectDir, { scopes: null, online: true });
+    const report = await new StatusReporter(installer, { ...isolatedEnvironment(), fetch: failingFetch }).report(projectDir, { scopes: null, online: true });
 
     expect(report.scopes[0]?.publishedVersion).toBeNull();
     expect(report.effective.version).toBe("1.0.0");
     expect(report.warnings.join("\n")).toContain("could not query npm registry");
   });
 });
+
+

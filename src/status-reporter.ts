@@ -1,7 +1,9 @@
 import { PACKAGE_NAME } from "./cache-cleaner";
 import path from "node:path";
 import { ConfigReader, type ConfigEntries } from "./config-reader";
+import { realEnvironment, type Environment } from "./environment";
 import { LoadedVersionResolver, type ResolvedSource } from "./loaded-version";
+import { NpmCache } from "./npm-cache";
 import { RegistryVersionChecker } from "./registry-version-checker";
 import { EntryPredicate } from "./entry-predicate";
 import type { InstallMode, Scope } from "./installer";
@@ -64,13 +66,16 @@ interface MatchedEntry {
 }
 
 export class StatusReporter {
-  private readonly configs = new ConfigReader();
-  private readonly resolver = new LoadedVersionResolver();
+  private readonly configs: ConfigReader;
+  private readonly resolver: LoadedVersionResolver;
 
   constructor(
     private readonly manifests: ManifestLookup,
-    private readonly fetchFn: typeof fetch = fetch,
-  ) {}
+    private readonly environment: Environment = realEnvironment,
+  ) {
+    this.configs = new ConfigReader(environment);
+    this.resolver = new LoadedVersionResolver(new NpmCache(environment));
+  }
 
   public async report(projectDir: string, options: StatusReportOptions): Promise<StatusReport> {
     const scopes = options.scopes ?? (["local", "global"] as Scope[]);
@@ -230,7 +235,7 @@ export class StatusReporter {
 
   private async onlinePass(reports: ScopeStatusReport[]): Promise<{ warnings: string[]; reports: ScopeStatusReport[] }> {
     const warnings: string[] = [];
-    const checker = new RegistryVersionChecker(this.fetchFn);
+    const checker = new RegistryVersionChecker(this.environment.fetch);
     const latest = new Map<string, string | null>();
     const failures = new Map<string, string>();
     for (const report of reports) {
