@@ -64,7 +64,7 @@ export class EntryPredicate {
     const classified = EntryPredicate.classify(rawEntry);
     if (classified === null) return null;
     if (classified.form === "npm") {
-      return EntryPredicate.matchesName(classified.spec, packageName) ? classified : null;
+      return namePolicy.matches(classified.spec, packageName) ? classified : null;
     }
     if (await PluginEntryResolver.resolvesToPackage(rawEntry, packageName, baseDir)) return classified;
     return null;

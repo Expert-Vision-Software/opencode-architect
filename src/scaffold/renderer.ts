@@ -39,6 +39,8 @@ const TEMPLATES_DIR = path.join(import.meta.dirname, "..", "..", "templates");
 
 const ASSET_KINDS: ShipKind[] = ["skills", "commands"];
 
+const CODE_KINDS: ShipKind[] = ["agents", "tools", "plugins"];
+
 const TEMPLATE_SOURCES: Array<{ template: string; target: string }> = [
   { template: "index.template.txt", target: "index.ts" },
   { template: "plugin-local.template.txt", target: "src/plugin.ts" },
@@ -49,8 +51,9 @@ const TEMPLATE_SOURCES: Array<{ template: string; target: string }> = [
 export class ScaffoldRenderer {
   public render(plan: ScaffoldPlan): RenderedFile[] {
     const identifier = plan.name.replace(/^opencode-/, "");
-    const substituted = (templateName: string): string =>
-      ScaffoldRenderer.substitute(ScaffoldRenderer.templateBody(templateName), plan.name, identifier);
+    function substituted(templateName: string): string {
+      return ScaffoldRenderer.substitute(ScaffoldRenderer.templateBody(templateName), plan.name, identifier);
+    }
 
     const files: RenderedFile[] = TEMPLATE_SOURCES.map((entry) => ({
       relativePath: entry.target,
@@ -66,7 +69,7 @@ export class ScaffoldRenderer {
       relativePath: "commands/my-command.md",
       content: `---\ndescription: "Rendered command stub"\n---\n\nSay hello from ${plan.name}.\n`,
     });
-    for (const kind of ["agents", "tools", "plugins"] as ShipKind[]) {
+    for (const kind of CODE_KINDS) {
       if (plan.ship.includes(kind)) files.push({ relativePath: `${kind}/.gitkeep`, content: "" });
     }
     files.push({
@@ -92,7 +95,7 @@ export class ScaffoldRenderer {
 
   private static shippedDirs(plan: ScaffoldPlan): string[] {
     const dirs: string[] = ["skills", "commands"];
-    for (const kind of ["agents", "plugins", "tools"] as ShipKind[]) {
+    for (const kind of CODE_KINDS) {
       if (plan.ship.includes(kind)) dirs.push(kind);
     }
     return dirs;
