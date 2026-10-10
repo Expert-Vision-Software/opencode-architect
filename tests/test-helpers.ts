@@ -2,6 +2,22 @@ import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { expect, spyOn } from "bun:test";
 import { ClearCacheUsageError } from "../src/clear-cache-usage-error";
+import { realEnvironment, type Environment } from "../src/environment";
+
+export interface FakeEnvironmentOptions {
+  vars: Record<string, string>;
+  warn: ((message: string) => void) | null;
+  fetch: typeof fetch | null;
+}
+
+export function fakeEnvironment(options: Partial<FakeEnvironmentOptions> = {}): Environment {
+  const vars = options.vars ?? {};
+  return {
+    env: (name) => vars[name],
+    warn: options.warn ?? realEnvironment.warn,
+    fetch: options.fetch ?? realEnvironment.fetch,
+  };
+}
 
 export interface CapturedConsole {
   lines: string[];

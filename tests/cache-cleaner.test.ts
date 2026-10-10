@@ -5,24 +5,20 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { CacheCleaner } from "../src/cache-cleaner";
 import { NpmCache } from "../src/npm-cache";
-import { seedCachedPackage, expectClearCacheUsageError } from "./test-helpers";
+import { fakeEnvironment, seedCachedPackage, expectClearCacheUsageError } from "./test-helpers";
 
 let cacheDir = "";
-let originalXdgCache: string | undefined;
 let cleaner = new CacheCleaner();
 let cache = new NpmCache();
 
 beforeEach(async () => {
   cacheDir = await mkdtemp(path.join(tmpdir(), "oa-clear-cache-"));
-  originalXdgCache = process.env.XDG_CACHE_HOME;
-  process.env.XDG_CACHE_HOME = cacheDir;
-  cleaner = new CacheCleaner();
-  cache = new NpmCache();
+  const environment = fakeEnvironment({ vars: { XDG_CACHE_HOME: cacheDir } });
+  cleaner = new CacheCleaner(environment);
+  cache = new NpmCache(environment);
 });
 
 afterEach(async () => {
-  if (originalXdgCache === undefined) delete process.env.XDG_CACHE_HOME;
-  else process.env.XDG_CACHE_HOME = originalXdgCache;
   await rm(cacheDir, { recursive: true, force: true });
 });
 
@@ -188,7 +184,7 @@ describe("clearCache failure tolerance", () => {
   test("warns and continues when a removal fails", async () => {
     const kept = await seedCachedPackage(cacheRoot(), "opencode-architect");
     const removed = await seedCachedPackage(cacheRoot(), "opencode-architect@0.1.0");
-    const failingCleaner = new CacheCleaner(async (target, options) => {
+    const failingCleaner = new CacheCleaner(fakeEnvironment({ vars: { XDG_CACHE_HOME: cacheDir } }), async (target, options) => {
       if (target === kept) throw new Error("EPERM: simulated removal failure");
       await rm(target, options);
     });

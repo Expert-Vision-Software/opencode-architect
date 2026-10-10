@@ -1,6 +1,7 @@
 import { exists, readdir, rm } from "node:fs/promises";
 import path from "node:path";
 import { ClearCacheUsageError } from "./clear-cache-usage-error";
+import { realEnvironment, type Environment } from "./environment";
 import { NpmCache } from "./npm-cache";
 
 export const PACKAGE_NAME = "opencode-architect";
@@ -19,9 +20,11 @@ export interface ClearCacheOutcome {
 }
 
 export class CacheCleaner {
-  private readonly cache = new NpmCache();
+  private readonly cache: NpmCache;
 
-  constructor(private readonly rmFn: typeof rm = rm) {}
+  constructor(private readonly environment: Environment = realEnvironment, private readonly rmFn: typeof rm = rm) {
+    this.cache = new NpmCache(environment);
+  }
 
   public isUnsafePackageName(name: string): boolean {
     return name.includes("/") || name.includes("\\") || name.includes("..") || name === ".";
