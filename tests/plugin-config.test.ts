@@ -3,6 +3,7 @@ import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { PluginConfigEditor } from "../src/plugin-config";
+import { RegistrationDetector } from "../src/registration-detector";
 import { captureConsole } from "./test-helpers";
 
 const ROOT = path.join(import.meta.dirname, "..", ".tmp-plugin-config-test");
@@ -22,6 +23,10 @@ async function write(relative: string, content: string): Promise<string> {
 
 function editor(): PluginConfigEditor {
   return new PluginConfigEditor();
+}
+
+function detector(): RegistrationDetector {
+  return new RegistrationDetector();
 }
 
 function parseJsonc(text: string): Record<string, unknown> {
@@ -185,7 +190,7 @@ describe("PluginConfigEditor.ensurePluginEntry", () => {
     const captured = captureConsole("warn");
 
     try {
-      const found = await editor().findRegistration("my-pkg", { scope: "local", projectDir });
+      const found = await detector().findRegistration("my-pkg", { scope: "local", projectDir });
 
       expect(found).toBe(rootConfig);
       expect(captured.lines.some((message) => message.includes(".opencode"))).toBe(true);
@@ -388,7 +393,7 @@ describe("PluginConfigEditor.ensurePluginEntry", () => {
     const projectDir = await makeDir("project");
     const configPath = await write("project/opencode.json", '{ "plugin": ["my-pkg"] }\n');
 
-    const found = await editor().findRegistration("my-pkg", { scope: "local", projectDir });
+    const found = await detector().findRegistration("my-pkg", { scope: "local", projectDir });
 
     expect(found).toBe(configPath);
   });
@@ -450,7 +455,7 @@ describe("PluginConfigEditor path-form entries", () => {
       `{ "plugins": ["${pathToFileURL(pkgDir).href}"] }\n`,
     );
 
-    const found = await editor().findRegistration("my-pkg", { scope: "local", projectDir });
+    const found = await detector().findRegistration("my-pkg", { scope: "local", projectDir });
 
     expect(found).toBe(configPath);
   });

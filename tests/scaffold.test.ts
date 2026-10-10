@@ -44,6 +44,7 @@ describe("scaffold renderer", () => {
         "src/manifest.ts",
         "src/plugin-config.ts",
         "src/plugin-entry.ts",
+        "src/entry-predicate.ts",
         "src/plugin-name.ts",
         "src/plugin.ts",
         "src/registration.ts",

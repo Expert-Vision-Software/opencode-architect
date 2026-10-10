@@ -25,6 +25,7 @@ const TEMPLATE_SOURCES: Array<{ template: string; target: string }> = [
   { template: "registration.template.txt", target: "src/registration.ts" },
   { template: "plugin-config.template.txt", target: "src/plugin-config.ts" },
   { template: "plugin-entry.template.txt", target: "src/plugin-entry.ts" },
+  { template: "entry-predicate.template.txt", target: "src/entry-predicate.ts" },
   { template: "installer.template.txt", target: "src/installer.ts" },
   { template: "cli.template.txt", target: "src/cli.ts" },
 ];

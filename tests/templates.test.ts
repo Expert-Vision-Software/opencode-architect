@@ -16,6 +16,7 @@ const PACKAGE_NAME = "opencode-myextension";
 
 const TEMPLATE_FILES = [
   "cli.template.txt",
+  "entry-predicate.template.txt",
   "index.template.txt",
   "installer.template.txt",
   "manifest.template.txt",
@@ -274,6 +275,7 @@ describe("suite src mirrors template bodies byte-for-byte", () => {
   const SYNCED_PAIRS = [
     { template: "plugin-name.template.txt", source: "plugin-name.ts" },
     { template: "plugin-entry.template.txt", source: "plugin-entry.ts" },
+    { template: "entry-predicate.template.txt", source: "entry-predicate.ts" },
   ] as const;
 
   for (const pair of SYNCED_PAIRS) {

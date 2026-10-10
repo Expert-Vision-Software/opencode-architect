@@ -1,4 +1,6 @@
 import { isAbsolute } from "node:path";
+import { PluginNameNormalizer } from "./plugin-name.ts";
+import { PluginEntryResolver } from "./plugin-entry.ts";
 
 export type EntryForm = "npm" | "path";
 
@@ -10,15 +12,17 @@ export interface ClassifiedEntry {
   version: string | null;
 }
 
-export class EntrySpec {
+const namePolicy = new PluginNameNormalizer();
+
+export class EntryPredicate {
   public static classify(entry: unknown): ClassifiedEntry | null {
-    const spec = EntrySpec.specOf(entry);
+    const spec = EntryPredicate.specOf(entry);
     if (spec === null) return null;
     const display = typeof entry === "string" ? entry : JSON.stringify(entry);
-    if (EntrySpec.isPath(spec)) {
+    if (EntryPredicate.isPath(spec)) {
       return { form: "path", display, spec, name: null, version: null };
     }
-    const parsed = EntrySpec.parseNpm(spec);
+    const parsed = EntryPredicate.parseNpm(spec);
     if (parsed === null) return null;
     return { form: "npm", display, spec, name: parsed.name, version: parsed.version };
   }
@@ -46,6 +50,24 @@ export class EntrySpec {
     const specIndex = trimmed.lastIndexOf("@");
     if (specIndex > 0) return trimmed.slice(0, specIndex);
     return trimmed;
+  }
+
+  public static matchesName(spec: string, packageName: string): boolean {
+    return namePolicy.matches(spec, packageName);
+  }
+
+  public static async matches(rawEntry: unknown, packageName: string, baseDir?: string): Promise<boolean> {
+    return (await EntryPredicate.matched(rawEntry, packageName, baseDir)) !== null;
+  }
+
+  public static async matched(rawEntry: unknown, packageName: string, baseDir?: string): Promise<ClassifiedEntry | null> {
+    const classified = EntryPredicate.classify(rawEntry);
+    if (classified === null) return null;
+    if (classified.form === "npm") {
+      return EntryPredicate.matchesName(classified.spec, packageName) ? classified : null;
+    }
+    if (await PluginEntryResolver.resolvesToPackage(rawEntry, packageName, baseDir)) return classified;
+    return null;
   }
 
   private static parseNpm(spec: string): { name: string; version: string } | null {

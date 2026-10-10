@@ -1,6 +1,6 @@
 import { exists, readFile, readdir, stat } from "node:fs/promises";
 import { join } from "node:path";
-import { EntrySpec, type ClassifiedEntry } from "./entry-spec";
+import { EntryPredicate, type ClassifiedEntry } from "./entry-predicate";
 import { NpmCache } from "./npm-cache";
 import { PluginEntryResolver } from "./plugin-entry";
 
@@ -22,7 +22,7 @@ export class LoadedVersionResolver {
   constructor(private readonly cache: NpmCache = new NpmCache()) {}
 
   public classify(entry: unknown): ClassifiedEntry | null {
-    return EntrySpec.classify(entry);
+    return EntryPredicate.classify(entry);
   }
 
   public async resolve(entry: unknown, baseDir?: string): Promise<EntryResolution> {
