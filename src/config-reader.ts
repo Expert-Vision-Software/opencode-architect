@@ -1,7 +1,8 @@
 import { exists, readFile } from "node:fs/promises";
-import { homedir } from "node:os";
 import path from "node:path";
 import { EntryPredicate } from "./entry-predicate";
+import { realEnvironment, type Environment, type WarnChannel } from "./environment";
+import { scopeBase } from "./scope-base";
 
 export type ConfigScope = "local" | "global";
 export type PluginConfigKey = "plugins" | "plugin";
@@ -33,10 +34,12 @@ export interface ConfigEntries {
 }
 
 export class ConfigReader {
+  constructor(private readonly environment: Environment = realEnvironment) {}
+
   public async entries(
     scope: ConfigScope,
     projectDir: string,
-    warn = false,
+    warn: WarnChannel | null = null,
   ): Promise<ConfigEntries[]> {
     const results: ConfigEntries[] = [];
     for (const candidate of this.candidates({ scope, projectDir })) {
@@ -44,8 +47,8 @@ export class ConfigReader {
       const text = await readFile(candidate.path, "utf-8");
       const config = this.losslessParse(text, candidate.lenient);
       if (config === null) {
-        if (warn) {
-          console.warn(`Warning: ${candidate.path} could not be parsed; its plugin entries are ignored.`);
+        if (warn !== null) {
+          warn(`Warning: ${candidate.path} could not be parsed; its plugin entries are ignored.`);
         }
         results.push({
           path: candidate.path,
@@ -87,7 +90,7 @@ export class ConfigReader {
       const entries: Record<PluginConfigKey, string[] | null> = { plugins: null, plugin: null };
       const rawEntries: Record<PluginConfigKey, unknown[] | null> = { plugins: null, plugin: null };
       if (config === null) {
-        console.warn(
+        this.environment.warn(
           `Warning: ${candidate.path} could not be parsed; refusing to treat it as a registration candidate.`,
         );
       } else {
@@ -102,19 +105,19 @@ export class ConfigReader {
   }
 
   public candidates(options: EnsurePluginEntryOptions): CandidateConfig[] {
-    const scopeBase = this.scopeBase(options.scope, options.projectDir);
+    const scopeBasePath = scopeBase(options.scope, options.projectDir, this.environment);
     const configs: CandidateConfig[] = [];
     if (options.scope === "local") {
-      for (const root of [scopeBase, options.projectDir]) {
+      for (const root of [scopeBasePath, options.projectDir]) {
         configs.push({ path: path.join(root, "opencode.json"), lenient: false, writable: true });
         configs.push({ path: path.join(root, "opencode.jsonc"), lenient: true, writable: true });
       }
     } else {
       for (const file of ["opencode.json", "opencode.jsonc"]) {
-        configs.push({ path: path.join(scopeBase, file), lenient: file.endsWith(".jsonc"), writable: true });
+        configs.push({ path: path.join(scopeBasePath, file), lenient: file.endsWith(".jsonc"), writable: true });
       }
     }
-    configs.push({ path: path.join(scopeBase, "config.json"), lenient: false, writable: false });
+    configs.push({ path: path.join(scopeBasePath, "config.json"), lenient: false, writable: false });
     return configs;
   }
 
@@ -204,16 +207,9 @@ export class ConfigReader {
 
   public defaultConfigPath(options: EnsurePluginEntryOptions): string {
     if (options.scope === "global") {
-      return path.join(this.scopeBase("global", options.projectDir), "opencode.jsonc");
+      return path.join(scopeBase("global", options.projectDir, this.environment), "opencode.jsonc");
     }
     return path.join(options.projectDir, "opencode.jsonc");
-  }
-
-  private scopeBase(scope: ConfigScope, projectDir: string): string {
-    if (scope === "local") return path.join(projectDir, ".opencode");
-    const xdgConfigHome = process.env.XDG_CONFIG_HOME;
-    if (xdgConfigHome) return path.join(xdgConfigHome, "opencode");
-    return path.join(homedir(), ".config", "opencode");
   }
 }
 

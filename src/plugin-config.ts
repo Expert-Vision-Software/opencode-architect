@@ -2,6 +2,7 @@ import { exists, mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { CandidateConfig, CandidateRead, EnsurePluginEntryOptions } from "./config-reader";
 import { ConfigReader } from "./config-reader";
+import { realEnvironment, type Environment } from "./environment";
 import { RegistrationDetector } from "./registration-detector";
 import { ConfigSplicer } from "./config-splicer";
 
@@ -29,9 +30,15 @@ const DEFAULT_CONFIG_TEMPLATE = `{
 `;
 
 export class PluginConfigEditor {
-  private readonly reader = new ConfigReader();
-  private readonly detector = new RegistrationDetector(this.reader);
-  private readonly splicer = new ConfigSplicer(this.reader, this.detector);
+  private readonly reader: ConfigReader;
+  private readonly detector: RegistrationDetector;
+  private readonly splicer: ConfigSplicer;
+
+  constructor(environment: Environment = realEnvironment) {
+    this.reader = new ConfigReader(environment);
+    this.detector = new RegistrationDetector(this.reader);
+    this.splicer = new ConfigSplicer(this.reader, this.detector);
+  }
 
   public async ensurePluginEntry(
     packageName: string,

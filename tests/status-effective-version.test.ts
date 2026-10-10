@@ -245,15 +245,11 @@ describe("ConfigReader.entries", () => {
   test("warns and reports unparseable configs", async () => {
     await writeConfig("local", "opencode.json", "{ not json ]");
     const warnings: string[] = [];
-    const original = console.warn;
-    console.warn = (message: string) => warnings.push(String(message));
-    try {
-      const entries = await new ConfigReader().entries("local", projectDir, true);
-      expect(entries[0]?.parseError).not.toBeNull();
-      expect(warnings).toHaveLength(1);
-    } finally {
-      console.warn = original;
-    }
+    const warn = (message: string) => warnings.push(message);
+    const entries = await new ConfigReader().entries("local", projectDir, warn);
+    expect(entries[0]?.parseError).not.toBeNull();
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toContain("could not be parsed");
   });
 });
 
