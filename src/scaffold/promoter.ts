@@ -2,6 +2,7 @@ import { exists, mkdir, readdir, readFile, rm, stat, symlink, writeFile } from "
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { PluginConfigEditor } from "../core/plugin-config";
+import { sha256 } from "../core/manifest";
 import { ScaffoldRenderer, architectPackageRoot, fileDependency, type ShipKind } from "./renderer";
 import { Scaffolder } from "./scaffolder";
 
@@ -12,6 +13,13 @@ const CONTENT_MAPPINGS: Array<{ source: string; destination: string; kind: ShipK
   { source: "plugin", destination: "plugins", kind: "plugins" },
   { source: "tools", destination: "tools", kind: "tools" },
 ];
+
+const SOURCE_ARTIFACTS = ["package.json", "package-lock.json", "bun.lock", "bun.lockb", "node_modules"];
+
+export interface RemovalCandidate {
+  sourcePath: string;
+  relativePath: string;
+}
 
 export interface PromoteOptions {
   projectDir: string;
@@ -30,6 +38,7 @@ export type PromoteOutcome =
       removed: string[];
       managed: string[];
       wouldRemove: string[];
+      notes: string[];
     }
   | { ok: false; error: string; retired: boolean };
 
@@ -46,7 +55,8 @@ export class Promoter {
     if (!(await exists(sourceDir))) {
       return { ok: false, error: `No .opencode/ directory found at ${options.projectDir}.`, retired: false };
     }
-    const repoRoot = await this.repoRoot(options.projectDir);
+    const repoRootResult = await this.repoRoot(options.projectDir);
+    const repoRoot = repoRootResult.root;
     const name = options.name ?? this.deriveName(repoRoot);
     if (!/^opencode-[a-z0-9][a-z0-9-._]*$/.test(name)) {
       return { ok: false, error: `Invalid package name: ${name}. Pass --name opencode-<name>.`, retired: false };
@@ -57,6 +67,16 @@ export class Promoter {
     }
     const packageDir =
       target === "sibling" ? path.join(path.dirname(repoRoot), name) : path.join(repoRoot, name);
+    if (target === "sibling" && (await exists(packageDir)) && (await this.isExistingPackage(packageDir))) {
+      return {
+        ok: false,
+        error:
+          `An existing package sits at the sibling target ${packageDir}. ` +
+          `Merging into an existing package requires per-item consent and is not automated; ` +
+          `route the merge decisions through the packager / plugin-engineer flow, or choose another --name.`,
+        retired: false,
+      };
+    }
     if (await exists(packageDir)) {
       return { ok: false, error: `Target directory already exists: ${packageDir}. Remove it or choose another name.`, retired: false };
     }
@@ -107,7 +127,7 @@ export class Promoter {
         retired: false,
       };
     }
-    const verifyError = await this.verify(options.projectDir, name);
+    const verifyError = await this.verifyPayload(options.projectDir, name);
     if (verifyError !== null) {
       return { ok: false, error: `${verifyError} Retirement aborted.`, retired: false };
     }
@@ -126,13 +146,18 @@ export class Promoter {
         retired: false,
         removed: [],
         managed: removal.managed,
-        wouldRemove: removal.removable,
+        wouldRemove: [...removal.removable, ...removal.artifacts],
+        notes: repoRootResult.notes,
       };
     }
     const removed: string[] = [];
     for (const relativePath of removal.removable) {
       await rm(path.join(sourceDir, relativePath), { force: true });
       removed.push(relativePath);
+    }
+    for (const artifact of removal.artifacts) {
+      await rm(path.join(sourceDir, artifact), { recursive: true, force: true });
+      removed.push(artifact);
     }
     await this.pruneEmptyDirs(sourceDir);
     return {
@@ -144,6 +169,7 @@ export class Promoter {
       removed,
       managed: removal.managed,
       wouldRemove: [],
+      notes: repoRootResult.notes,
     };
   }
 
@@ -160,17 +186,25 @@ export class Promoter {
     await symlink(architectRoot, linkPath, process.platform === "win32" ? "junction" : "dir");
   }
 
-  private async repoRoot(projectDir: string): Promise<string> {
+  private async repoRoot(projectDir: string): Promise<{ root: string; notes: string[] }> {
     const git = Bun.spawn(["git", "rev-parse", "--show-toplevel"], {
       cwd: projectDir,
       stdout: "pipe",
       stderr: "pipe",
     });
     const [stdout, exitCode] = await Promise.all([new Response(git.stdout).text(), git.exited]);
-    if (exitCode !== 0) return projectDir;
+    if (exitCode !== 0) {
+      return { root: projectDir, notes: [`git rev-parse failed; assuming ${projectDir} as the repo root.`] };
+    }
     const root = stdout.trim();
-    if (root.length === 0 || path.basename(root) === ".opencode") return projectDir;
-    return root;
+    if (root.length === 0 || path.basename(root) === ".opencode") {
+      return { root: projectDir, notes: [`git rev-parse gave no usable root; assuming ${projectDir} as the repo root.`] };
+    }
+    return { root, notes: [] };
+  }
+
+  private async isExistingPackage(dir: string): Promise<boolean> {
+    return (await exists(path.join(dir, "package.json"))) || (await exists(path.join(dir, "plugin.ts")));
   }
 
   private deriveName(repoRoot: string): string {
@@ -209,7 +243,7 @@ export class Promoter {
     return found;
   }
 
-  private async verify(projectDir: string, name: string): Promise<string | null> {
+  public async verifyPayload(projectDir: string, name: string): Promise<string | null> {
     const manifestPath = path.join(projectDir, ".opencode", `${name}.manifest.json`);
     if (!(await exists(manifestPath))) {
       return `The install manifest is missing at ${manifestPath}; the payload could not be verified.`;
@@ -223,9 +257,14 @@ export class Promoter {
     if (typeof manifest.version !== "string" || typeof manifest.mode !== "string") {
       return `The install manifest at ${manifestPath} is missing version or mode.`;
     }
-    for (const relativePath of Object.keys(manifest.files ?? {})) {
-      if (!(await exists(path.join(projectDir, ".opencode", relativePath)))) {
+    for (const [relativePath, hash] of Object.entries(manifest.files ?? {})) {
+      const absolute = path.join(projectDir, ".opencode", relativePath);
+      if (!(await exists(absolute))) {
         return `Manifest lists ${relativePath} but it is missing on disk.`;
+      }
+      const actual = await sha256(absolute);
+      if (actual !== hash) {
+        return `Manifest hash mismatch for ${relativePath}: the on-disk content does not match the installed payload.`;
       }
     }
     const configPath = await new PluginConfigEditor().findRegistration(name, {
@@ -236,12 +275,12 @@ export class Promoter {
     return null;
   }
 
-  private async removalPlan(
+  public async removalPlan(
     sourceDir: string,
     packageDir: string,
-    inventory: InventoryEntry[],
+    inventory: RemovalCandidate[],
     mode: string,
-  ): Promise<{ removable: string[]; managed: string[] }> {
+  ): Promise<{ removable: string[]; managed: string[]; artifacts: string[] }> {
     const removable: string[] = [];
     const managed: string[] = [];
     for (const entry of inventory) {
@@ -252,7 +291,11 @@ export class Promoter {
       if (managedByInstall) managed.push(path.relative(sourceDir, original).replaceAll("\\", "/"));
       else removable.push(path.relative(sourceDir, original).replaceAll("\\", "/"));
     }
-    return { removable, managed };
+    const artifacts: string[] = [];
+    for (const artifact of SOURCE_ARTIFACTS) {
+      if (await exists(path.join(sourceDir, artifact))) artifacts.push(artifact);
+    }
+    return { removable, managed, artifacts };
   }
 
   private async filesIdentical(left: string, right: string): Promise<boolean> {

@@ -182,6 +182,7 @@ export async function runCli(argv: string[]): Promise<number> {
           }
           console.log(`Promoted ${outcome.packageName} at ${outcome.packageDir}`);
           if (outcome.configPath !== null) console.log(`  Config reference: ${outcome.configPath}`);
+          for (const note of outcome.notes) console.warn(`  Note: ${note}`);
           for (const managed of outcome.managed) console.log(`  Already managed: ${managed}`);
           if (outcome.retired) {
             for (const removed of outcome.removed) console.log(`  Removed: ${removed}`);

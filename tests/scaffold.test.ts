@@ -4,6 +4,8 @@ import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promis
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { ScaffoldRenderer, type RenderedFile } from "../src/scaffold/renderer";
+import { sha256 } from "../src/core/manifest";
+import { Promoter } from "../src/scaffold/promoter";
 
 const PACKAGE_ROOT = path.resolve(import.meta.dirname, "..");
 const CLI_PATH = path.join(PACKAGE_ROOT, "src", "cli.ts");
@@ -255,4 +257,117 @@ describe("scaffold command (promote)", () => {
       await rm(dir, { recursive: true, force: true });
     }
   }, 60_000);
+
+  test("promote --yes deletes the source package.json, lockfile, and node_modules with the originals", async () => {
+    const dir = await promoteFixture();
+    await writeFile(path.join(dir, ".opencode", "package.json"), '{}\n');
+    await writeFile(path.join(dir, ".opencode", "bun.lock"), "");
+    await mkdir(path.join(dir, ".opencode", "node_modules", "left-pad"), { recursive: true });
+    await writeFile(path.join(dir, ".opencode", "node_modules", "left-pad", "index.js"), "module.exports = {};\n");
+    try {
+      const run = await runCli(["scaffold", "--promote", "--name", "opencode-mytool", "--yes"], dir);
+
+      expect(run.exitCode).toBe(0);
+      expect(run.stdout).toContain("Removed: package.json");
+      expect(run.stdout).toContain("Removed: bun.lock");
+      expect(run.stdout).toContain("Removed: node_modules");
+      expect(existsSync(path.join(dir, ".opencode", "package.json"))).toBe(false);
+      expect(existsSync(path.join(dir, ".opencode", "bun.lock"))).toBe(false);
+      expect(existsSync(path.join(dir, ".opencode", "node_modules"))).toBe(false);
+      expect(existsSync(path.join(dir, ".opencode", "opencode-mytool.manifest.json"))).toBe(true);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  }, 60_000);
+
+  test("without consent the source artifacts are listed for removal but kept", async () => {
+    const dir = await promoteFixture();
+    await writeFile(path.join(dir, ".opencode", "package.json"), '{}\n');
+    try {
+      const run = await runCli(["scaffold", "--promote", "--name", "opencode-mytool"], dir);
+
+      expect(run.exitCode).toBe(0);
+      expect(run.stdout).toContain("Would remove: package.json");
+      expect(existsSync(path.join(dir, ".opencode", "package.json"))).toBe(true);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  }, 60_000);
+
+  test("a sibling target holding an existing package is refused with merge routing", async () => {
+    const dir = await promoteFixture();
+    const name = `opencode-sib-${Math.random().toString(36).slice(2, 8)}`;
+    const sibling = path.join(path.dirname(dir), name);
+    await mkdir(sibling, { recursive: true });
+    await writeFile(path.join(sibling, "package.json"), '{}\n');
+    try {
+      const run = await runCli(["scaffold", "--promote", "--name", name, "--target", "sibling"], dir);
+
+      expect(run.exitCode).toBe(1);
+      expect(run.stderr).toContain("packager");
+      expect(run.stderr).toContain("merge");
+      expect(existsSync(path.join(dir, ".opencode", "skills", "alpha", "SKILL.md"))).toBe(true);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+      await rm(sibling, { recursive: true, force: true });
+    }
+  }, 60_000);
+
+  test("verifyPayload fails on a manifest hash mismatch and passes on matching content", async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), "oa-verify-"));
+    try {
+      await mkdir(path.join(dir, ".opencode", "skills", "alpha"), { recursive: true });
+      const skillPath = path.join(dir, ".opencode", "skills", "alpha", "SKILL.md");
+      await writeFile(skillPath, "---\nname: \"alpha\"\n---\n\nalpha.\n");
+      await writeFile(
+        path.join(dir, ".opencode", "opencode.json"),
+        JSON.stringify({ plugins: ["opencode-mytool@latest"] }),
+      );
+      await writeFile(
+        path.join(dir, ".opencode", "opencode-mytool.manifest.json"),
+        JSON.stringify({ version: "0.1.0", mode: "copy", files: { "skills/alpha/SKILL.md": await sha256(skillPath) } }),
+      );
+      const promoter = new Promoter();
+
+      expect(await promoter.verifyPayload(dir, "opencode-mytool")).toBeNull();
+
+      await writeFile(skillPath, "---\nname: \"alpha\"\n---\n\nconsumer-edited.\n");
+      const mismatch = await promoter.verifyPayload(dir, "opencode-mytool");
+      expect(mismatch).toContain("hash mismatch");
+      expect(mismatch).toContain("skills/alpha/SKILL.md");
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("the removal plan lists a non-identical copy-mode original for removal and an identical one as managed", async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), "oa-removal-"));
+    try {
+      await mkdir(path.join(dir, ".opencode", "skills", "alpha"), { recursive: true });
+      const original = path.join(dir, ".opencode", "skills", "alpha", "SKILL.md");
+      await writeFile(original, "original content\n");
+      await mkdir(path.join(dir, "pkg", "skills", "alpha"), { recursive: true });
+      await writeFile(path.join(dir, "pkg", "skills", "alpha", "SKILL.md"), "original content\n");
+      await mkdir(path.join(dir, ".opencode", "skills", "beta"), { recursive: true });
+      const modified = path.join(dir, ".opencode", "skills", "beta", "SKILL.md");
+      await writeFile(modified, "consumer-modified content\n");
+      await mkdir(path.join(dir, "pkg", "skills", "beta"), { recursive: true });
+      await writeFile(path.join(dir, "pkg", "skills", "beta", "SKILL.md"), "packaged content\n");
+
+      const plan = await new Promoter().removalPlan(
+        path.join(dir, ".opencode"),
+        path.join(dir, "pkg"),
+        [
+          { sourcePath: original, relativePath: "skills/alpha/SKILL.md" },
+          { sourcePath: modified, relativePath: "skills/beta/SKILL.md" },
+        ],
+        "copy",
+      );
+
+      expect(plan.managed).toContain("skills/alpha/SKILL.md");
+      expect(plan.removable).toContain("skills/beta/SKILL.md");
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
 });
