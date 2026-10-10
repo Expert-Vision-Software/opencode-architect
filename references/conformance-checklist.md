@@ -46,7 +46,10 @@ item; an item with no evidence found is a finding.
   `<package>@*` idempotently (nothing cached is a success) with the same
   warn-and-continue semantics; a `--package <name>` or `--all` mode on a
   generated package's CLI is non-conformant — broad cache deletion belongs
-  to the suite's own CLI only. The load-time hook never deletes cache
+  to the suite's own CLI only (one of the declared generated↔suite
+  divergences in `references/template-sync-table.md`, which classifies every
+  template↔suite pair and its policy; do not restate pair states here).
+  The load-time hook never deletes cache
   entries (deletion races OpenCode's in-flight installs, ADR-0007): when
   bundled assets are absent (partial cache artifact), its advisory
   instructs running `bunx <package> clear-cache` and reinstalling. A hook
