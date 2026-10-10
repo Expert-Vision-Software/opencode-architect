@@ -245,11 +245,12 @@ covering stable OpenCode fundamentals.
 
 **Templates**:
 The static scaffolding files bundled with the package at `templates/`,
-from which the packager and publisher render a generated package's code
-files (plugin entry, manifest, name normalizer, registration detector, CLI,
-installer). The structural source of truth for generated packages: example
-repos may lag the corrected install pattern. Consumed at package-build
-time, unlike references, which agents read for knowledge.
+from which the packager, publisher, and scaffold CLI render a generated
+package's adapter files (plugin entry, CLI, installer, package manifests).
+Adapter renderings, not a structural source of truth (ADR-0013): the shared
+machinery those files used to vendor is the `opencode-architect/core` module,
+consumed by generated packages through a local `file:` dependency. Consumed
+at package-build time, unlike references, which agents read for knowledge.
 
 **Reference resolution**:
 The load-time rewriting of backtick-quoted relative paths in agent prompts —

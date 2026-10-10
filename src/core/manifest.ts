@@ -1,18 +1,21 @@
-# Inputs
-
-| Placeholder | Required | Description | Default |
-|---|---|---|---|
-| `PACKAGE NAME` → "opencode-myextension" | Yes | npm package name; the manifest file is `<configBase>/<package>.manifest.json` | — |
-
-**Load-bearing — do not simplify:** idempotency is per-file sha256 (`Bun.CryptoHasher`), never a `.version` marker; a missing or malformed manifest reads as "not installed" (drift), never as a reason to write without an ensure path; a manifest without a `mode` field reads as `"copy"` so pre-generalization copy installs migrate cleanly; the manifest is one record per scope for BOTH install modes — `mode` and the registration fields record the deployment plan, while `files` records whatever payload the load-time hook has ensured (so a plugin-mode manifest gains payload hashes after the first load, and the CLI must preserve them when it rewrites registration); plugin-mode up-to-dateness includes the registration — the recorded entry must still be present in the recorded config file (semantic name match, `@latest`-aware) — plus the recorded payload hashes; consumer-modified files that were skipped during install are recorded with their **packaged** hash — never the consumer's on-disk content — so the modification stays detectable and `--force` can still take ownership of it; registration presence is checked against the v2 `plugins` key first and the legacy v1 `plugin` key read-only, with entries matched by package name whether written as strings or `{ "package": ... }` objects.
-
----
 import { readdir, readFile, writeFile, mkdir } from "node:fs/promises";
 import { join, relative } from "node:path";
-import { parseJsonc } from "./registration.ts";
-import { PluginNameNormalizer } from "./plugin-name.ts";
+import { ConfigReader } from "./config-reader";
+import { PluginNameNormalizer } from "./plugin-name";
 
+/**
+ * The generated-package install manifest, frozen at the core carve-out
+ * (ADR-0013): `<configBase>/<package>.manifest.json` holding version, mode,
+ * entry, entryConfigPath, and per-file sha256 hashes relative to the config
+ * base. Readers accept everything earlier generated packages wrote — a
+ * missing or malformed manifest reads as "not installed" (drift), and a
+ * missing `mode` reads as "copy". The suite adapter's own legacy manifest
+ * format is out of scope here (ADR-0013, rule 2).
+ */
 export type InstallMode = "copy" | "plugin";
+
+/** Historical alias for the manifest's recorded mode (ADR-0006 vocabulary). */
+export type ManifestMode = InstallMode;
 
 export interface ManifestData {
   version: string;
@@ -38,9 +41,12 @@ export function manifestPath(configBase: string, packageName: string): string {
   return join(configBase, `${packageName}${MANIFEST_SUFFIX}`);
 }
 
+const reader = new ConfigReader();
+
+const normalizer = new PluginNameNormalizer();
+
 export class InstallManifest {
   private readonly path: string;
-  private readonly normalizer = new PluginNameNormalizer();
 
   constructor(configBase: string, packageName: string) {
     this.path = manifestPath(configBase, packageName);
@@ -105,8 +111,7 @@ export class InstallManifest {
       return false;
     }
     const packageName = this.baseName(data.entry);
-    const entries = pluginEntries(text, data.entryConfigPath);
-    return entries.some(entry => this.normalizer.matches(entry, packageName));
+    return pluginEntries(text, data.entryConfigPath).some((entry) => normalizer.matches(entry, packageName));
   }
 
   async findConsumerModified(rootDir: string): Promise<string[]> {
@@ -133,31 +138,19 @@ export class InstallManifest {
 
 function pluginEntries(text: string, configPath: string): string[] {
   try {
-    const config = (configPath.endsWith(".jsonc") ? parseJsonc(text) : JSON.parse(text)) as Record<string, unknown>;
-    const v2 = entryNames(config.plugins);
+    const config = reader.parseConfig(text, configPath.endsWith(".jsonc"));
+    if (config === null) return [];
+    const v2 = reader.keyEntries(config, "plugins");
     if (v2.length > 0) return v2;
-    return entryNames(config.plugin);
+    return reader.keyEntries(config, "plugin");
   } catch {
     return [];
   }
 }
 
-function entryNames(value: unknown): string[] {
-  if (!Array.isArray(value)) return [];
-  return value
-    .map((entry) => (typeof entry === "string" ? entry : entryPackage(entry)))
-    .filter((entry): entry is string => entry !== null);
-}
-
-function entryPackage(entry: unknown): string | null {
-  if (entry === null || typeof entry !== "object") return null;
-  const pkg = (entry as { package?: unknown }).package;
-  return typeof pkg === "string" ? pkg : null;
-}
-
 export async function listFilesRecursive(rootDir: string): Promise<string[]> {
   const entries = await readdir(rootDir, { withFileTypes: true, recursive: true });
-  return entries.filter(entry => entry.isFile()).map(entry => join(entry.parentPath, entry.name));
+  return entries.filter((entry) => entry.isFile()).map((entry) => join(entry.parentPath, entry.name));
 }
 
 export async function sha256(path: string): Promise<string> {

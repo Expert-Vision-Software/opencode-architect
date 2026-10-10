@@ -1,5 +1,11 @@
 # Bundled templates resolved like references
 
+> **Superseded in part (ADR-0013):** the resolution mechanics below stand,
+> but the templates are no longer a structural source of truth for generated
+> packages — they are adapter renderings over the `opencode-architect/core`
+> dependency, and the machinery templates have been dissolved into that
+> module.
+
 The packager and publisher need scaffolding files (plugin entry, package
 manifests, CLI, installer) to render generated packages from. Shipping them
 as `@assets/...` pointers broke in every deployed mode: nothing rewrote the

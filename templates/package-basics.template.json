@@ -54,6 +54,11 @@ DEPENDENCIES
                                generated packages resolve current versions at
                                time of use; never pin a consumer version
                                (per opencode-v2-facts §15)
+  "opencode-architect":        inserted by the scaffold renderer as a local
+                               `file:` dependency — the rendered package
+                               imports its machinery from the
+                               `opencode-architect/core` subpath (ADR-0013);
+                               never replace it with a registry spec here
 
 METADATA
   "Publisher Name"           → your name or organization

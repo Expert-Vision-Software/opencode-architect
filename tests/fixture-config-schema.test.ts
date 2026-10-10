@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { PluginConfigEditor } from "../src/plugin-config";
+import { PluginConfigEditor } from "../src/core/plugin-config";
 import { ConfigSchemaValidator } from "./config-schema-validator";
 
 const REPO_ROOT = path.resolve(import.meta.dirname, "..");

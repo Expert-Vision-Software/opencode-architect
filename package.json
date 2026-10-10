@@ -21,7 +21,8 @@
   "module": "index.ts",
   "exports": {
     ".": "./index.ts",
-    "./server": "./index.ts"
+    "./server": "./index.ts",
+    "./core": "./src/core/index.ts"
   },
   "bin": {
     "opencode-architect": "src/cli.ts"

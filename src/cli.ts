@@ -4,10 +4,12 @@ import { stat } from "node:fs/promises";
 import path from "node:path";
 import { parseArgs } from "node:util";
 import { Installer, type Scope } from "./installer";
-import { StatusReporter, type EffectiveVersion, type StatusReport } from "./status-reporter";
-import type { ResolvedSource } from "./loaded-version";
-import { CacheCleaner } from "./cache-cleaner";
+import { StatusReporter, type EffectiveVersion, type StatusReport } from "./core/status-reporter";
+import type { ResolvedSource } from "./core/loaded-version";
+import { CacheCleaner, PACKAGE_NAME } from "./cache-cleaner";
 import { ClearCacheUsageError } from "./clear-cache-usage-error";
+import { Scaffolder } from "./scaffold/scaffolder";
+import { Promoter } from "./scaffold/promoter";
 
 const VERSION = (JSON.parse(await Bun.file(`${import.meta.dirname}/../package.json`).text()) as { version: string }).version;
 
@@ -24,6 +26,10 @@ export async function runCli(argv: string[]): Promise<number> {
       "dry-run": { type: "boolean", default: false },
       online: { type: "boolean", default: false },
       path: { type: "string" },
+      name: { type: "string" },
+      target: { type: "string" },
+      ship: { type: "string" },
+      promote: { type: "boolean", default: false },
       help: { type: "boolean", short: "h", default: false },
       version: { type: "boolean", short: "v", default: false },
     },
@@ -43,6 +49,14 @@ export async function runCli(argv: string[]): Promise<number> {
   const command = positionals[0];
   if (command !== "status" && (values.path !== undefined || values.online)) {
     console.error("--path and --online only apply to the status command.");
+    return 1;
+  }
+  if (command !== "scaffold" && (values.name !== undefined || values.target !== undefined || values.ship !== undefined || values.promote)) {
+    console.error("--name, --target, --ship, and --promote only apply to the scaffold command.");
+    return 1;
+  }
+  if (command === "scaffold" && (values.scope !== undefined || values.mode !== undefined || values.package !== undefined || values.all || values.online || values.path !== undefined)) {
+    console.error("--scope, --mode, --package, --all, --online, and --path do not apply to the scaffold command.");
     return 1;
   }
   if (command !== "status" && command !== "clear-cache" && values.package !== undefined) {
@@ -115,7 +129,7 @@ export async function runCli(argv: string[]): Promise<number> {
         const report = await new StatusReporter(installer).report(projectDir, {
           scopes,
           online: values.online,
-          packageName: values.package,
+          packageName: values.package ?? PACKAGE_NAME,
         });
         printStatusReport(report);
         break;
@@ -147,6 +161,50 @@ export async function runCli(argv: string[]): Promise<number> {
         for (const warning of outcome.warnings) {
           console.warn(`  Warning: ${warning}`);
         }
+        break;
+      }
+      case "scaffold": {
+        if (positionals.length > 1) {
+          console.error(`Unexpected arguments for scaffold: ${positionals.slice(1).join(" ")}`);
+          return 1;
+        }
+        if (values.promote) {
+          const promoter = new Promoter();
+          const outcome = await promoter.promote({
+            projectDir: path.resolve(positionals[1] ?? "."),
+            name: values.name ?? null,
+            target: values.target ?? null,
+            yes: values.yes,
+          });
+          if (!outcome.ok) {
+            console.error(outcome.error);
+            return 1;
+          }
+          console.log(`Promoted ${outcome.packageName} at ${outcome.packageDir}`);
+          if (outcome.configPath !== null) console.log(`  Config reference: ${outcome.configPath}`);
+          for (const note of outcome.notes) console.warn(`  Note: ${note}`);
+          for (const managed of outcome.managed) console.log(`  Already managed: ${managed}`);
+          if (outcome.retired) {
+            for (const removed of outcome.removed) console.log(`  Removed: ${removed}`);
+          } else {
+            console.log("Retirement needs your consent; pass --yes to delete the promoted originals:");
+            for (const target of outcome.wouldRemove) console.log(`  Would remove: ${target}`);
+          }
+          break;
+        }
+        const scaffolder = new Scaffolder();
+        const outcome = await scaffolder.fresh({
+          name: values.name ?? null,
+          target: values.target ?? null,
+          ship: values.ship ?? null,
+          workspaceRoot: process.cwd(),
+        });
+        if (!outcome.ok) {
+          console.error(outcome.error);
+          return 1;
+        }
+        console.log(`Scaffolded ${outcome.packageName} at ${outcome.packageDir}`);
+        for (const file of outcome.files) console.log(`  Wrote: ${file}`);
         break;
       }
       default:
@@ -264,6 +322,11 @@ Commands:
               installed package instead of this one
   clear-cache Remove cached copies from OpenCode's package cache; default
               targets this package only
+  scaffold    Generate a conformant extension package from the bundled
+              templates. Fresh mode (default) renders a new package tree;
+              --promote takes existing .opencode/ extensions into a package,
+              ensures the config reference, verifies the payload, and retires
+              the sources only on explicit consent
 
 Options:
   -s, --scope <scope>    status: narrow to "local" or "global"; by default both
@@ -282,6 +345,15 @@ Options:
                          every <name>@* instead; requires --yes
       --all              clear-cache: remove the whole OpenCode cache directory;
                          requires --yes
+      --name <name>      scaffold: the package name, opencode-<name>
+      --target <target>  scaffold: "here" (default) or "sibling" deployment
+      --ship <kinds>     scaffold: comma-separated list of skills, commands,
+                         agents, tools, plugins; default skills
+      --promote <path>   scaffold: promote existing .opencode/ extensions (or
+                         the .opencode/ at <path>) into a package; retirement
+                         of the originals requires --yes
+      --yes              scaffold --promote: consent to deleting the promoted
+                         originals after the payload verifies
       --yes              clear-cache: confirm a destructive broad mode
       --dry-run          clear-cache: list what would be removed without deleting
   -h, --help             Show this help message
@@ -300,6 +372,9 @@ Examples:
   opencode-architect clear-cache --package some-pkg --yes
   opencode-architect clear-cache --all --yes
   opencode-architect clear-cache --dry-run
+  opencode-architect scaffold --name opencode-myextension
+  opencode-architect scaffold --name opencode-myextension --target sibling --ship skills,commands
+  opencode-architect scaffold --promote --yes
 `);
 }
 

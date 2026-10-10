@@ -2,8 +2,10 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
-import { PluginConfigEditor } from "../src/plugin-config";
-import { captureConsole } from "./test-helpers";
+import { PluginConfigEditor } from "../src/core/plugin-config";
+import { RegistrationDetector } from "../src/core/registration-detector";
+import { ConfigReader } from "../src/core/config-reader";
+import { fakeEnvironment } from "./test-helpers";
 
 const ROOT = path.join(import.meta.dirname, "..", ".tmp-plugin-config-test");
 
@@ -20,8 +22,22 @@ async function write(relative: string, content: string): Promise<string> {
   return filePath;
 }
 
-function editor(): PluginConfigEditor {
-  return new PluginConfigEditor();
+function editor(environment?: ConstructorParameters<typeof PluginConfigEditor>[0]): PluginConfigEditor {
+  return new PluginConfigEditor(environment ?? fakeEnvironment());
+}
+
+function warningCollector(): { environment: ConstructorParameters<typeof PluginConfigEditor>[0]; lines: string[] } {
+  const lines: string[] = [];
+  return { environment: fakeEnvironment({ warn: (message) => lines.push(message) }), lines };
+}
+
+function readerWithWarnings(): { reader: ConfigReader; lines: string[] } {
+  const lines: string[] = [];
+  return { reader: new ConfigReader(fakeEnvironment({ warn: (message) => lines.push(message) })), lines };
+}
+
+function detector(): RegistrationDetector {
+  return new RegistrationDetector();
 }
 
 function parseJsonc(text: string): Record<string, unknown> {
@@ -166,51 +182,41 @@ describe("PluginConfigEditor.ensurePluginEntry", () => {
     const projectDir = await makeDir("project");
     await write("project/.opencode/opencode.json", '{ "plugins": ["my-pkg"] }\n');
     const brokenRoot = await write("project/opencode.json", "{ broken ]");
-    const captured = captureConsole("warn");
+    const { environment, lines } = warningCollector();
 
-    try {
-      const outcome = await editor().ensurePluginEntry("my-pkg", { scope: "local", projectDir });
+    const outcome = await editor(environment).ensurePluginEntry("my-pkg", { scope: "local", projectDir });
 
-      expect(outcome.action).toBe("noop");
-      expect(captured.lines.some((message) => message.includes(brokenRoot))).toBe(true);
-    } finally {
-      captured.restore();
-    }
+    expect(outcome.action).toBe("noop");
+    expect(lines.some((message) => message.includes(brokenRoot))).toBe(true);
   });
 
   test("findRegistration warns about unparseable candidates and still finds later registrations", async () => {
     const projectDir = await makeDir("project");
     await write("project/.opencode/opencode.json", "{ broken ]");
     const rootConfig = await write("project/opencode.json", '{ "plugins": ["my-pkg@1.0.0"] }\n');
-    const captured = captureConsole("warn");
+    const { reader, lines } = readerWithWarnings();
 
-    try {
-      const found = await editor().findRegistration("my-pkg", { scope: "local", projectDir });
+    const found = await new RegistrationDetector(reader).findRegistration("my-pkg", { scope: "local", projectDir });
 
-      expect(found).toBe(rootConfig);
-      expect(captured.lines.some((message) => message.includes(".opencode"))).toBe(true);
-    } finally {
-      captured.restore();
-    }
+    expect(found).toBe(rootConfig);
+    expect(lines.some((message) => message.includes(".opencode"))).toBe(true);
   });
 
   test("unparseable read-only candidate is warned about and skipped, never blocking removal", async () => {
     const projectDir = await makeDir("project");
     const xdg = await makeDir("xdg");
     const readOnlyConfig = await write("xdg/opencode/config.json", "{ broken ]");
-    process.env.XDG_CONFIG_HOME = xdg;
-    const captured = captureConsole("warn");
+    const lines: string[] = [];
+    const xdgEnvironment = fakeEnvironment({
+      vars: { XDG_CONFIG_HOME: xdg },
+      warn: (message) => lines.push(message),
+    });
 
-    try {
-      const outcome = await editor().removePluginEntry("my-pkg", { scope: "global", projectDir });
+    const outcome = await editor(xdgEnvironment).removePluginEntry("my-pkg", { scope: "global", projectDir });
 
-      expect(outcome.action).toBe("noop");
-      expect(captured.lines.some((message) => message.includes(readOnlyConfig))).toBe(true);
-      expect(await readFile(readOnlyConfig, "utf-8")).toBe("{ broken ]");
-    } finally {
-      captured.restore();
-      delete process.env.XDG_CONFIG_HOME;
-    }
+    expect(outcome.action).toBe("noop");
+    expect(lines.some((message) => message.includes(readOnlyConfig))).toBe(true);
+    expect(await readFile(readOnlyConfig, "utf-8")).toBe("{ broken ]");
   });
 
   test("strict .json rejects comments and trailing commas", async () => {
@@ -271,14 +277,12 @@ describe("PluginConfigEditor.ensurePluginEntry", () => {
   test("global scope creates scope-base opencode.jsonc when nothing exists", async () => {
     const projectDir = await makeDir("project");
     const xdg = await makeDir("xdg");
-    process.env.XDG_CONFIG_HOME = xdg;
-    try {
-      const outcome = await editor().ensurePluginEntry("my-pkg", { scope: "global", projectDir });
-      expect(outcome.action).toBe("created");
-      expect(outcome.configPath).toBe(path.join(xdg, "opencode", "opencode.jsonc"));
-    } finally {
-      delete process.env.XDG_CONFIG_HOME;
-    }
+    const xdgEnvironment = fakeEnvironment({ vars: { XDG_CONFIG_HOME: xdg } });
+
+    const outcome = await editor(xdgEnvironment).ensurePluginEntry("my-pkg", { scope: "global", projectDir });
+
+    expect(outcome.action).toBe("created");
+    expect(outcome.configPath).toBe(path.join(xdg, "opencode", "opencode.jsonc"));
   });
 
   test("global config.json with the entry is a read-only no-op with an upgrade advisory", async () => {
@@ -288,33 +292,29 @@ describe("PluginConfigEditor.ensurePluginEntry", () => {
       "xdg/opencode/config.json",
       '{ "plugin": ["my-pkg@2.0.0"] }\n',
     );
-    process.env.XDG_CONFIG_HOME = xdg;
-    try {
-      const outcome = await editor().ensurePluginEntry("my-pkg", { scope: "global", projectDir });
-      expect(outcome.action).toBe("noop");
-      expect(outcome.configPath).toBe(globalConfig);
-      expect(outcome.warning).toContain("legacy v1");
-      expect(outcome.warning).toContain("no longer reads config.json");
-      expect(await readFile(globalConfig, "utf-8")).toBe('{ "plugin": ["my-pkg@2.0.0"] }\n');
-    } finally {
-      delete process.env.XDG_CONFIG_HOME;
-    }
+    const xdgEnvironment = fakeEnvironment({ vars: { XDG_CONFIG_HOME: xdg } });
+
+    const outcome = await editor(xdgEnvironment).ensurePluginEntry("my-pkg", { scope: "global", projectDir });
+
+    expect(outcome.action).toBe("noop");
+    expect(outcome.configPath).toBe(globalConfig);
+    expect(outcome.warning).toContain("legacy v1");
+    expect(outcome.warning).toContain("no longer reads config.json");
+    expect(await readFile(globalConfig, "utf-8")).toBe('{ "plugin": ["my-pkg@2.0.0"] }\n');
   });
 
   test("does not write into read-only global config.json when entry is absent", async () => {
     const projectDir = await makeDir("project");
     const xdg = await makeDir("xdg");
     const globalConfig = await write("xdg/opencode/config.json", '{ "model": "x/y" }\n');
-    process.env.XDG_CONFIG_HOME = xdg;
-    try {
-      const outcome = await editor().ensurePluginEntry("my-pkg", { scope: "global", projectDir });
-      expect(outcome.action).toBe("created");
-      expect(await readFile(globalConfig, "utf-8")).toBe('{ "model": "x/y" }\n');
-      const created = parseJsonc(await readFile(path.join(xdg, "opencode", "opencode.jsonc"), "utf-8"));
-      expect(created.plugins).toEqual(["my-pkg@latest"]);
-    } finally {
-      delete process.env.XDG_CONFIG_HOME;
-    }
+    const xdgEnvironment = fakeEnvironment({ vars: { XDG_CONFIG_HOME: xdg } });
+
+    const outcome = await editor(xdgEnvironment).ensurePluginEntry("my-pkg", { scope: "global", projectDir });
+
+    expect(outcome.action).toBe("created");
+    expect(await readFile(globalConfig, "utf-8")).toBe('{ "model": "x/y" }\n');
+    const created = parseJsonc(await readFile(path.join(xdg, "opencode", "opencode.jsonc"), "utf-8"));
+    expect(created.plugins).toEqual(["my-pkg@latest"]);
   });
 
   test("splices an inline empty plugin array in a minified config", async () => {
@@ -388,7 +388,7 @@ describe("PluginConfigEditor.ensurePluginEntry", () => {
     const projectDir = await makeDir("project");
     const configPath = await write("project/opencode.json", '{ "plugin": ["my-pkg"] }\n');
 
-    const found = await editor().findRegistration("my-pkg", { scope: "local", projectDir });
+    const found = await detector().findRegistration("my-pkg", { scope: "local", projectDir });
 
     expect(found).toBe(configPath);
   });
@@ -450,7 +450,7 @@ describe("PluginConfigEditor path-form entries", () => {
       `{ "plugins": ["${pathToFileURL(pkgDir).href}"] }\n`,
     );
 
-    const found = await editor().findRegistration("my-pkg", { scope: "local", projectDir });
+    const found = await detector().findRegistration("my-pkg", { scope: "local", projectDir });
 
     expect(found).toBe(configPath);
   });

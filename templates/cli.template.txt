@@ -9,7 +9,7 @@
 
 The module exports `runCli(argv)` and runs standalone under its shebang via the `import.meta.main` guard — both `bunx <package>` (through the package.json `bin` entry) and the `index.ts` dispatch shim resolve to the same `runCli`.
 
-**Load-bearing — do not simplify:** the deployment plan is content-based, so `install` resolves the mode through `resolveMode` and never forces one: assets-only packages default to copy and accept `--mode plugin`; code-backed packages always register and `--mode copy` surfaces the `CopyModeUnsupportedError` as a hard, explanatory exit-1 error; `install` forwards `force` so consumer-modified files are skipped without it; `status` resolves the effective load per scope — registration, target config file, raw entry as written, resolved source on disk with a relative-age staleness hint, the published npm latest per scope, and an effective verdict that annotates a double-scope registration — and the status-only `--online` (registry staleness, warn-and-continue, injectable fetch) and `--path` flags are rejected with an explanatory exit-1 on every other command; `migrate` refuses to run without `--force` (root-config deletion is consent-gated and CLI-only); `clear-cache` is self-only — it removes this package's own cache copies (`<package>` and every `<package>@*`) from OpenCode's package cache, is idempotent (nothing cached is a success), warns and continues on per-target removal failures, and must never grow `--package` or `--all` modes (other packages' cache and the shared OpenCode cache dir are out of scope for a generated package); the module lives at `src/cli.ts` and imports `./installer.ts`.
+**Load-bearing — do not simplify:** this file is an adapter rendering (ADR-0013): argument parsing, help, and output formatting live here; the machinery comes from `./installer.ts` (this package's policy adapter) and the `opencode-architect/core` dependency (status types and the effective-version pipeline). The deployment plan is content-based, so `install` resolves the mode through `resolveMode` and never forces one: assets-only packages default to copy and accept `--mode plugin`; code-backed packages always register and `--mode copy` surfaces the `CopyModeUnsupportedError` as a hard, explanatory exit-1 error; `install` forwards `force` so consumer-modified files are skipped without it; `status` delegates to the core status pipeline (registration, target config file, raw entry as written, resolved source on disk with a relative-age staleness hint, the published npm latest per scope, and an effective verdict that annotates a double-scope registration) — the status-only `--online` (registry staleness, warn-and-continue) and `--path` flags are rejected with an explanatory exit-1 on every other command; `migrate` refuses to run without `--force` (root-config deletion is consent-gated and CLI-only); `clear-cache` is self-only — it removes this package's own cache copies (`<package>` and every `<package>@*`) from OpenCode's package cache, is idempotent (nothing cached is a success), warns and continues on per-target removal failures, and must never grow `--package` or `--all` modes (other packages' cache and the shared OpenCode cache dir are out of scope for a generated package); the module lives at `src/cli.ts` and imports `./installer.ts`.
 
 ---
 #!/usr/bin/env bun
@@ -17,7 +17,8 @@ import type { Stats } from "node:fs";
 import { stat } from "node:fs/promises";
 import { resolve } from "node:path";
 import { parseArgs } from "node:util";
-import { install, uninstall, status, migrateRootConfig, clearPackageCache, CopyModeUnsupportedError, type Scope, type InstallMode, type EffectiveStatus, type ScopeStatus } from "./installer.ts";
+import { install, uninstall, status, migrateRootConfig, clearPackageCache, CopyModeUnsupportedError, type Scope, type InstallMode } from "./installer.ts";
+import { StatusReporter, type EffectiveVersion, type ResolvedSource } from "opencode-architect/core";
 
 const VERSION = JSON.parse(
   await Bun.file(`${import.meta.dirname}/../package.json`).text()
@@ -132,25 +133,26 @@ export async function runCli(argv: string[]): Promise<number> {
       }
       case "status": {
         const projectDir = await resolveProjectDir(values.path);
-        const result = await status(projectDir, online);
+        const report = await status(projectDir, online);
         console.log("Status:");
-        for (const [label, scopeStatus] of [["Local", result.local], ["Global", result.global]] as const) {
-          if (!scopeStatus) continue;
-          const npm = scopeStatus.publishedVersion !== null ? ` npm-latest=${scopeStatus.publishedVersion}` : "";
+        for (const [label, scopeReport] of [["Local", report.scopes[0]], ["Global", report.scopes[1]]] as const) {
+          if (!scopeReport) continue;
+          if (!scopeReport.registered && scopeReport.manifestVersion === null) continue;
+          const npm = scopeReport.publishedVersion !== null ? ` npm-latest=${scopeReport.publishedVersion}` : "";
           console.log(
-            `  ${label}: mode=${scopeStatus.mode ?? "unknown"}, ` +
-              `config=${scopeStatus.entryConfigPath ?? "-"}, ` +
-              `entry=${scopeStatus.entry ?? "-"}, ` +
-              `resolved=${resolvedLabel(scopeStatus)}${npm}`
+            `  ${label}: mode=${scopeReport.mode === "none" ? "unknown" : scopeReport.mode}, ` +
+                `config=${scopeReport.configPath ?? "-"}, ` +
+                `entry=${scopeReport.entryText ?? "-"}, ` +
+                `resolved=${resolvedLabel(scopeReport.resolved)}${npm}`
           );
-          for (const warning of scopeStatus.warnings) console.warn(`Warning: ${warning}`);
+          for (const warning of scopeReport.warnings) console.warn(`Warning: ${warning}`);
         }
-        if (result.effective.scope !== null) {
-          console.log(`  should load: ${verdictLabel(result.effective)}`);
+        if (report.effective.scope !== null) {
+          console.log(`  should load: ${verdictLabel(report.effective)}`);
         } else {
           console.log("  should load: nothing (not registered in any scope)");
         }
-        for (const warning of result.warnings) console.warn(`Warning: ${warning}`);
+        for (const warning of report.warnings) console.warn(`Warning: ${warning}`);
         break;
       }
       case "migrate": {
@@ -213,28 +215,14 @@ function stripQuotes(value: string): string {
   return value;
 }
 
-function formatAge(modifiedMs: number | null): string | null {
-  if (modifiedMs === null) return null;
-  const minutes = Math.floor((Date.now() - modifiedMs) / 60000);
-  if (minutes < 1) return "just now";
-  if (minutes < 60) return `${minutes}m old`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h old`;
-  const days = Math.floor(hours / 24);
-  if (days < 30) return `${days}d old`;
-  const months = Math.floor(days / 30);
-  if (months < 12) return `${months}mo old`;
-  return `${Math.floor(days / 365)}y old`;
+function resolvedLabel(source: ResolvedSource | null): string {
+  if (source === null) return "-";
+  const age = StatusReporter.formatAge(source.modifiedMs);
+  const sourceLabel = source.source === "cache" ? "cache copy" : "checkout copy";
+  return `${source.version ?? "unknown"} (${age === null ? sourceLabel : `${sourceLabel}, ${age}`})`;
 }
 
-function resolvedLabel(scopeStatus: ScopeStatus): string {
-  if (scopeStatus.resolvedVersion === null) return "-";
-  const source = scopeStatus.resolvedSource === "cache" ? "cache copy" : "checkout copy";
-  const age = formatAge(scopeStatus.resolvedModifiedMs);
-  return `${scopeStatus.resolvedVersion} (${age === null ? source : `${source}, ${age}`})`;
-}
-
-function verdictLabel(effective: EffectiveStatus): string {
+function verdictLabel(effective: EffectiveVersion): string {
   const latest =
     effective.latestVersion !== null && effective.versionKind !== "npm" ? `, latest ${effective.latestVersion}` : "";
   const scopeLabel =
@@ -244,7 +232,7 @@ function verdictLabel(effective: EffectiveStatus): string {
   return `${effective.version ?? "unknown"} (${kindLabel(effective.versionKind)}, ${scopeLabel}${latest})`;
 }
 
-function kindLabel(kind: EffectiveStatus["versionKind"]): string {
+function kindLabel(kind: EffectiveVersion["versionKind"]): string {
   if (kind === "cache") return "cache copy";
   if (kind === "checkout") return "checkout copy";
   if (kind === "spec") return "pinned spec";

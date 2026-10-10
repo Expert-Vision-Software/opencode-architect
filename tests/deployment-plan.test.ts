@@ -36,22 +36,22 @@ describe("content-based deployment plan (issue #18)", () => {
     expect(source).not.toContain("removePluginFromConfig");
   });
 
-  test("surgical editor template exists and never rewrites whole configs", async () => {
-    const source = await readTemplate("plugin-config.template.txt");
+  test("the core surgical editor never rewrites whole configs", async () => {
+    const source = await readCore("plugin-config.ts");
     expect(source).toContain("class PluginConfigEditor");
     expect(source).toContain("spliceEntry");
     expect(source).not.toMatch(/JSON\.stringify\(config/);
   });
 
-  test("manifest records mode, entry, and target config file", async () => {
-    const source = await readTemplate("manifest.template.txt");
+  test("the core manifest records mode, entry, and target config file", async () => {
+    const source = await readCore("manifest.ts");
     expect(source).toMatch(/mode: InstallMode/);
     expect(source).toContain("entry: string | null");
     expect(source).toContain("entryConfigPath: string | null");
   });
 
-  test("registration detection covers both bases, repo root, both extensions, and global config.json", async () => {
-    const source = await readTemplate("registration.template.txt");
+  test("core registration detection covers both bases, repo root, both extensions, and global config.json", async () => {
+    const source = await readCore("config-reader.ts");
     expect(source).toContain("opencode.json");
     expect(source).toContain("opencode.jsonc");
     expect(source).toContain('"config.json"');
@@ -79,9 +79,9 @@ describe("content-based deployment plan (issue #18)", () => {
   test("packager and publisher instructions reference the generalized flow", async () => {
     const packager = await readAgent("opencode-packager.md");
     const publisher = await readAgent("opencode-publisher.md");
-    expect(packager).toContain("plugin-config.template.txt");
+    expect(packager).toContain("installer.template.txt");
     expect(packager).toContain("content-based");
-    expect(publisher).toContain("plugin-config.template.txt");
+    expect(publisher).toContain("installer.template.txt");
     expect(publisher).toContain("--mode");
   });
 });
@@ -90,11 +90,14 @@ describe("generated-package cache hygiene (issue #14)", () => {
   test("installer template prunes self cache copies on install, warn-and-continue", async () => {
     const source = await readTemplate("installer.template.txt");
     expect(source).toContain("prunePackageCache");
-    expect(source).toContain("const cache = await prunePackageCache();");
+    expect(source).toContain("const cacheOutcome = await prunePackageCache();");
     expect(source).toContain("clearPackageCache");
-    expect(source).toMatch(/Could not clear cached package/);
-    expect(source).toContain('"opencode", "npm"');
+    expect(source).toContain("removeCacheTargets");
     expect(source).not.toContain('"opencode", "packages"');
+    const coreCache = await readCore("cache-hygiene.ts");
+    expect(coreCache).toMatch(/Could not clear cached package/);
+    const npmCache = await readCore("npm-cache.ts");
+    expect(npmCache).toContain('"opencode", "npm"');
   });
 
   test("installer prunes every invocation including no-ops, before mode dispatch", async () => {
@@ -304,6 +307,10 @@ describe("packager self-audit gate", () => {
 async function readTemplate(name: string): Promise<string> {
   const source = await readFile(path.join(REPO_ROOT, "templates", name), "utf-8");
   return source.split("---").slice(1).join("---");
+}
+
+async function readCore(name: string): Promise<string> {
+  return readFile(path.join(REPO_ROOT, "src", "core", name), "utf-8");
 }
 
 async function readAgent(name: string): Promise<string> {

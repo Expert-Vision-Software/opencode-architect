@@ -1,15 +1,7 @@
-# Inputs
-
-None — emit as-is as src/plugin-entry.ts.
-
-**Load-bearing — do not simplify:** `PluginEntryResolver.resolvesToPackage(entry, packageName, baseDir?)` answers whether a config entry names this package even when written as a path. An entry counts when its path form (`file://` URL, absolute, relative, or a symlink) resolves to a package root, entrypoint file, or directory whose nearest `package.json` declares a `name` that normalized-matches the package. Relative paths resolve against `baseDir` — the config file's directory — and fall back to the process working directory when no base is passed. `PluginEntryResolver.packageRoot(entry, baseDir?)` exposes the same resolution as a path lookup, so a caller can read the resolved checkout's `package.json` (name, version). Resolution is best-effort: an unroutable or missing path, or a `package.json` with no string `name`, never matches and never throws. Resolution memoizes per resolved path in a module-level map; that mutable module state is safe here because npm-loaded packages are not watched directories. Resolution follows symlinks and compares `package.json` names case-insensitively on Windows. A bare npm spec (`name`, `name@latest`, `@scope/name`) never counts as a path. Both the string form and the `{ "package": "..." }` object form count.
-
----
-
 import { exists, lstat, readFile, realpath } from "node:fs/promises";
 import { dirname, isAbsolute, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { PluginNameNormalizer } from "./plugin-name.ts";
+import { PluginNameNormalizer } from "./plugin-name";
 
 const resolvedRootMemo = new Map<string, string | null>();
 

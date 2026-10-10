@@ -8,7 +8,7 @@ import { AgentLoader, type LoadedAgent } from "./agent-loader";
 import { AssetPermissionAdvisor } from "./asset-permission-advisor";
 import { CommandLoader, type LoadedCommand } from "./command-loader";
 import { Installer } from "./installer";
-import { NpmCache } from "./npm-cache";
+import { NpmCache } from "./core/npm-cache";
 import { SkillLoader, UPGRADE_SKILL_ID, type LoadedSkill } from "./skill-loader";
 
 const PACKAGE_NAME = "opencode-architect";

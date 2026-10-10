@@ -2,26 +2,59 @@
 
 | Placeholder | Required | Description | Default |
 |---|---|---|---|
-| `EXTENSION NAME` → "myextension" | Yes | Extension identifier (e.g., "mytool") | — |
-| `SKILL NAME` → "myextension" | Yes | Must match the folder name in skills/ at the package root | — |
-| `COMMAND NAME` → "my-command.md" | Yes | Command file name in commands/ at the package root | — |
-| `PACKAGE NAME` → "opencode-myextension" | Yes | npm package name; also the manifest file base | — |
+| `EXTENSION NAME` → "myextension" | Yes | Extension identifier (e.g., "mytool") | - |
+| `SKILL NAME` → "myextension" | Yes | Must match the folder name in skills/ at the package root | - |
+| `COMMAND NAME` → "my-command.md" | Yes | Command file name in commands/ at the package root | - |
+| `PACKAGE NAME` → "opencode-myextension" | Yes | npm package name; also the manifest file base | - |
 
-**Load-bearing — do not simplify:** the deployment plan is content-based (ADR-0008): the content declaration (`"content"` in package.json, `"assets"` or `"code"`) decides the install modes — assets-only packages copy-install by default with `--mode plugin` as the opt-in, code-backed packages always plugin-register and `--mode copy` throws `CopyModeUnsupportedError`; copy install touches no config file at all — no permission blocks, no MCP entries, no `plugins` array edits; the `plugins` array is edited only by the surgical `PluginConfigEditor` (text splice, every other byte untouched, never a parse-then-reserialize, never rewrite config from `{}`, existing entry is a zero-write no-op); manifest-gated idempotency (never `.version` markers), the plugin-mode zero-write no-op includes a present entry (version match alone is not enough), and payload idempotency requires a recorded, hash-matching payload — a plugin-mode manifest with an empty file map means the load-time hook has not ensured assets yet, so the ensure path runs and records the payload hashes while preserving the recorded mode, entry, and target config file; config reading consults both `opencode.json` and `opencode.jsonc` per base, with `.jsonc` parsed leniently and `.json` strict, and every unparseable candidate is warned about; registration detection through the surgical `PluginConfigEditor` (which delegates to `PluginEntryResolver` from `src/plugin-entry.ts`) counts a path-form entry — a `file://` URL or filesystem path, string or `{ package }` object form — as registered when it resolves to this package, so `install` never adds a duplicate `name@latest` entry beside a live path entry; bundled content directories sit at the package root (`skills/`, `commands/`, `agents/` — no `assets/` intermediary) and resolve through `ASSET_LAYOUT_DIR`, which is `"."` by default; only when adapting a legacy package that wraps them in `assets/` is the constant overridden to `"assets"`, and a missing or empty asset source is a hard error naming the path, package name+version, cache dir, and install command — never a silent skip, and a manifest is never written when zero files were written; the manifest hashes the whole payload relative to the config base (skills and commands), and `migrateRootConfig` deletes nothing without a consent callback and is never called from `install()`. Cache hygiene is self-scoped (ADR-0007): every install — including a no-op — prunes this package's own cache copies (`<package>`, `<package>@latest`, `<package>@<version>`) from OpenCode's package cache (`$XDG_CACHE_HOME/opencode/npm`, falling back to `~/.cache/opencode/npm`), best-effort warn-and-continue, never touching other packages' cache dirs or pinned versions, and the load-time hook never prunes — only the CLI's install and `clear-cache` paths do. Every function here is scope-parameterized: the exact same logic serves the local scope base (`<project>/.opencode/`) and the global scope base (`~/.config/opencode/` or `$XDG_CONFIG_HOME/opencode/`), so a global install and a project install differ only in the base path — never in behavior. `status()` resolves the effective load per scope — the registration's config file, the raw entry as written, and the resolved source on disk (an npm spec against the package-cache key `<name>@<spec>` with the version read from the cached copy's `package.json`, newest generation first and mtime carried as a staleness hint; a path entry through `PluginEntryResolver.packageRoot`) — closing with an effective verdict plus warnings for a double-scope registration, a manifest/resolved version mismatch, a missing or incomplete cached copy, and `--online` registry staleness with warn-and-continue on an injectable fetch; status is read-only.
+**Load-bearing — do not simplify:** this file is an adapter rendering
+(ADR-0013): the machinery it orchestrates comes from the
+`opencode-architect/core` dependency — manifest io with per-file sha256
+hashes (`InstallManifest`), the surgical config editor (`PluginConfigEditor`),
+scope bases (`scopeBase`), package-cache paths and cache-target removal
+(`NpmCache`, `removeCacheTargets`), and the status/effective-version pipeline
+(`StatusReporter`). The adapter declares this package's policy as the
+constants below (`PLUGIN_NAME`, `SKILL_NAME`, `COMMAND_NAME`,
+`ASSET_LAYOUT_DIR`) and must not re-implement machinery. The deployment plan
+is content-based (ADR-0008): `"content": "code"` packages always
+plugin-register and `--mode copy` throws `CopyModeUnsupportedError`;
+assets-only packages copy-install by default with `--mode plugin` as opt-in;
+copy install touches no config file. Idempotency is the core manifest
+(ADR-0006): a matching version, a present registration, and hash-matching
+payload files are a zero-write no-op; consumer-modified files are skipped
+with a warning unless `force`, and are recorded with their packaged hash so
+`--force` can take ownership; a missing or empty asset source is a hard error
+naming the path, and a manifest is never written when zero files were
+written. Cache hygiene is self-scoped (ADR-0007): installs — including
+no-ops — prune only this package's cache copies through the core
+`removeCacheTargets`; the load hook never prunes. `status()` delegates to the
+core `StatusReporter` with a manifest lookup bound to this package, is
+read-only, and only touches the npm registry when `online` (warn-and-continue
+on an injectable failure). `migrateRootConfig` deletes nothing without a
+consent callback and is never called from `ensureAssets`. Every function is
+scope-parameterized: local and global differ only in the base path
+(`scopeBase`), never in behavior.
 
 ---
-import { exists, mkdir, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
-import { homedir } from "node:os";
-import { dirname, isAbsolute, join, relative } from "node:path";
-import { PluginNameNormalizer } from "./plugin-name.ts";
-import { RegistrationDetector, parseJsonc, type RawConfigEntries } from "./registration.ts";
-import { PluginConfigEditor } from "./plugin-config.ts";
-import { PluginEntryResolver } from "./plugin-entry.ts";
-import { InstallManifest, listFilesRecursive, sha256, type InstallMode, type ManifestData } from "./manifest.ts";
+import { exists, mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import { join, relative } from "node:path";
+import {
+  InstallManifest,
+  NpmCache,
+  PluginConfigEditor,
+  StatusReporter,
+  removeCacheTargets,
+  scopeBase,
+  sha256,
+  listFilesRecursive,
+  type ManifestData,
+  type StatusReport,
+  type Scope,
+} from "opencode-architect/core";
 
-export type { InstallMode } from "./manifest.ts";
+export type { StatusReport, Scope };
 
-export type Scope = "local" | "global";
+export type InstallMode = "copy" | "plugin";
 
 export interface InstallOptions {
   mode?: InstallMode;
@@ -47,62 +80,14 @@ export interface UninstallResult {
   pluginRemoved: boolean;
 }
 
-export interface ScopeStatus {
-  scope: Scope;
-  installed: boolean;
-  version: string | null;
-  mode: InstallMode | null;
-  entry: string | null;
-  entryName: string | null;
-  entryVersion: string | null;
-  entryConfigPath: string | null;
-  pluginInConfig: boolean;
-  resolvedVersion: string | null;
-  resolvedSource: "cache" | "checkout" | null;
-  resolvedModifiedMs: number | null;
-  resolvedName: string | null;
-  publishedVersion: string | null;
-  registered: boolean;
-  warnings: string[];
-}
-
-export interface EffectiveStatus {
-  version: string | null;
-  versionKind: "cache" | "checkout" | "spec" | "npm" | "manifest" | null;
-  scope: Scope | null;
-  latestVersion: string | null;
-  registeredScopes: Scope[];
-}
-
-export interface StatusResult {
-  local: ScopeStatus | null;
-  global: ScopeStatus | null;
-  effective: EffectiveStatus;
-  warnings: string[];
-}
-
-interface ResolvedEntrySource {
-  name: string | null;
-  version: string | null;
-  source: "cache" | "checkout";
-  path: string;
-  modifiedMs: number | null;
-}
-
-interface MatchedRegistration {
-  configPath: string;
-  spec: string;
-  name: string | null;
-  form: "npm" | "path";
-}
-
+// --- policy: this package's declared seam constants (ADR-0013) ---
 const SKILL_NAME = "myextension";
 const COMMAND_NAME = "my-command.md";
 const PLUGIN_NAME = "opencode-myextension";
 const ASSET_LAYOUT_DIR = ".";
 
-const normalizer = new PluginNameNormalizer();
 const editor = new PluginConfigEditor();
+const cache = new NpmCache();
 
 export class CopyModeUnsupportedError extends Error {
   constructor() {
@@ -151,67 +136,18 @@ function getPackageDir(): string {
 }
 
 export function packageCacheRoot(): string {
-  const xdgCacheHome = process.env.XDG_CACHE_HOME;
-  if (xdgCacheHome) return join(xdgCacheHome, "opencode", "npm");
-  return join(homedir(), ".cache", "opencode", "npm");
+  return cache.root();
 }
 
-interface CacheOutcome {
-  removed: string[];
-  warnings: string[];
-}
-
-async function removeCacheTargets(packagesRoot: string, wanted: (name: string) => boolean): Promise<CacheOutcome> {
-  const removed: string[] = [];
-  const warnings: string[] = [];
-  let entries: string[];
-  try {
-    entries = await readdir(packagesRoot);
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException)?.code === "ENOENT") return { removed, warnings };
-    throw error;
-  }
-  const targets = entries
-    .filter(wanted)
-    .sort()
-    .map((name) => join(packagesRoot, name));
-  for (const target of targets) {
-    try {
-      await rm(target, { recursive: true });
-      removed.push(target);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      warnings.push(`Could not clear cached package ${target}: ${message}`);
-    }
-  }
-  return { removed, warnings };
-}
-
-export async function prunePackageCache(): Promise<CacheOutcome> {
+export async function prunePackageCache(): Promise<{ removed: string[]; warnings: string[] }> {
   const version = await getPackageVersion();
   const wanted = [PLUGIN_NAME, `${PLUGIN_NAME}@latest`, `${PLUGIN_NAME}@${version}`];
-  return removeCacheTargets(packageCacheRoot(), (name) => wanted.includes(name));
+  return removeCacheTargets(cache.root(), (name) => wanted.includes(name));
 }
 
-export async function clearPackageCache(): Promise<CacheOutcome> {
+export async function clearPackageCache(): Promise<{ removed: string[]; warnings: string[] }> {
   const prefix = `${PLUGIN_NAME}@`;
-  return removeCacheTargets(packageCacheRoot(), (name) => name === PLUGIN_NAME || name.startsWith(prefix));
-}
-
-export function getGlobalConfigPath(): string {
-  const xdgConfig = process.env.XDG_CONFIG_HOME;
-  if (xdgConfig) {
-    return join(xdgConfig, "opencode");
-  }
-  return join(homedir(), ".config", "opencode");
-}
-
-export function getLocalConfigPath(projectDir: string): string {
-  return join(projectDir, ".opencode");
-}
-
-function scopeBase(scope: Scope, projectDir: string): string {
-  return scope === "global" ? getGlobalConfigPath() : getLocalConfigPath(projectDir);
+  return removeCacheTargets(cache.root(), (name) => name === PLUGIN_NAME || name.startsWith(prefix));
 }
 
 async function copyDir(src: string, dest: string, skip: Set<string> = new Set()): Promise<number> {
@@ -299,7 +235,7 @@ export async function ensureAssets(scope: Scope, projectDir: string, force: bool
 async function registerPlugin(scope: Scope, projectDir: string): Promise<{ upToDate: boolean; entry: string | null; entryConfigPath: string | null }> {
   const version = await getPackageVersion();
   const configBase = scopeBase(scope, projectDir);
-  const entry = normalizer.normalize(PLUGIN_NAME) ?? PLUGIN_NAME;
+  const entry = `${PLUGIN_NAME}@latest`;
   const manifest = new InstallManifest(configBase, PLUGIN_NAME);
   const existing = await manifest.read();
   const entryPresent = existing?.mode === "plugin" && existing.entryConfigPath
@@ -369,8 +305,8 @@ export async function install(
   options: InstallOptions = {}
 ): Promise<InstallResult> {
   const { mode: requested, force = false } = options;
-  const cache = await prunePackageCache();
-  for (const warning of cache.warnings) {
+  const cacheOutcome = await prunePackageCache();
+  for (const warning of cacheOutcome.warnings) {
     console.warn(`Warning: ${warning}`);
   }
   const mode = await resolveMode(requested);
@@ -378,10 +314,10 @@ export async function install(
   const { skillPath, commandPath } = await payloadPaths(configBase);
   if (mode === "copy") {
     const { upToDate, skippedModified } = await ensurePayload(scope, projectDir, force);
-    return { scope, mode, skillPath, commandPath, entry: null, entryConfigPath: null, skippedModified, upToDate, clearedCache: cache.removed };
+    return { scope, mode, skillPath, commandPath, entry: null, entryConfigPath: null, skippedModified, upToDate, clearedCache: cacheOutcome.removed };
   }
   const { upToDate, entry, entryConfigPath } = await registerPlugin(scope, projectDir);
-  return { scope, mode, skillPath, commandPath, entry, entryConfigPath, skippedModified: [], upToDate, clearedCache: cache.removed };
+  return { scope, mode, skillPath, commandPath, entry, entryConfigPath, skippedModified: [], upToDate, clearedCache: cacheOutcome.removed };
 }
 
 export async function uninstall(scope: Scope, projectDir: string = process.cwd()): Promise<UninstallResult> {
@@ -406,272 +342,12 @@ export async function uninstall(scope: Scope, projectDir: string = process.cwd()
   return { scope, mode: manifestData?.mode ?? null, removed, pluginRemoved };
 }
 
-export async function status(projectDir: string = process.cwd(), online: boolean = false, fetchFn: typeof fetch = fetch): Promise<StatusResult> {
-  const detector = new RegistrationDetector(PLUGIN_NAME);
-  const inventory = await detector.inventory(projectDir);
-  let local = await scopeStatus("local", projectDir, inventory.local);
-  let global = await scopeStatus("global", projectDir, inventory.global);
-  const warnings: string[] = [];
-  if (local !== null && global !== null && local.registered && global.registered) {
-    warnings.push(`registered in both scopes (double-load risk): ${local.entryConfigPath} and ${global.entryConfigPath}`);
-  }
-  let effective: EffectiveStatus;
-  if (online) {
-    const outcome = await applyOnline([local, global], fetchFn);
-    warnings.push(...outcome.warnings);
-    local = outcome.scopes[0] ?? null;
-    global = outcome.scopes[1] ?? null;
-  }
-  effective = effectiveStatus(local, global);
-  return { local, global, effective, warnings };
-}
-
-async function scopeStatus(scope: Scope, projectDir: string, entries: RawConfigEntries[]): Promise<ScopeStatus | null> {
-  const configBase = scopeBase(scope, projectDir);
-  const manifest = new InstallManifest(configBase, PLUGIN_NAME);
-  const manifestData: ManifestData | null = await manifest.read();
-  const matched = await findMatchedRegistration(entries);
-  if (manifestData === null && matched === null) return null;
-  const parsedEntry = matched !== null && !isPathSpec(matched.spec) ? parseNpmSpec(matched.spec) : null;
-  const warnings: string[] = [];
-  let resolvedVersion: string | null = null;
-  let resolvedSource: "cache" | "checkout" | null = null;
-  let resolvedModifiedMs: number | null = null;
-  let resolvedName: string | null = null;
-  if (matched !== null) {
-    const outcome = await resolveEntrySource(matched.spec, dirname(matched.configPath));
-    if (outcome.resolved !== null) {
-      resolvedVersion = outcome.resolved.version;
-      resolvedSource = outcome.resolved.source;
-      resolvedModifiedMs = outcome.resolved.modifiedMs;
-      resolvedName = outcome.resolved.name;
-    } else if (outcome.status === "missing") {
-      warnings.push(`${scope}: no cached copy for ${matched.spec}`);
-    } else {
-      warnings.push(`${scope}: cached copy for ${matched.spec} is incomplete`);
-    }
-    if (manifestData !== null && manifestData.version !== null && resolvedVersion !== null && manifestData.version !== resolvedVersion) {
-      warnings.push(`${scope}: manifest records ${manifestData.version} but the resolved copy is ${resolvedVersion}`);
-    }
-  }
-  return {
-    scope,
-    installed: true,
-    version: manifestData?.version ?? null,
-    mode: manifestData?.mode ?? (matched !== null ? "plugin" : null),
-    entry: matched !== null ? matched.spec : manifestData?.entry ?? null,
-    entryName: matched?.name ?? null,
-    entryVersion: parsedEntry?.version ?? null,
-    entryConfigPath: matched !== null ? matched.configPath : manifestData?.entryConfigPath ?? null,
-    pluginInConfig: matched !== null,
-    resolvedVersion,
-    resolvedSource,
-    resolvedModifiedMs: resolvedModifiedMs,
-    resolvedName,
-    publishedVersion: null,
-    registered: matched !== null,
-    warnings,
+export async function status(projectDir: string = process.cwd(), online: boolean = false): Promise<StatusReport> {
+  const manifestAt = async (scope: Scope, dir: string): Promise<{ mode: "copy" | "plugin"; version: string } | null> => {
+    const data: ManifestData | null = await new InstallManifest(scopeBase(scope, dir), PLUGIN_NAME).read();
+    return data === null ? null : { mode: data.mode, version: data.version };
   };
-}
-
-async function findMatchedRegistration(entries: RawConfigEntries[]): Promise<MatchedRegistration | null> {
-  for (const candidate of entries) {
-    for (const raw of candidate.rawEntries) {
-      const spec = entrySpec(raw);
-      if (spec === null) continue;
-      if (isPathSpec(spec)) {
-        if (await PluginEntryResolver.resolvesToPackage(raw, PLUGIN_NAME, dirname(candidate.configPath))) {
-          return { configPath: candidate.configPath, spec, name: null, form: "path" };
-        }
-        continue;
-      }
-      const parsed = parseNpmSpec(spec);
-      if (parsed === null) continue;
-      if (parsed.name === PLUGIN_NAME) {
-        return { configPath: candidate.configPath, spec, name: parsed.name, form: "npm" };
-      }
-    }
-  }
-  return null;
-}
-
-async function resolveEntrySource(spec: string, baseDir: string): Promise<{ resolved: ResolvedEntrySource | null; status: "resolved" | "missing" | "partial" }> {
-  if (isPathSpec(spec)) {
-    const root = await PluginEntryResolver.packageRoot(spec, baseDir);
-    if (root === null) return { resolved: null, status: "missing" };
-    const copy = await readCopyManifest(root, "checkout");
-    if (copy === null) return { resolved: null, status: "partial" };
-    return { resolved: copy, status: "resolved" };
-  }
-  const parsed = parseNpmSpec(spec);
-  if (parsed === null) return { resolved: null, status: "missing" };
-  const keyDir = join(packageCacheRoot(), `${parsed.name}@${parsed.version}`);
-  const copy = await findCacheCopy(keyDir, parsed.name);
-  if (copy !== null) return { resolved: copy, status: "resolved" };
-  return { resolved: null, status: (await exists(keyDir)) ? "partial" : "missing" };
-}
-
-async function findCacheCopy(keyDir: string, name: string): Promise<ResolvedEntrySource | null> {
-  const direct = await readCopyManifest(keyDir, "cache");
-  if (direct !== null) return direct;
-  let entries;
-  try {
-    entries = await readdir(keyDir, { withFileTypes: true });
-  } catch {
-    return null;
-  }
-  let best: ResolvedEntrySource | null = null;
-  for (const entry of entries) {
-    if (!entry.isDirectory() || entry.name.startsWith(".")) continue;
-    const copy = await readCopyManifest(join(keyDir, entry.name, "node_modules", name), "cache");
-    if (copy === null) continue;
-    if (best === null || (copy.modifiedMs ?? 0) > (best.modifiedMs ?? 0)) best = copy;
-  }
-  return best;
-}
-
-async function readCopyManifest(dir: string, source: "cache" | "checkout"): Promise<ResolvedEntrySource | null> {
-  const manifestPath = join(dir, "package.json");
-  if (!(await exists(manifestPath))) return null;
-  try {
-    const parsed = JSON.parse(await readFile(manifestPath, "utf-8")) as { name?: unknown; version?: unknown };
-    const version = typeof parsed.version === "string" ? parsed.version : null;
-    const name = typeof parsed.name === "string" ? parsed.name : null;
-    const info = await stat(dir);
-    return { version, name, source, path: dir, modifiedMs: info.mtimeMs };
-  } catch {
-    return null;
-  }
-}
-
-function entrySpec(entry: unknown): string | null {
-  if (typeof entry === "string") return entry.trim();
-  if (entry !== null && typeof entry === "object" && !Array.isArray(entry)) {
-    const pkg = (entry as { package?: unknown }).package;
-    if (typeof pkg === "string") return pkg.trim();
-  }
-  return null;
-}
-
-function isPathSpec(spec: string): boolean {
-  if (spec.startsWith("file://")) return true;
-  if (spec.startsWith(".")) return true;
-  if (isAbsolute(spec)) return true;
-  if (spec.includes("@")) return false;
-  if (spec.includes("/") || spec.includes("\\")) return true;
-  return false;
-}
-
-function parseNpmSpec(spec: string): { name: string; version: string } | null {
-  const at = spec.lastIndexOf("@");
-  if (at > 0) {
-    const version = spec.slice(at + 1);
-    if (version.includes("/") || version.includes("\\")) return null;
-    return { name: spec.slice(0, at), version: version.length === 0 ? "latest" : version };
-  }
-  return { name: spec, version: "latest" };
-}
-
-function effectiveStatus(local: ScopeStatus | null, global: ScopeStatus | null): EffectiveStatus {
-  const registeredScopes: Scope[] = [];
-  if (local?.registered) registeredScopes.push("local");
-  if (global?.registered) registeredScopes.push("global");
-  for (const scopeStatusValue of [local, global]) {
-    if (scopeStatusValue === null || !scopeStatusValue.registered) continue;
-    if (scopeStatusValue.resolvedVersion !== null) {
-      return {
-        version: scopeStatusValue.resolvedVersion,
-        versionKind: scopeStatusValue.resolvedSource,
-        scope: scopeStatusValue.scope,
-        latestVersion: scopeStatusValue.publishedVersion,
-        registeredScopes,
-      };
-    }
-    const fallback = specFallback(scopeStatusValue);
-    if (fallback !== null) {
-      return {
-        version: fallback.version,
-        versionKind: fallback.kind,
-        scope: scopeStatusValue.scope,
-        latestVersion: scopeStatusValue.publishedVersion,
-        registeredScopes,
-      };
-    }
-    return {
-      version: scopeStatusValue.version,
-      versionKind: scopeStatusValue.version !== null ? "manifest" : null,
-      scope: scopeStatusValue.scope,
-      latestVersion: scopeStatusValue.publishedVersion,
-      registeredScopes,
-    };
-  }
-  return { version: null, versionKind: null, scope: null, latestVersion: null, registeredScopes };
-}
-
-function specFallback(scopeStatusValue: ScopeStatus): { version: string; kind: "spec" | "npm" } | null {
-  if (scopeStatusValue.entryVersion === null || scopeStatusValue.entryVersion === "latest") {
-    if (scopeStatusValue.entryVersion === "latest" && scopeStatusValue.publishedVersion !== null) {
-      return { version: scopeStatusValue.publishedVersion, kind: "npm" };
-    }
-    return null;
-  }
-  return isExactSemver(scopeStatusValue.entryVersion) ? { version: scopeStatusValue.entryVersion, kind: "spec" } : null;
-}
-
-function isExactSemver(version: string): boolean {
-  return /^\d+\.\d+\.\d+(?:-[\w.-]+)?(?:\+[\w.-]+)?$/.test(version);
-}
-
-async function applyOnline(
-  scopes: Array<ScopeStatus | null>,
-  fetchFn: typeof fetch,
-): Promise<{ warnings: string[]; scopes: Array<ScopeStatus | null> }> {
-  const warnings: string[] = [];
-  const lookups = new Map<string, { version: string | null; warning: string | null }>();
-  const lookupName = (scopeStatusValue: ScopeStatus): string | null =>
-    scopeStatusValue.entryName ?? scopeStatusValue.resolvedName;
-  for (const scopeStatusValue of scopes) {
-    if (scopeStatusValue === null || !scopeStatusValue.registered) continue;
-    const name = lookupName(scopeStatusValue);
-    if (name === null || lookups.has(name)) continue;
-    lookups.set(name, await fetchLatestVersion(name, fetchFn));
-  }
-  const updated: Array<ScopeStatus | null> = [];
-  for (const scopeStatusValue of scopes) {
-    if (scopeStatusValue === null || !scopeStatusValue.registered) {
-      updated.push(scopeStatusValue);
-      continue;
-    }
-    const name = lookupName(scopeStatusValue);
-    const lookup = name !== null ? lookups.get(name) : undefined;
-    if (lookup === undefined) {
-      updated.push(scopeStatusValue);
-      continue;
-    }
-    if (lookup.warning !== null) {
-      warnings.push(lookup.warning);
-      updated.push({ ...scopeStatusValue, publishedVersion: null });
-      continue;
-    }
-    if (lookup.version !== null && scopeStatusValue.resolvedVersion !== null && lookup.version !== scopeStatusValue.resolvedVersion) {
-      warnings.push(`${lookup.version} is the latest published version but ${scopeStatusValue.resolvedVersion} resolves (stale)`);
-    }
-    updated.push({ ...scopeStatusValue, publishedVersion: lookup.version });
-  }
-  return { warnings, scopes: updated };
-}
-
-async function fetchLatestVersion(name: string, fetchFn: typeof fetch): Promise<{ version: string | null; warning: string | null }> {
-  try {
-    const response = await fetchFn(`https://registry.npmjs.org/${name}/latest`, { signal: AbortSignal.timeout(3000) });
-    if (!response.ok) return { version: null, warning: `npm registry returned ${response.status} for ${name}` };
-    const parsed = (await response.json()) as { version?: unknown };
-    if (typeof parsed.version !== "string") return { version: null, warning: `npm registry response for ${name} carried no version` };
-    return { version: parsed.version, warning: null };
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    return { version: null, warning: `could not query npm registry for ${name}: ${message}` };
-  }
+  return new StatusReporter({ manifestAt }).report(projectDir, { scopes: null, online, packageName: PLUGIN_NAME });
 }
 
 export async function isInstalledAnywhere(projectDir: string = process.cwd()): Promise<boolean> {
@@ -689,14 +365,10 @@ export async function isInstalledAnywhere(projectDir: string = process.cwd()): P
   return false;
 }
 
-function parseConfig(raw: string, path: string): unknown {
-  return path.endsWith(".jsonc") ? parseJsonc(raw) : JSON.parse(raw);
-}
-
 async function readJsonConfig(path: string): Promise<Record<string, unknown> | null> {
   if (!(await exists(path))) return {};
   try {
-    return parseConfig(await readFile(path, "utf-8"), path) as Record<string, unknown>;
+    return JSON.parse(await readFile(path, "utf-8")) as Record<string, unknown>;
   } catch {
     console.warn(`Warning: ${path} is not valid JSON; refusing to modify it.`);
     return null;

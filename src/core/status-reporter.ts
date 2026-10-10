@@ -1,14 +1,17 @@
-import { PACKAGE_NAME } from "./cache-cleaner";
 import path from "node:path";
-import { ConfigEntriesReader, type ConfigEntries } from "./config-entries";
+import { ConfigReader, type ConfigEntries } from "./config-reader";
+import { realEnvironment, type Environment } from "./environment";
 import { LoadedVersionResolver, type ResolvedSource } from "./loaded-version";
-import { PluginEntryResolver } from "./plugin-entry";
+import { NpmCache } from "./npm-cache";
 import { RegistryVersionChecker } from "./registry-version-checker";
-import { EntrySpec } from "./entry-spec";
-import type { InstallMode, Scope } from "./installer";
+import { EntryPredicate } from "./entry-predicate";
+import type { ManifestMode } from "./manifest";
+import type { Scope } from "./scope-base";
+
+export type DeploymentMode = ManifestMode | "none";
 
 export interface ManifestState {
-  mode: InstallMode;
+  mode: ManifestMode;
   version: string;
 }
 
@@ -19,7 +22,7 @@ export interface ManifestLookup {
 export interface ScopeStatusReport {
   scope: Scope;
   registered: boolean;
-  mode: InstallMode;
+  mode: DeploymentMode;
   manifestVersion: string | null;
   configPath: string | null;
   entryText: string | null;
@@ -52,7 +55,7 @@ export interface StatusReport {
 export interface StatusReportOptions {
   scopes: Scope[] | null;
   online: boolean;
-  packageName?: string;
+  packageName: string;
 }
 
 interface MatchedEntry {
@@ -65,17 +68,20 @@ interface MatchedEntry {
 }
 
 export class StatusReporter {
-  private readonly entries = new ConfigEntriesReader();
-  private readonly resolver = new LoadedVersionResolver();
+  private readonly configs: ConfigReader;
+  private readonly resolver: LoadedVersionResolver;
 
   constructor(
     private readonly manifests: ManifestLookup,
-    private readonly fetchFn: typeof fetch = fetch,
-  ) {}
+    private readonly environment: Environment = realEnvironment,
+  ) {
+    this.configs = new ConfigReader(environment);
+    this.resolver = new LoadedVersionResolver(new NpmCache(environment));
+  }
 
   public async report(projectDir: string, options: StatusReportOptions): Promise<StatusReport> {
     const scopes = options.scopes ?? (["local", "global"] as Scope[]);
-    const packageName = options.packageName ?? PACKAGE_NAME;
+    const packageName = options.packageName;
     let reports: ScopeStatusReport[] = [];
     for (const scope of scopes) {
       reports.push(await this.resolveScope(scope, projectDir, packageName));
@@ -106,7 +112,7 @@ export class StatusReporter {
 
   private async resolveScope(scope: Scope, projectDir: string, packageName: string): Promise<ScopeStatusReport> {
     const warnings: string[] = [];
-    const entries = await this.entries.read(scope, projectDir, false);
+    const entries = await this.configs.entries(scope, projectDir);
     for (const candidate of entries) {
       if (candidate.parseError !== null) warnings.push(candidate.parseError);
     }
@@ -160,31 +166,16 @@ export class StatusReporter {
   private async findMatchedEntry(entries: ConfigEntries[], packageName: string): Promise<MatchedEntry | null> {
     for (const candidate of entries) {
       for (const raw of candidate.rawEntries) {
-        const classified = EntrySpec.classify(raw);
+        const classified = await EntryPredicate.matched(raw, packageName, path.dirname(candidate.path));
         if (classified === null) continue;
-        if (classified.form === "npm") {
-          if (classified.name === packageName) {
-            return {
-              configPath: candidate.configPath,
-              entry: raw,
-              display: classified.display,
-              name: classified.name,
-              version: classified.version,
-              form: "npm",
-            };
-          }
-          continue;
-        }
-        if (await PluginEntryResolver.resolvesToPackage(raw, packageName, path.dirname(candidate.configPath))) {
-          return {
-            configPath: candidate.configPath,
-            entry: raw,
-            display: classified.display,
-            name: null,
-            version: null,
-            form: "path",
-          };
-        }
+        return {
+          configPath: candidate.path,
+          entry: raw,
+          display: classified.display,
+          name: classified.name,
+          version: classified.version,
+          form: classified.form,
+        };
       }
     }
     return null;
@@ -246,7 +237,7 @@ export class StatusReporter {
 
   private async onlinePass(reports: ScopeStatusReport[]): Promise<{ warnings: string[]; reports: ScopeStatusReport[] }> {
     const warnings: string[] = [];
-    const checker = new RegistryVersionChecker(this.fetchFn);
+    const checker = new RegistryVersionChecker(this.environment.fetch);
     const latest = new Map<string, string | null>();
     const failures = new Map<string, string>();
     for (const report of reports) {
