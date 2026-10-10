@@ -54,8 +54,9 @@ export class PluginConfigEditor {
   public async ensurePluginEntry(
     packageName: string,
     options: EnsurePluginEntryOptions,
+    entry: string | null = null,
   ): Promise<EnsurePluginEntryOutcome> {
-    const canonical = this.canonicalEntry(packageName);
+    const canonical = entry ?? this.canonicalEntry(packageName);
     for (const read of await this.readCandidates(options)) {
       const { candidate, text, entries, rawEntries } = read;
       const configDir = path.dirname(candidate.path);

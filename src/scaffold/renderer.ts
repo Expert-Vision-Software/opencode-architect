@@ -45,12 +45,10 @@ export class ScaffoldRenderer {
       relativePath: `skills/${identifier}/SKILL.md`,
       content: substituted("skill-structure.template.md"),
     });
-    if (plan.ship.includes("commands")) {
-      files.push({
-        relativePath: "commands/my-command.md",
-        content: `---\ndescription: "Rendered command stub"\n---\n\nSay hello from ${plan.name}.\n`,
-      });
-    }
+    files.push({
+      relativePath: "commands/my-command.md",
+      content: `---\ndescription: "Rendered command stub"\n---\n\nSay hello from ${plan.name}.\n`,
+    });
     for (const kind of ["agents", "tools", "plugins"] as ShipKind[]) {
       if (plan.ship.includes(kind)) files.push({ relativePath: `${kind}/.gitkeep`, content: "" });
     }
@@ -74,9 +72,9 @@ export class ScaffoldRenderer {
   }
 
   private static shippedDirs(plan: ScaffoldPlan): string[] {
-    const dirs: string[] = [];
-    for (const kind of ["skills", "commands", "agents", "plugins", "tools"] as ShipKind[]) {
-      if (kind === "skills" || plan.ship.includes(kind)) dirs.push(kind === "plugins" ? "plugins" : kind);
+    const dirs: string[] = ["skills", "commands"];
+    for (const kind of ["agents", "plugins", "tools"] as ShipKind[]) {
+      if (plan.ship.includes(kind)) dirs.push(kind);
     }
     return dirs;
   }

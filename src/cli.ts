@@ -9,6 +9,7 @@ import type { ResolvedSource } from "./loaded-version";
 import { CacheCleaner } from "./cache-cleaner";
 import { ClearCacheUsageError } from "./clear-cache-usage-error";
 import { Scaffolder } from "./scaffold/scaffolder";
+import { Promoter } from "./scaffold/promoter";
 
 const VERSION = (JSON.parse(await Bun.file(`${import.meta.dirname}/../package.json`).text()) as { version: string }).version;
 
@@ -28,7 +29,7 @@ export async function runCli(argv: string[]): Promise<number> {
       name: { type: "string" },
       target: { type: "string" },
       ship: { type: "string" },
-      promote: { type: "string" },
+      promote: { type: "boolean", default: false },
       help: { type: "boolean", short: "h", default: false },
       version: { type: "boolean", short: "v", default: false },
     },
@@ -50,7 +51,7 @@ export async function runCli(argv: string[]): Promise<number> {
     console.error("--path and --online only apply to the status command.");
     return 1;
   }
-  if (command !== "scaffold" && (values.name !== undefined || values.target !== undefined || values.ship !== undefined || values.promote !== undefined)) {
+  if (command !== "scaffold" && (values.name !== undefined || values.target !== undefined || values.ship !== undefined || values.promote)) {
     console.error("--name, --target, --ship, and --promote only apply to the scaffold command.");
     return 1;
   }
@@ -166,6 +167,29 @@ export async function runCli(argv: string[]): Promise<number> {
         if (positionals.length > 1) {
           console.error(`Unexpected arguments for scaffold: ${positionals.slice(1).join(" ")}`);
           return 1;
+        }
+        if (values.promote) {
+          const promoter = new Promoter();
+          const outcome = await promoter.promote({
+            projectDir: path.resolve(positionals[1] ?? "."),
+            name: values.name ?? null,
+            target: values.target ?? null,
+            yes: values.yes,
+          });
+          if (!outcome.ok) {
+            console.error(outcome.error);
+            return 1;
+          }
+          console.log(`Promoted ${outcome.packageName} at ${outcome.packageDir}`);
+          if (outcome.configPath !== null) console.log(`  Config reference: ${outcome.configPath}`);
+          for (const managed of outcome.managed) console.log(`  Already managed: ${managed}`);
+          if (outcome.retired) {
+            for (const removed of outcome.removed) console.log(`  Removed: ${removed}`);
+          } else {
+            console.log("Retirement needs your consent; pass --yes to delete the promoted originals:");
+            for (const target of outcome.wouldRemove) console.log(`  Would remove: ${target}`);
+          }
+          break;
         }
         const scaffolder = new Scaffolder();
         const outcome = await scaffolder.fresh({
