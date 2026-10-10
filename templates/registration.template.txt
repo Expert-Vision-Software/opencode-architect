@@ -2,14 +2,13 @@
 
 None — emit as-is as src/registration.ts.
 
-**Load-bearing — do not simplify:** detection is read-only (no writes, ever); it checks the global config base (`opencode.json`, `opencode.jsonc`, and the legacy `config.json`), the repo's `.opencode/opencode.json(c)`, and a repo-root `opencode.json(c)` — both extensions at every base plus global `config.json` — with `@latest`-aware name matching, never the launch directory, which opencode always sets to the consumer repo, and never any directory-identity comparison (plugin dir vs `directory`, `import.meta.dirname`, `process.cwd()`, realpath); a maintainer's own checkout is served by that repo's own config registration, not by a directory check. The v2 `plugins` key is authoritative and the legacy v1 `plugin` key is tolerated read-only — an entry under either key counts as registered, and entries match by package name whether written as strings or `{ "package": ... }` objects. A path-form entry (`file://` URL or filesystem path, string or `{ package }` object form) counts as registered too when it resolves to this package — `PluginEntryResolver.resolvesToPackage` (src/plugin-entry.ts) supplies that best-effort, memoized resolution, resolving a relative entry against the directory of the config file that declares it (never the launch directory, which is not a resolution base). `.jsonc` parses leniently (string-aware `//` and `/* */` comment stripping plus trailing-comma removal, so a `$schema` URL's `//` and escaped quotes survive); `.json` stays strict. Every unparseable candidate is warned about before any short-circuit. Nested and root configs combine with OR — a present-but-unregistered nested file never masks a repo-root registration. The detector also exposes `inventory(projectDir)`: one read-only pass returning the raw plugin entries per config file for both bases (global including the legacy `config.json`, local nested plus repo root) for the installer's status resolution; `detect()` behavior is unchanged.
+**Load-bearing — do not simplify:** detection is read-only (no writes, ever); it checks the global config base (`opencode.json`, `opencode.jsonc`, and the legacy `config.json`), the repo's `.opencode/opencode.json(c)`, and a repo-root `opencode.json(c)` — both extensions at every base plus global `config.json` — with `@latest`-aware name matching, never the launch directory, which opencode always sets to the consumer repo, and never any directory-identity comparison (plugin dir vs `directory`, `import.meta.dirname`, `process.cwd()`, realpath); a maintainer's own checkout is served by that repo's own config registration, not by a directory check. The v2 `plugins` key is authoritative and the legacy v1 `plugin` key is tolerated read-only — an entry under either key counts as registered, and entries match by package name whether written as strings or `{ "package": ... }` objects. A path-form entry (`file://` URL or filesystem path, string or `{ package }` object form) counts as registered too when it resolves to this package — `EntryPredicate` (src/entry-predicate.ts, the one entry classifier shared with the suite) supplies that best-effort, memoized resolution, resolving a relative entry against the directory of the config file that declares it (never the launch directory, which is not a resolution base). `.jsonc` parses leniently (string-aware `//` and `/* */` comment stripping plus trailing-comma removal, so a `$schema` URL's `//` and escaped quotes survive); `.json` stays strict. Every unparseable candidate is warned about before any short-circuit. Nested and root configs combine with OR — a present-but-unregistered nested file never masks a repo-root registration. The detector also exposes `inventory(projectDir)`: one read-only pass returning the raw plugin entries per config file for both bases (global including the legacy `config.json`, local nested plus repo root) for the installer's status resolution; `detect()` behavior is unchanged.
 
 ---
 import { exists, readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
-import { PluginNameNormalizer } from "./plugin-name.ts";
-import { PluginEntryResolver } from "./plugin-entry.ts";
+import { EntryPredicate } from "./entry-predicate.ts";
 
 export type RegistrationScope = "none" | "global" | "repo-local" | "both";
 
@@ -154,8 +153,6 @@ async function readAllEntries(paths: string[]): Promise<RawConfigEntries[]> {
 }
 
 export class RegistrationDetector {
-  private readonly normalizer = new PluginNameNormalizer();
-
   constructor(private readonly packageName: string) {}
 
   async detect(projectDir: string): Promise<RegistrationScope> {
@@ -190,14 +187,8 @@ export class RegistrationDetector {
 
   private async matchesAny(entries: PluginEntries | null): Promise<boolean> {
     if (entries === null) return false;
-    const names = [...entries.plugins, ...entries.legacyPlugins];
-    if (names.some((entry) => this.normalizer.matches(entry, this.packageName))) return true;
-    return this.resolvesAny([...entries.rawPlugins, ...entries.rawLegacyPlugins], entries.directory);
-  }
-
-  private async resolvesAny(rawEntries: unknown[], baseDir: string): Promise<boolean> {
-    for (const entry of rawEntries) {
-      if (await PluginEntryResolver.resolvesToPackage(entry, this.packageName, baseDir)) return true;
+    for (const entry of [...entries.rawPlugins, ...entries.rawLegacyPlugins]) {
+      if (await EntryPredicate.matches(entry, this.packageName, entries.directory)) return true;
     }
     return false;
   }

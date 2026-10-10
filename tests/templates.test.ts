@@ -15,6 +15,7 @@ const PACKAGE_NAME = "opencode-myextension";
 
 const TEMPLATE_FILES = [
   "cli.template.txt",
+  "entry-predicate.template.txt",
   "index.template.txt",
   "installer.template.txt",
   "manifest.template.txt",
@@ -70,6 +71,7 @@ async function renderPackage(): Promise<void> {
   await write("src/registration.ts", await templateBody("registration.template.txt"));
   await write("src/plugin-config.ts", await templateBody("plugin-config.template.txt"));
   await write("src/plugin-entry.ts", await templateBody("plugin-entry.template.txt"));
+  await write("src/entry-predicate.ts", await templateBody("entry-predicate.template.txt"));
   await write("src/installer.ts", await templateBody("installer.template.txt"));
   await write("src/cli.ts", await templateBody("cli.template.txt"));
   await write("package.json", await templateBody("package-basics.template.json"));
@@ -301,6 +303,7 @@ describe("suite src mirrors template bodies byte-for-byte", () => {
   const SYNCED_PAIRS = [
     { template: "plugin-name.template.txt", source: "plugin-name.ts" },
     { template: "plugin-entry.template.txt", source: "plugin-entry.ts" },
+    { template: "entry-predicate.template.txt", source: "entry-predicate.ts" },
   ] as const;
 
   for (const pair of SYNCED_PAIRS) {
