@@ -1,33 +1,15 @@
 import { exists, mkdir, readFile, writeFile } from "node:fs/promises";
-import { homedir } from "node:os";
 import path from "node:path";
-import { PluginEntryResolver } from "./plugin-entry";
+import type { CandidateConfig, CandidateRead, EnsurePluginEntryOptions } from "./config-reader";
+import { ConfigReader } from "./config-reader";
+import { RegistrationDetector } from "./registration-detector";
 
-export type ConfigScope = "local" | "global";
-export type PluginConfigKey = "plugins" | "plugin";
-
-export interface EnsurePluginEntryOptions {
-  scope: ConfigScope;
-  projectDir: string;
-}
+export type { ConfigScope, PluginConfigKey, EnsurePluginEntryOptions } from "./config-reader";
 
 export interface EnsurePluginEntryOutcome {
   action: "noop" | "updated" | "created" | "blocked";
   configPath: string | null;
   warning: string | null;
-}
-
-interface CandidateConfig {
-  path: string;
-  lenient: boolean;
-  writable: boolean;
-}
-
-interface CandidateRead {
-  candidate: CandidateConfig;
-  text: string;
-  entries: Record<PluginConfigKey, string[] | null>;
-  rawEntries: Record<PluginConfigKey, unknown[] | null>;
 }
 
 export interface RemovePluginEntryOutcome {
@@ -38,11 +20,6 @@ export interface RemovePluginEntryOutcome {
 
 export type ConfigCheck = { ok: true } | { ok: false; warning: string };
 
-interface PluginArrayRange {
-  bracketStart: number;
-  bracketEnd: number;
-}
-
 const DEFAULT_CONFIG_TEMPLATE = `{
   // OpenCode configuration
   "$schema": "https://opencode.ai/config.json",
@@ -51,12 +28,15 @@ const DEFAULT_CONFIG_TEMPLATE = `{
 `;
 
 export class PluginConfigEditor {
+  private readonly reader = new ConfigReader();
+  private readonly detector = new RegistrationDetector(this.reader);
+
   public async ensurePluginEntry(
     packageName: string,
     options: EnsurePluginEntryOptions,
   ): Promise<EnsurePluginEntryOutcome> {
     const canonical = this.canonicalEntry(packageName);
-    for (const read of await this.readCandidates(options)) {
+    for (const read of await this.reader.readCandidates(options)) {
       const { candidate, text, entries, rawEntries } = read;
       const configDir = path.dirname(candidate.path);
       if (entries.plugins === null) {
@@ -68,10 +48,10 @@ export class PluginConfigEditor {
             `Fix or remove the file and re-run the install.`,
         };
       }
-      if (await this.entryResolves(rawEntries.plugins, packageName, configDir)) {
+      if (await this.detector.entryResolves(rawEntries.plugins, packageName, configDir)) {
         return { action: "noop", configPath: candidate.path, warning: null };
       }
-      if (await this.entryResolves(rawEntries.plugin, packageName, configDir)) {
+      if (await this.detector.entryResolves(rawEntries.plugin, packageName, configDir)) {
         return {
           action: "noop",
           configPath: candidate.path,
@@ -92,7 +72,7 @@ export class PluginConfigEditor {
       return { action: "updated", configPath: candidate.path, warning: null };
     }
 
-    const target = this.defaultConfigPath(options);
+    const target = this.reader.defaultConfigPath(options);
     const content = DEFAULT_CONFIG_TEMPLATE.replace("__PACKAGE_NAME__", canonical);
     await mkdir(path.dirname(target), { recursive: true });
     await writeFile(target, content);
@@ -100,10 +80,10 @@ export class PluginConfigEditor {
   }
 
   public async checkParseable(options: EnsurePluginEntryOptions): Promise<ConfigCheck> {
-    for (const candidate of this.candidateConfigs(options)) {
+    for (const candidate of this.reader.candidates(options)) {
       if (!(await exists(candidate.path))) continue;
       const text = await readFile(candidate.path, "utf-8");
-      if (this.parsePluginArray(text, candidate.lenient) === null) {
+      if (this.reader.parsePluginArray(text, candidate.lenient) === null) {
         return {
           ok: false,
           warning:
@@ -119,22 +99,14 @@ export class PluginConfigEditor {
     packageName: string,
     options: EnsurePluginEntryOptions,
   ): Promise<string | null> {
-    for (const read of await this.readCandidates(options)) {
-      if (read.entries.plugins === null) continue;
-      const configDir = path.dirname(read.candidate.path);
-      const registered =
-        (await this.entryResolves(read.rawEntries.plugins, packageName, configDir)) ||
-        (await this.entryResolves(read.rawEntries.plugin, packageName, configDir));
-      if (registered) return read.candidate.path;
-    }
-    return null;
+    return this.detector.findRegistration(packageName, options);
   }
 
   public async removePluginEntry(
     packageName: string,
     options: EnsurePluginEntryOptions,
   ): Promise<RemovePluginEntryOutcome> {
-    const reads = await this.readCandidates(options);
+    const reads = await this.reader.readCandidates(options);
     let legacyPath: string | null = null;
     for (const read of reads) {
       const { candidate, text, entries } = read;
@@ -149,7 +121,7 @@ export class PluginConfigEditor {
             `Fix or remove the file and re-run the uninstall.`,
         };
       }
-      if (await this.entryResolves(read.rawEntries.plugins, packageName, configDir)) {
+      if (await this.detector.entryResolves(read.rawEntries.plugins, packageName, configDir)) {
         const spliced = await this.spliceOutEntry(text, packageName, candidate.lenient, configDir);
         if (spliced === null) {
           return {
@@ -166,7 +138,7 @@ export class PluginConfigEditor {
           warning: leftover === null ? null : this.legacyRemovalAdvisory(leftover, packageName),
         };
       }
-      if (legacyPath === null && (await this.entryResolves(read.rawEntries.plugin, packageName, configDir))) {
+      if (legacyPath === null && (await this.detector.entryResolves(read.rawEntries.plugin, packageName, configDir))) {
         legacyPath = candidate.path;
       }
     }
@@ -181,108 +153,17 @@ export class PluginConfigEditor {
   }
 
   public hasMatchingEntry(entries: string[], packageName: string): boolean {
-    return entries.some((entry) => this.matchesEntry(entry, packageName));
-  }
-
-  private async entryResolves(
-    rawEntries: unknown[] | null,
-    packageName: string,
-    configDir: string,
-  ): Promise<boolean> {
-    if (rawEntries === null) return false;
-    for (const entry of rawEntries) {
-      if (await this.entryMatches(entry, packageName, configDir)) return true;
-    }
-    return false;
-  }
-
-  private async entryMatches(rawEntry: unknown, packageName: string, configDir: string): Promise<boolean> {
-    const name = this.normalizeEntry(rawEntry);
-    if (name !== null && this.matchesEntry(name, packageName)) return true;
-    return PluginEntryResolver.resolvesToPackage(rawEntry, packageName, configDir);
+    return this.detector.hasMatchingEntry(entries, packageName);
   }
 
   private async findLegacyConfig(reads: CandidateRead[], packageName: string): Promise<string | null> {
     for (const read of reads) {
       const legacyDir = path.dirname(read.candidate.path);
-      if (await this.entryResolves(read.rawEntries.plugin, packageName, legacyDir)) return read.candidate.path;
+      if (await this.detector.entryResolves(read.rawEntries.plugin, packageName, legacyDir)) {
+        return read.candidate.path;
+      }
     }
     return null;
-  }
-
-  private matchesEntry(entry: string, packageName: string): boolean {
-    const specIndex = entry.lastIndexOf("@");
-    const name = specIndex > 0 ? entry.slice(0, specIndex) : entry;
-    return name === packageName;
-  }
-
-  private canonicalEntry(packageName: string): string {
-    const specIndex = packageName.lastIndexOf("@");
-    if (specIndex > 0) return packageName;
-    return `${packageName}@latest`;
-  }
-
-  private candidateConfigs(options: EnsurePluginEntryOptions): CandidateConfig[] {
-    const scopeBase = this.scopeBase(options.scope, options.projectDir);
-    const repoRoot = options.projectDir;
-    const configs: CandidateConfig[] = [];
-    if (options.scope === "local") {
-      for (const root of [scopeBase, repoRoot]) {
-        configs.push({ path: path.join(root, "opencode.json"), lenient: false, writable: true });
-        configs.push({ path: path.join(root, "opencode.jsonc"), lenient: true, writable: true });
-      }
-    } else {
-      for (const file of ["opencode.json", "opencode.jsonc"]) {
-        configs.push({ path: path.join(scopeBase, file), lenient: file.endsWith(".jsonc"), writable: true });
-      }
-    }
-    configs.push({ path: path.join(scopeBase, "config.json"), lenient: false, writable: false });
-    return configs;
-  }
-
-  private async readCandidates(options: EnsurePluginEntryOptions): Promise<CandidateRead[]> {
-    const reads: CandidateRead[] = [];
-    for (const candidate of this.candidateConfigs(options)) {
-      if (!(await exists(candidate.path))) continue;
-      const text = await readFile(candidate.path, "utf-8");
-      const config = this.parseConfig(text, candidate.lenient);
-      const entries: Record<PluginConfigKey, string[] | null> = { plugins: null, plugin: null };
-      const rawEntries: Record<PluginConfigKey, unknown[] | null> = { plugins: null, plugin: null };
-      if (config === null) {
-        console.warn(
-          `Warning: ${candidate.path} could not be parsed; refusing to treat it as a registration candidate.`,
-        );
-      } else {
-        for (const key of ["plugins", "plugin"] as PluginConfigKey[]) {
-          entries[key] = this.keyEntries(config, key);
-          rawEntries[key] = this.entriesOf(config, key);
-        }
-      }
-      reads.push({ candidate, text, entries, rawEntries });
-    }
-    return reads;
-  }
-
-  private keyEntries(config: Record<string, unknown>, key: PluginConfigKey): string[] {
-    const value = config[key];
-    if (!Array.isArray(value)) return [];
-    return value.map((entry) => this.normalizeEntry(entry)).filter((entry): entry is string => entry !== null);
-  }
-
-  private entriesOf(config: Record<string, unknown>, key: PluginConfigKey): unknown[] {
-    const value = config[key];
-    return Array.isArray(value) ? value : [];
-  }
-
-  private normalizeEntry(entry: unknown): string | null {
-    if (typeof entry === "string") return entry;
-    return this.packageOf(entry);
-  }
-
-  private packageOf(entry: unknown): string | null {
-    if (entry === null || typeof entry !== "object") return null;
-    const pkg = (entry as { package: unknown }).package;
-    return typeof pkg === "string" ? pkg : null;
   }
 
   private legacyEntryAdvisory(candidate: CandidateConfig, packageName: string): string {
@@ -307,87 +188,10 @@ export class PluginConfigEditor {
     );
   }
 
-  private defaultConfigPath(options: EnsurePluginEntryOptions): string {
-    if (options.scope === "global") {
-      return path.join(this.scopeBase("global", options.projectDir), "opencode.jsonc");
-    }
-    return path.join(options.projectDir, "opencode.jsonc");
-  }
-
-  private scopeBase(scope: ConfigScope, projectDir: string): string {
-    if (scope === "local") return path.join(projectDir, ".opencode");
-    const xdgConfigHome = process.env.XDG_CONFIG_HOME;
-    if (xdgConfigHome) return path.join(xdgConfigHome, "opencode");
-    return path.join(homedir(), ".config", "opencode");
-  }
-
-  private parsePluginArray(text: string, lenient: boolean): string[] | null {
-    const config = this.parseConfig(text, lenient);
-    if (config === null) return null;
-    return this.keyEntries(config, "plugins");
-  }
-
-  private parseConfig(text: string, lenient: boolean): Record<string, unknown> | null {
-    const parseable = lenient ? this.blankComments(text).replace(/,(\s*[}\]])/g, "$1") : text;
-    try {
-      return JSON.parse(parseable) as Record<string, unknown>;
-    } catch {
-      return null;
-    }
-  }
-
-  private blankComments(text: string): string {
-    const chars = text.split("");
-    let inString = false;
-    let inLineComment = false;
-    let inBlockComment = false;
-    for (let i = 0; i < chars.length; i++) {
-      const current = chars[i];
-      const next = i + 1 < chars.length ? chars[i + 1] : "";
-      if (inLineComment) {
-        if (current === "\n") inLineComment = false;
-        else chars[i] = " ";
-        continue;
-      }
-      if (inBlockComment) {
-        if (current === "*" && next === "/") {
-          chars[i] = " ";
-          chars[i + 1] = " ";
-          i++;
-          inBlockComment = false;
-        } else {
-          chars[i] = " ";
-        }
-        continue;
-      }
-      if (inString) {
-        if (current === "\\") {
-          i++;
-          continue;
-        }
-        if (current === '"') inString = false;
-        continue;
-      }
-      if (current === '"') {
-        inString = true;
-        continue;
-      }
-      if (current === "/" && next === "/") {
-        chars[i] = " ";
-        chars[i + 1] = " ";
-        i++;
-        inLineComment = true;
-        continue;
-      }
-      if (current === "/" && next === "*") {
-        chars[i] = " ";
-        chars[i + 1] = " ";
-        i++;
-        inBlockComment = true;
-        continue;
-      }
-    }
-    return chars.join("");
+  private canonicalEntry(packageName: string): string {
+    const specIndex = packageName.lastIndexOf("@");
+    if (specIndex > 0) return packageName;
+    return `${packageName}@latest`;
   }
 
   private spliceEntry(
@@ -396,15 +200,15 @@ export class PluginConfigEditor {
     packageName: string,
     lenient: boolean,
   ): string | null {
-    const navigable = this.blankComments(text);
+    const navigable = this.reader.blankComments(text);
     const range = this.findPluginArrayRange(navigable);
     const spliced =
       range === null
         ? this.splicePluginKey(text, navigable, entryToWrite)
         : this.spliceArrayEntry(text, navigable, range, entryToWrite);
     if (spliced === null) return null;
-    const plugins = this.parsePluginArray(spliced, lenient);
-    if (plugins === null || !this.hasMatchingEntry(plugins, packageName)) return null;
+    const plugins = this.reader.parsePluginArray(spliced, lenient);
+    if (plugins === null || !this.detector.hasMatchingEntry(plugins, packageName)) return null;
     return spliced;
   }
 
@@ -414,7 +218,7 @@ export class PluginConfigEditor {
     lenient: boolean,
     configDir: string,
   ): Promise<string | null> {
-    const navigable = this.blankComments(text);
+    const navigable = this.reader.blankComments(text);
     const range = this.findPluginArrayRange(navigable);
     if (range === null) return null;
     const innerStart = range.bracketStart + 1;
@@ -424,9 +228,11 @@ export class PluginConfigEditor {
     if (!target) return null;
     const withComma = this.dropAdjacentComma(navigable, elements, target, innerStart, innerEnd);
     const result = text.slice(0, withComma.start) + text.slice(withComma.end);
-    const config = this.parseConfig(result, lenient);
+    const config = this.reader.parseConfig(result, lenient);
     if (config === null) return null;
-    if (await this.entryResolves(this.entriesOf(config, "plugins"), packageName, configDir)) return null;
+    if (await this.detector.entryResolves(this.reader.entriesOf(config, "plugins"), packageName, configDir)) {
+      return null;
+    }
     return result;
   }
 
@@ -438,7 +244,7 @@ export class PluginConfigEditor {
   ): Promise<{ start: number; end: number } | null> {
     for (const element of elements) {
       const spec = this.elementSpec(text.slice(element.start, element.end));
-      if (await this.entryMatches(spec, packageName, configDir)) return element;
+      if (await this.detector.entryMatches(spec, packageName, configDir)) return element;
     }
     return null;
   }
@@ -515,7 +321,7 @@ export class PluginConfigEditor {
     const trimmed = raw.trim();
     if (!trimmed.startsWith("{")) return this.unquote(trimmed);
     try {
-      return this.packageOf(JSON.parse(trimmed.replace(/,(\s*[}\]])/g, "$1"))) ?? "";
+      return this.reader.packageOf(JSON.parse(trimmed.replace(/,(\s*[}\]])/g, "$1"))) ?? "";
     } catch {
       return "";
     }
@@ -647,4 +453,9 @@ export class PluginConfigEditor {
     }
     return null;
   }
+}
+
+interface PluginArrayRange {
+  bracketStart: number;
+  bracketEnd: number;
 }
