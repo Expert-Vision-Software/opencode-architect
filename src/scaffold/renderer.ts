@@ -6,6 +6,28 @@ export type ShipKind = "skills" | "commands" | "agents" | "tools" | "plugins";
 export interface ScaffoldPlan {
   name: string;
   ship: ShipKind[];
+  /**
+   * The `file:` dependency spec through which the rendered package consumes
+   * the `opencode-architect/core` machinery (ADR-0013). Callers compute it
+   * with `fileDependency` from their target directory to the architect
+   * package root.
+   */
+  coreDependency: string;
+}
+
+/**
+ * The local `file:` dependency spec linking a rendered package at `from` to
+ * the architect package at `to`. Purely local — no registry access.
+ */
+export function fileDependency(from: string, to: string): string {
+  let relativeSpec = path.relative(from, to).replaceAll("\\", "/");
+  if (!relativeSpec.startsWith(".")) relativeSpec = `./${relativeSpec}`;
+  return `file:${relativeSpec}`;
+}
+
+/** The directory of the architect package this module ships in. */
+export function architectPackageRoot(): string {
+  return path.resolve(import.meta.dirname, "..", "..");
 }
 
 export interface RenderedFile {
@@ -20,12 +42,6 @@ const ASSET_KINDS: ShipKind[] = ["skills", "commands"];
 const TEMPLATE_SOURCES: Array<{ template: string; target: string }> = [
   { template: "index.template.txt", target: "index.ts" },
   { template: "plugin-local.template.txt", target: "src/plugin.ts" },
-  { template: "plugin-name.template.txt", target: "src/plugin-name.ts" },
-  { template: "manifest.template.txt", target: "src/manifest.ts" },
-  { template: "registration.template.txt", target: "src/registration.ts" },
-  { template: "plugin-config.template.txt", target: "src/plugin-config.ts" },
-  { template: "plugin-entry.template.txt", target: "src/plugin-entry.ts" },
-  { template: "entry-predicate.template.txt", target: "src/entry-predicate.ts" },
   { template: "installer.template.txt", target: "src/installer.ts" },
   { template: "cli.template.txt", target: "src/cli.ts" },
 ];
@@ -69,6 +85,8 @@ export class ScaffoldRenderer {
     const shipped = new Set(plan.ship);
     const codeBacked = [...shipped].some((kind) => !ASSET_KINDS.includes(kind));
     parsed["content"] = codeBacked ? "code" : "assets";
+    const dependencies = parsed["dependencies"] as Record<string, string>;
+    dependencies["opencode-architect"] = plan.coreDependency;
     return `${JSON.stringify(parsed, null, 2)}\n`;
   }
 

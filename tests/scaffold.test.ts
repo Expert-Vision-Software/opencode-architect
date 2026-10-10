@@ -34,20 +34,14 @@ function contentOf(files: RenderedFile[], relativePath: string): string {
 
 describe("scaffold renderer", () => {
   test("an assets-only plan renders the full conformant tree", () => {
-    const files = new ScaffoldRenderer().render({ name: "opencode-mytool", ship: ["skills"] });
+    const files = new ScaffoldRenderer().render({ name: "opencode-mytool", ship: ["skills"], coreDependency: "file:../opencode-architect" });
 
     expect(pathSet(files)).toEqual(
       [
         "index.ts",
         "src/cli.ts",
         "src/installer.ts",
-        "src/manifest.ts",
-        "src/plugin-config.ts",
-        "src/plugin-entry.ts",
-        "src/entry-predicate.ts",
-        "src/plugin-name.ts",
         "src/plugin.ts",
-        "src/registration.ts",
         "commands/my-command.md",
         "package.json",
         "skills/mytool/SKILL.md",
@@ -58,7 +52,7 @@ describe("scaffold renderer", () => {
   });
 
   test("the package manifest carries the derived name, bin, files, and assets content", () => {
-    const files = new ScaffoldRenderer().render({ name: "opencode-mytool", ship: ["skills"] });
+    const files = new ScaffoldRenderer().render({ name: "opencode-mytool", ship: ["skills"], coreDependency: "file:../opencode-architect" });
     const manifest = JSON.parse(contentOf(files, "package.json")) as {
       name: string;
       content: string;
@@ -79,7 +73,7 @@ describe("scaffold renderer", () => {
   });
 
   test("template bodies are substituted with the package name and identifier", () => {
-    const files = new ScaffoldRenderer().render({ name: "opencode-mytool", ship: ["skills"] });
+    const files = new ScaffoldRenderer().render({ name: "opencode-mytool", ship: ["skills"], coreDependency: "file:../opencode-architect" });
 
     expect(contentOf(files, "src/plugin.ts")).toContain("opencode-mytool");
     expect(contentOf(files, "skills/mytool/SKILL.md")).toContain('name: "mytool"');
@@ -88,7 +82,7 @@ describe("scaffold renderer", () => {
   });
 
   test("shipping agents declares code content and lists the directory", () => {
-    const files = new ScaffoldRenderer().render({ name: "opencode-mytool", ship: ["skills", "agents"] });
+    const files = new ScaffoldRenderer().render({ name: "opencode-mytool", ship: ["skills", "agents"], coreDependency: "file:../opencode-architect" });
 
     const manifest = JSON.parse(contentOf(files, "package.json")) as { files: string[]; content: string };
     expect(manifest.content).toBe("code");
@@ -191,9 +185,13 @@ describe("scaffold command (promote)", () => {
       const manifest = JSON.parse(await readFile(path.join(dir, "opencode-mytool", "package.json"), "utf-8")) as {
         name: string;
         content: string;
+        dependencies: Record<string, string>;
       };
       expect(manifest.name).toBe("opencode-mytool");
       expect(manifest.content).toBe("assets");
+      // The machinery comes from the core dependency, linked locally (ADR-0013).
+      expect(manifest.dependencies["opencode-architect"]).toMatch(/^file:/);
+      expect(existsSync(path.join(dir, "opencode-mytool", "node_modules", "opencode-architect"))).toBe(true);
       expect(existsSync(path.join(dir, "opencode-mytool", "skills", "alpha", "SKILL.md"))).toBe(true);
       expect(existsSync(path.join(dir, "opencode-mytool", "skills", "beta", "SKILL.md"))).toBe(true);
       expect(existsSync(path.join(dir, ".opencode", "skills", "alpha", "SKILL.md"))).toBe(true);

@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
-import { ScaffoldRenderer, type ShipKind } from "../src/scaffold/renderer";
+import { ScaffoldRenderer, fileDependency, type ShipKind } from "../src/scaffold/renderer";
 
 const REPO_ROOT = path.resolve(import.meta.dirname, "..");
 const TEMPLATES_DIR = path.join(REPO_ROOT, "templates");
@@ -38,12 +38,14 @@ interface SyncPair {
  * The sync table: the one classification of every mirrored template↔suite pair.
  * Mirrored into references/template-sync-table.md — the test below fails when
  * the doc and this table disagree, so "are we in sync?" has a single answer.
+ *
+ * Since the core carve-out (ADR-0013) the machinery templates are gone: the
+ * generated package imports the machinery from the `opencode-architect/core`
+ * dependency, and what remains are adapter renderings the scaffold renderer
+ * emits.
  */
 const SYNC_TABLE: SyncPair[] = [
   // --- byte-synced: the test asserts source === template body ---
-  { template: "plugin-name.template.txt", counterpart: "src/plugin-name.ts", state: "byte-synced" },
-  { template: "plugin-entry.template.txt", counterpart: "src/plugin-entry.ts", state: "byte-synced" },
-  { template: "entry-predicate.template.txt", counterpart: "src/entry-predicate.ts", state: "byte-synced" },
   { template: "index.template.txt", counterpart: "index.ts", state: "byte-synced" },
 
   // --- declared-divergent: the test asserts the named policy difference ---
@@ -52,20 +54,14 @@ const SYNC_TABLE: SyncPair[] = [
     counterpart: "src/cli.ts",
     state: "declared-divergent",
     policy:
-      "suite-only broad clear-cache modes (--package/--all/--yes/--dry-run) and status --package lookup; generated-only migrate subcommand",
+      "suite-only broad clear-cache modes (--package/--all/--yes/--dry-run) and status --package lookup; generated-only migrate subcommand; both are thin adapters over the core dependency",
   },
   {
     template: "installer.template.txt",
     counterpart: "src/installer.ts",
     state: "declared-divergent",
-    policy: "suite installer is an Installer class; the generated installer is function-style",
-  },
-  {
-    template: "plugin-config.template.txt",
-    counterpart: "src/plugin-config.ts",
-    state: "declared-divergent",
     policy:
-      "suite config editing is split (config-reader / registration-detector / config-splicer); the template is the self-contained monolith",
+      "suite installer is an Installer class orchestrating the suite payload; the generated installer is a function-style adapter whose policy constants (package, skill, command, asset layout) sit over the core dependency",
   },
   {
     template: "package-full.template.json",
@@ -77,14 +73,29 @@ const SYNC_TABLE: SyncPair[] = [
 
   // --- fixture-covered: the rendered fixture (tests/templates.test.ts) exercises the file ---
   { template: "plugin-local.template.txt", counterpart: "src/plugin.ts", state: "fixture-covered" },
-  { template: "manifest.template.txt", counterpart: "src/manifest.ts", state: "fixture-covered" },
-  { template: "registration.template.txt", counterpart: "src/registration.ts", state: "fixture-covered" },
   { template: "skill-structure.template.md", counterpart: "skills/<identifier>/SKILL.md", state: "fixture-covered" },
   { template: "package-basics.template.json", counterpart: "package.json", state: "fixture-covered" },
   { template: "tsconfig.template.json", counterpart: "tsconfig.json", state: "fixture-covered" },
 ];
 
-const RENDER_PLAN = { name: "opencode-myextension", ship: ["skills", "commands"] as ShipKind[] };
+/** Machinery that used to be vendored through templates and now comes from the core dependency (ADR-0013). */
+const CORE_PROVIDED = [
+  { template: "plugin-name.template.txt", formerTarget: "src/plugin-name.ts" },
+  { template: "plugin-entry.template.txt", formerTarget: "src/plugin-entry.ts" },
+  { template: "entry-predicate.template.txt", formerTarget: "src/entry-predicate.ts" },
+  { template: "manifest.template.txt", formerTarget: "src/manifest.ts" },
+  { template: "registration.template.txt", formerTarget: "src/registration.ts" },
+  { template: "plugin-config.template.txt", formerTarget: "src/plugin-config.ts" },
+] as const;
+
+const RENDER_PLAN = {
+  name: "opencode-myextension",
+  ship: ["skills", "commands"] as ShipKind[],
+  coreDependency: fileDependency(
+    path.join(REPO_ROOT, ".rendered-fixture", "opencode-myextension"),
+    REPO_ROOT,
+  ),
+};
 
 describe("template sync table", () => {
   describe("byte-synced pairs are byte-identical", () => {
@@ -114,7 +125,7 @@ describe("template sync table", () => {
       expect(generated).not.toContain(`values["dry-run"]`);
     });
 
-    test("installer: suite is an Installer class, generated is function-style", async () => {
+    test("installer: suite is an Installer class, generated is an adapter over the core dependency", async () => {
       const [suite, generated] = await Promise.all([
         readSource("src/installer.ts"),
         readTemplate("installer.template.txt"),
@@ -123,16 +134,10 @@ describe("template sync table", () => {
       expect(generated).not.toContain("class Installer");
       expect(generated).toContain("export async function install(");
       expect(generated).toContain("export async function uninstall(");
-    });
-
-    test("plugin-config: suite delegates to the split reader; template defines everything inline", async () => {
-      const [suite, generated] = await Promise.all([
-        readSource("src/plugin-config.ts"),
-        readTemplate("plugin-config.template.txt"),
-      ]);
-      expect(suite).toContain(`from "./config-reader"`);
-      expect(generated).toContain(`export type ConfigScope = "local" | "global"`);
-      expect(generated).not.toContain(`from "./config-reader"`);
+      // The adapter declares policy and delegates machinery to the core dependency.
+      expect(generated).toContain('from "opencode-architect/core"');
+      expect(generated).not.toContain("class InstallManifest");
+      expect(generated).not.toContain("class PluginConfigEditor");
     });
 
     test("package-full expands package-basics with npm fields, carrying the declaration through", async () => {
@@ -164,6 +169,24 @@ describe("template sync table", () => {
     }
   });
 
+  describe("machinery pairs dissolved into the core dependency (ADR-0013)", () => {
+    const rendered = new ScaffoldRenderer().render(RENDER_PLAN);
+
+    for (const row of CORE_PROVIDED) {
+      test(`templates/${row.template} no longer exists and ${row.formerTarget} is not rendered`, async () => {
+        await expect(readFile(path.join(TEMPLATES_DIR, row.template), "utf-8")).rejects.toThrow();
+        expect(rendered.map((file) => file.relativePath)).not.toContain(row.formerTarget);
+      });
+    }
+
+    test("the rendered package.json depends on opencode-architect through a local file spec", () => {
+      const manifest = JSON.parse(
+        rendered.find((file) => file.relativePath === "package.json")?.content ?? "{}",
+      ) as { dependencies: Record<string, string> };
+      expect(manifest.dependencies["opencode-architect"]).toMatch(/^file:(\.\/|\.\.\/)/);
+    });
+  });
+
   test("references/template-sync-table.md mirrors this table", async () => {
     const doc = await readFile(TABLE_DOC, "utf-8");
     for (const pair of SYNC_TABLE) {
@@ -173,7 +196,11 @@ describe("template sync table", () => {
       expect(row).toContain(pair.counterpart);
       expect(row).toContain(pair.state);
     }
-    // The doc names every template in the templates/ directory — nothing unclassified.
+    // The doc names every template in the templates/ directory — nothing
+    // unclassified: the dissolved rows appear in the core-provided section.
+    for (const row of CORE_PROVIDED) {
+      expect(doc).toContain(row.template);
+    }
     expect(doc).toContain("prompts.template.txt");
   });
 });

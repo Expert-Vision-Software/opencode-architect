@@ -1,6 +1,6 @@
 import { exists, mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { ScaffoldRenderer, type RenderedFile, type ShipKind } from "./renderer";
+import { ScaffoldRenderer, architectPackageRoot, fileDependency, type RenderedFile, type ShipKind } from "./renderer";
 
 const SHIP_KINDS: ShipKind[] = ["skills", "commands", "agents", "tools", "plugins"];
 
@@ -39,7 +39,11 @@ export class Scaffolder {
       return { ok: false, error: `Target directory already exists: ${packageDir}. Remove it or choose another name.` };
     }
 
-    const rendered = new ScaffoldRenderer().render({ name, ship });
+    const rendered = new ScaffoldRenderer().render({
+      name,
+      ship,
+      coreDependency: fileDependency(packageDir, architectPackageRoot()),
+    });
     for (const file of rendered) {
       const targetPath = path.join(packageDir, file.relativePath);
       await mkdir(path.dirname(targetPath), { recursive: true });

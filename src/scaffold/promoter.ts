@@ -1,8 +1,8 @@
-import { exists, mkdir, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { exists, mkdir, readdir, readFile, rm, stat, symlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { PluginConfigEditor } from "../core/plugin-config";
-import { ScaffoldRenderer, type ShipKind } from "./renderer";
+import { ScaffoldRenderer, architectPackageRoot, fileDependency, type ShipKind } from "./renderer";
 import { Scaffolder } from "./scaffolder";
 
 const CONTENT_MAPPINGS: Array<{ source: string; destination: string; kind: ShipKind }> = [
@@ -67,8 +67,10 @@ export class Promoter {
     }
     const ship = [...new Set(inventory.map((entry) => entry.kind))];
 
-    const rendered = new ScaffoldRenderer().render({ name, ship });
+    const architectRoot = architectPackageRoot();
+    const rendered = new ScaffoldRenderer().render({ name, ship, coreDependency: fileDependency(packageDir, architectRoot) });
     await new Scaffolder().writeRendered(packageDir, rendered);
+    await this.linkCoreDependency(packageDir, architectRoot);
     for (const entry of inventory) {
       const targetPath = path.join(packageDir, entry.relativePath);
       await mkdir(path.dirname(targetPath), { recursive: true });
@@ -143,6 +145,19 @@ export class Promoter {
       managed: removal.managed,
       wouldRemove: [],
     };
+  }
+
+  /**
+   * Links the core dependency the way a package manager links a `file:`
+   * dependency (ADR-0013) — a junction into the installed architect package,
+   * so the promoted package's install can resolve `opencode-architect/core`
+   * locally, with no registry access.
+   */
+  private async linkCoreDependency(packageDir: string, architectRoot: string): Promise<void> {
+    const linkPath = path.join(packageDir, "node_modules", "opencode-architect");
+    if (await exists(linkPath)) return;
+    await mkdir(path.dirname(linkPath), { recursive: true });
+    await symlink(architectRoot, linkPath, process.platform === "win32" ? "junction" : "dir");
   }
 
   private async repoRoot(projectDir: string): Promise<string> {

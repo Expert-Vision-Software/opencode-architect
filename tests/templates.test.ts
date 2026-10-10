@@ -1,12 +1,12 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { DocsFactGate } from "./docs-fact-gate";
 import { ConfigSchemaValidator } from "./config-schema-validator";
 import { V2HostHarness } from "./v2-host-harness";
-import { ScaffoldRenderer } from "../src/scaffold/renderer";
+import { ScaffoldRenderer, fileDependency } from "../src/scaffold/renderer";
 
 const REPO_ROOT = path.resolve(import.meta.dirname, "..");
 const TEMPLATES_DIR = path.join(REPO_ROOT, "templates");
@@ -16,18 +16,12 @@ const PACKAGE_NAME = "opencode-myextension";
 
 const TEMPLATE_FILES = [
   "cli.template.txt",
-  "entry-predicate.template.txt",
   "index.template.txt",
   "installer.template.txt",
-  "manifest.template.txt",
   "package-basics.template.json",
   "package-full.template.json",
-  "plugin-config.template.txt",
-  "plugin-entry.template.txt",
   "plugin-local.template.txt",
-  "plugin-name.template.txt",
   "prompts.template.txt",
-  "registration.template.txt",
   "skill-structure.template.md",
   "tsconfig.template.json",
 ] as const;
@@ -47,13 +41,24 @@ function templateBody(name: string): Promise<string> {
 }
 
 async function renderPackage(): Promise<void> {
-  const rendered = new ScaffoldRenderer().render({ name: PACKAGE_NAME, ship: ["skills", "commands"] });
+  const rendered = new ScaffoldRenderer().render({
+    name: PACKAGE_NAME,
+    ship: ["skills", "commands"],
+    coreDependency: fileDependency(RENDERED_PACKAGE, REPO_ROOT),
+  });
   await rm(RENDER_ROOT, { recursive: true, force: true });
   for (const file of rendered) {
     const target = path.join(RENDERED_PACKAGE, file.relativePath);
     await mkdir(path.dirname(target), { recursive: true });
     await writeFile(target, file.content);
   }
+  // Link the core dependency the way a package manager links a `file:`
+  // dependency — no registry access, no network. Every gate below (typecheck,
+  // the package's own tests, install/status/uninstall) then resolves
+  // `opencode-architect/core` through this dependency link.
+  const linkDir = path.join(RENDERED_PACKAGE, "node_modules");
+  await mkdir(linkDir, { recursive: true });
+  await symlink(REPO_ROOT, path.join(linkDir, "opencode-architect"), process.platform === "win32" ? "junction" : "dir");
 }
 
 interface SpawnOutcome {
@@ -203,6 +208,13 @@ describe("rendered package passes its own gates", () => {
     expect(manifest.entryConfigPath.replaceAll("\\", "/")).toContain("opencode.jsonc");
   }, 60_000);
 
+  test("the rendered package.json depends on the core module through a local file spec", async () => {
+    const manifest = JSON.parse(
+      await readFile(path.join(RENDERED_PACKAGE, "package.json"), "utf-8"),
+    ) as { dependencies: Record<string, string> };
+    expect(manifest.dependencies["opencode-architect"]).toMatch(/^file:(\.\/|\.\.\/)/);
+  });
+
   test("a live path-form entry prevents a duplicate name entry", async () => {
     const pathProject = path.join(RENDER_ROOT, "path-consumer");
     await mkdir(pathProject, { recursive: true });
@@ -269,20 +281,4 @@ describe("rendered package passes its own gates", () => {
     expect(verdict.ok).toBe(true);
     expect(verdict.config?.plugins ?? []).not.toContain(`${PACKAGE_NAME}@latest`);
   }, 60_000);
-});
-
-describe("suite src mirrors template bodies byte-for-byte", () => {
-  const SYNCED_PAIRS = [
-    { template: "plugin-name.template.txt", source: "plugin-name.ts" },
-    { template: "plugin-entry.template.txt", source: "plugin-entry.ts" },
-    { template: "entry-predicate.template.txt", source: "entry-predicate.ts" },
-  ] as const;
-
-  for (const pair of SYNCED_PAIRS) {
-    test(`templates/${pair.template} === src/${pair.source}`, async () => {
-      const body = await templateBody(pair.template);
-      const source = await readFile(path.join(REPO_ROOT, "src", pair.source), "utf-8");
-      expect(source).toBe(body);
-    });
-  }
 });
