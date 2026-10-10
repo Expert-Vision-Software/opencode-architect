@@ -4,7 +4,7 @@ import { ConfigEntriesReader, type ConfigEntries } from "./config-entries";
 import { LoadedVersionResolver, type ResolvedSource } from "./loaded-version";
 import { PluginEntryResolver } from "./plugin-entry";
 import { RegistryVersionChecker } from "./registry-version-checker";
-import { EntrySpec } from "./entry-spec";
+import { EntryPredicate } from "./entry-predicate";
 import type { InstallMode, Scope } from "./installer";
 
 export interface ManifestState {
@@ -160,7 +160,7 @@ export class StatusReporter {
   private async findMatchedEntry(entries: ConfigEntries[], packageName: string): Promise<MatchedEntry | null> {
     for (const candidate of entries) {
       for (const raw of candidate.rawEntries) {
-        const classified = EntrySpec.classify(raw);
+        const classified = EntryPredicate.classify(raw);
         if (classified === null) continue;
         if (classified.form === "npm") {
           if (classified.name === packageName) {

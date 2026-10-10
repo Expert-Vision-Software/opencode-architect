@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { ConfigEntriesReader } from "../src/config-entries";
-import { EntrySpec } from "../src/entry-spec";
+import { EntryPredicate } from "../src/entry-predicate";
 import { Installer } from "../src/installer";
 import { LoadedVersionResolver } from "../src/loaded-version";
 import { StatusReporter } from "../src/status-reporter";
@@ -115,16 +115,16 @@ describe("LoadedVersionResolver classification", () => {
   });
 });
 
-describe("EntrySpec", () => {
+describe("EntryPredicate", () => {
   test("specOf unwraps record entries and trims strings", () => {
-    expect(EntrySpec.specOf({ package: " a@1 " })).toBe("a@1");
-    expect(EntrySpec.specOf(42)).toBeNull();
-    expect(EntrySpec.specOf(null)).toBeNull();
+    expect(EntryPredicate.specOf({ package: " a@1 " })).toBe("a@1");
+    expect(EntryPredicate.specOf(42)).toBeNull();
+    expect(EntryPredicate.specOf(null)).toBeNull();
   });
 
   test("baseName strips the version spec", () => {
-    expect(EntrySpec.baseName("@scope/pkg@1.0.0")).toBe("@scope/pkg");
-    expect(EntrySpec.baseName("pkg")).toBe("pkg");
+    expect(EntryPredicate.baseName("@scope/pkg@1.0.0")).toBe("@scope/pkg");
+    expect(EntryPredicate.baseName("pkg")).toBe("pkg");
   });
 });
 
