@@ -1,4 +1,3 @@
-import { PACKAGE_NAME } from "./cache-cleaner";
 import path from "node:path";
 import { ConfigReader, type ConfigEntries } from "./config-reader";
 import { realEnvironment, type Environment } from "./environment";
@@ -6,10 +5,13 @@ import { LoadedVersionResolver, type ResolvedSource } from "./loaded-version";
 import { NpmCache } from "./npm-cache";
 import { RegistryVersionChecker } from "./registry-version-checker";
 import { EntryPredicate } from "./entry-predicate";
-import type { InstallMode, Scope } from "./installer";
+import type { ManifestMode } from "./manifest";
+import type { Scope } from "./scope-base";
+
+export type DeploymentMode = ManifestMode | "none";
 
 export interface ManifestState {
-  mode: InstallMode;
+  mode: ManifestMode;
   version: string;
 }
 
@@ -20,7 +22,7 @@ export interface ManifestLookup {
 export interface ScopeStatusReport {
   scope: Scope;
   registered: boolean;
-  mode: InstallMode;
+  mode: DeploymentMode;
   manifestVersion: string | null;
   configPath: string | null;
   entryText: string | null;
@@ -53,7 +55,7 @@ export interface StatusReport {
 export interface StatusReportOptions {
   scopes: Scope[] | null;
   online: boolean;
-  packageName?: string;
+  packageName: string;
 }
 
 interface MatchedEntry {
@@ -79,7 +81,7 @@ export class StatusReporter {
 
   public async report(projectDir: string, options: StatusReportOptions): Promise<StatusReport> {
     const scopes = options.scopes ?? (["local", "global"] as Scope[]);
-    const packageName = options.packageName ?? PACKAGE_NAME;
+    const packageName = options.packageName;
     let reports: ScopeStatusReport[] = [];
     for (const scope of scopes) {
       reports.push(await this.resolveScope(scope, projectDir, packageName));

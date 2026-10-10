@@ -4,7 +4,7 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { CacheCleaner } from "../src/cache-cleaner";
-import { NpmCache } from "../src/npm-cache";
+import { NpmCache } from "../src/core/npm-cache";
 import { fakeEnvironment, seedCachedPackage, expectClearCacheUsageError } from "./test-helpers";
 
 let cacheDir = "";

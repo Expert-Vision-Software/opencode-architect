@@ -2,6 +2,8 @@ import { homedir } from "node:os";
 import path from "node:path";
 import { realEnvironment, type Environment } from "./environment";
 
+export type Scope = "local" | "global";
+
 export function scopeBase(
   scope: "local" | "global",
   projectDir: string,

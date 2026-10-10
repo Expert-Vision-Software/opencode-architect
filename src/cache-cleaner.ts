@@ -1,8 +1,8 @@
 import { exists, readdir, rm } from "node:fs/promises";
 import path from "node:path";
 import { ClearCacheUsageError } from "./clear-cache-usage-error";
-import { realEnvironment, type Environment } from "./environment";
-import { NpmCache } from "./npm-cache";
+import { realEnvironment, type Environment } from "./core/environment";
+import { NpmCache } from "./core/npm-cache";
 
 export const PACKAGE_NAME = "opencode-architect";
 

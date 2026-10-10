@@ -1,6 +1,6 @@
 import { isAbsolute } from "node:path";
-import { PluginNameNormalizer } from "./plugin-name.ts";
-import { PluginEntryResolver } from "./plugin-entry.ts";
+import { PluginNameNormalizer } from "./plugin-name";
+import { PluginEntryResolver } from "./plugin-entry";
 
 export type EntryForm = "npm" | "path";
 

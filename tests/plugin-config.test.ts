@@ -2,9 +2,9 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
-import { PluginConfigEditor } from "../src/plugin-config";
-import { RegistrationDetector } from "../src/registration-detector";
-import { ConfigReader } from "../src/config-reader";
+import { PluginConfigEditor } from "../src/core/plugin-config";
+import { RegistrationDetector } from "../src/core/registration-detector";
+import { ConfigReader } from "../src/core/config-reader";
 import { fakeEnvironment } from "./test-helpers";
 
 const ROOT = path.join(import.meta.dirname, "..", ".tmp-plugin-config-test");

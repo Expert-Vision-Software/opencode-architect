@@ -4,9 +4,9 @@ import { stat } from "node:fs/promises";
 import path from "node:path";
 import { parseArgs } from "node:util";
 import { Installer, type Scope } from "./installer";
-import { StatusReporter, type EffectiveVersion, type StatusReport } from "./status-reporter";
-import type { ResolvedSource } from "./loaded-version";
-import { CacheCleaner } from "./cache-cleaner";
+import { StatusReporter, type EffectiveVersion, type StatusReport } from "./core/status-reporter";
+import type { ResolvedSource } from "./core/loaded-version";
+import { CacheCleaner, PACKAGE_NAME } from "./cache-cleaner";
 import { ClearCacheUsageError } from "./clear-cache-usage-error";
 import { Scaffolder } from "./scaffold/scaffolder";
 import { Promoter } from "./scaffold/promoter";
@@ -129,7 +129,7 @@ export async function runCli(argv: string[]): Promise<number> {
         const report = await new StatusReporter(installer).report(projectDir, {
           scopes,
           online: values.online,
-          packageName: values.package,
+          packageName: values.package ?? PACKAGE_NAME,
         });
         printStatusReport(report);
         break;

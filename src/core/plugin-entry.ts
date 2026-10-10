@@ -1,7 +1,7 @@
 import { exists, lstat, readFile, realpath } from "node:fs/promises";
 import { dirname, isAbsolute, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { PluginNameNormalizer } from "./plugin-name.ts";
+import { PluginNameNormalizer } from "./plugin-name";
 
 const resolvedRootMemo = new Map<string, string | null>();
 

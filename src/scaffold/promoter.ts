@@ -1,7 +1,7 @@
 import { exists, mkdir, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
-import { PluginConfigEditor } from "../plugin-config";
+import { PluginConfigEditor } from "../core/plugin-config";
 import { ScaffoldRenderer, type ShipKind } from "./renderer";
 import { Scaffolder } from "./scaffolder";
 

@@ -2,7 +2,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { expect, spyOn } from "bun:test";
 import { ClearCacheUsageError } from "../src/clear-cache-usage-error";
-import { realEnvironment, type Environment } from "../src/environment";
+import { realEnvironment, type Environment } from "../src/core/environment";
 
 export interface FakeEnvironmentOptions {
   vars: Record<string, string>;

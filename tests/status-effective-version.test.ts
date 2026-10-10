@@ -3,13 +3,13 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
-import { ConfigReader } from "../src/config-reader";
-import { EntryPredicate } from "../src/entry-predicate";
-import type { Environment } from "../src/environment";
+import { ConfigReader } from "../src/core/config-reader";
+import { EntryPredicate } from "../src/core/entry-predicate";
+import type { Environment } from "../src/core/environment";
 import { Installer } from "../src/installer";
-import { LoadedVersionResolver } from "../src/loaded-version";
-import { NpmCache } from "../src/npm-cache";
-import { StatusReporter } from "../src/status-reporter";
+import { LoadedVersionResolver } from "../src/core/loaded-version";
+import { NpmCache } from "../src/core/npm-cache";
+import { StatusReporter } from "../src/core/status-reporter";
 import { fakeEnvironment } from "./test-helpers";
 
 let projectDir = "";
@@ -249,7 +249,7 @@ describe("ConfigReader.entries", () => {
 
 describe("StatusReporter registration detection", () => {
   test("reports none for an empty scope", async () => {
-    const report = await reporter.report(projectDir, { scopes: ["local"], online: false });
+    const report = await reporter.report(projectDir, { scopes: ["local"], online: false, packageName: "opencode-architect" });
 
     expect(report.scopes[0]?.registered).toBe(false);
     expect(report.scopes[0]?.mode).toBe("none");
@@ -261,7 +261,7 @@ describe("StatusReporter registration detection", () => {
     const configPath = await writeConfig("local", "opencode.json", '{ "plugins": ["opencode-architect@latest"] }\n');
     await writeLocalManifest("9.9.9", configPath);
 
-    const report = await reporter.report(projectDir, { scopes: ["local"], online: false });
+    const report = await reporter.report(projectDir, { scopes: ["local"], online: false, packageName: "opencode-architect" });
 
     expect(report.scopes[0]?.registered).toBe(true);
     expect(report.scopes[0]?.mode).toBe("plugin");
@@ -273,7 +273,7 @@ describe("StatusReporter registration detection", () => {
     const configPath = await writeConfig("local", "opencode.json", "{}\n");
     await writeLocalManifest("9.9.9", configPath);
 
-    const report = await reporter.report(projectDir, { scopes: ["local"], online: false });
+    const report = await reporter.report(projectDir, { scopes: ["local"], online: false, packageName: "opencode-architect" });
 
     expect(report.scopes[0]?.registered).toBe(false);
     expect(report.scopes[0]?.manifestVersion).toBe("9.9.9");
@@ -283,7 +283,7 @@ describe("StatusReporter registration detection", () => {
   test("detects an npm registration without a manifest", async () => {
     await writeConfig("local", "opencode.json", '{ "plugins": ["opencode-architect"] }\n');
 
-    const report = await reporter.report(projectDir, { scopes: ["local"], online: false });
+    const report = await reporter.report(projectDir, { scopes: ["local"], online: false, packageName: "opencode-architect" });
 
     expect(report.scopes[0]?.registered).toBe(true);
     expect(report.scopes[0]?.manifestVersion).toBeNull();
@@ -294,7 +294,7 @@ describe("StatusReporter registration detection", () => {
     const entry = pathToFileURL(path.resolve(import.meta.dirname, "..")).href;
     await writeConfig("local", "opencode.json", `{ "plugins": [{ "package": "${entry}" }] }\n`);
 
-    const report = await reporter.report(projectDir, { scopes: ["local"], online: false });
+    const report = await reporter.report(projectDir, { scopes: ["local"], online: false, packageName: "opencode-architect" });
 
     expect(report.scopes[0]?.registered).toBe(true);
     expect(report.scopes[0]?.entryForm).toBe("path");
@@ -304,7 +304,7 @@ describe("StatusReporter registration detection", () => {
     const entry = pathToFileURL(path.resolve(import.meta.dirname, "..")).href;
     await writeConfig("local", "opencode.json", `{ "plugins": ["${entry}"] }\n`);
 
-    const report = await reporter.report(projectDir, { scopes: ["local"], online: false });
+    const report = await reporter.report(projectDir, { scopes: ["local"], online: false, packageName: "opencode-architect" });
 
     expect(report.scopes[0]?.registered).toBe(true);
     expect(report.scopes[0]?.entryForm).toBe("path");
@@ -320,7 +320,7 @@ describe("StatusReporter registration detection", () => {
     const relative = path.relative(path.join(projectDir, ".opencode"), checkout).replaceAll("\\", "/");
     await writeConfig("local", "opencode.json", `{ "plugins": ["${relative}"] }\n`);
 
-    const report = await reporter.report(projectDir, { scopes: ["local"], online: false });
+    const report = await reporter.report(projectDir, { scopes: ["local"], online: false, packageName: "opencode-architect" });
 
     expect(report.scopes[0]?.registered).toBe(true);
     expect(report.scopes[0]?.resolved?.version).toBe("3.4.5");
@@ -330,7 +330,7 @@ describe("StatusReporter registration detection", () => {
   test("detects a legacy v1 registration without a manifest", async () => {
     await writeConfig("local", "opencode.json", '{ "plugin": ["opencode-architect"] }\n');
 
-    const report = await reporter.report(projectDir, { scopes: ["local"], online: false });
+    const report = await reporter.report(projectDir, { scopes: ["local"], online: false, packageName: "opencode-architect" });
 
     expect(report.scopes[0]?.registered).toBe(true);
   });
@@ -386,7 +386,7 @@ describe("StatusReporter.report", () => {
     await seedCacheCopy("opencode-architect@latest", "opencode-architect", "1.0.0");
     await writeConfig("local", "opencode.jsonc", '{ "plugins": ["opencode-architect@latest"] }\n');
 
-    const report = await reporter.report(projectDir, { scopes: null, online: false });
+    const report = await reporter.report(projectDir, { scopes: null, online: false, packageName: "opencode-architect" });
 
     const local = report.scopes.find((scope) => scope.scope === "local");
     expect(local?.registered).toBe(true);
@@ -400,7 +400,7 @@ describe("StatusReporter.report", () => {
   test("a pinned spec answers the verdict even when no copy is cached", async () => {
     await writeConfig("local", "opencode.json", '{ "plugins": ["opencode-architect@1.0.0"] }\n');
 
-    const report = await reporter.report(projectDir, { scopes: null, online: false });
+    const report = await reporter.report(projectDir, { scopes: null, online: false, packageName: "opencode-architect" });
 
     expect(report.effective.version).toBe("1.0.0");
     expect(report.effective.versionKind).toBe("spec");
@@ -411,7 +411,7 @@ describe("StatusReporter.report", () => {
     const stubFetch = ((input: string | URL | Request) =>
       Promise.resolve(new Response(JSON.stringify({ version: "2.0.0" }), { status: 200 }))) as unknown as typeof fetch;
 
-    const report = await new StatusReporter(installer, { ...isolatedEnvironment(), fetch: stubFetch }).report(projectDir, { scopes: null, online: true });
+    const report = await new StatusReporter(installer, { ...isolatedEnvironment(), fetch: stubFetch }).report(projectDir, { scopes: null, online: true, packageName: "opencode-architect" });
 
     expect(report.effective.version).toBe("2.0.0");
     expect(report.effective.versionKind).toBe("npm");
@@ -420,7 +420,7 @@ describe("StatusReporter.report", () => {
   test("a range spec stays unresolved without a cached copy", async () => {
     await writeConfig("local", "opencode.json", '{ "plugins": ["opencode-architect@^1.7.0"] }\n');
 
-    const report = await reporter.report(projectDir, { scopes: null, online: false });
+    const report = await reporter.report(projectDir, { scopes: null, online: false, packageName: "opencode-architect" });
 
     expect(report.effective.version).toBeNull();
     expect(report.effective.versionKind).toBeNull();
@@ -451,7 +451,7 @@ describe("StatusReporter.report", () => {
     await writeConfig("local", "opencode.json", '{ "plugins": ["opencode-architect@latest"] }\n');
     await writeConfig("global", "opencode.json", '{ "plugins": ["opencode-architect@latest"] }\n');
 
-    const report = await reporter.report(projectDir, { scopes: null, online: false });
+    const report = await reporter.report(projectDir, { scopes: null, online: false, packageName: "opencode-architect" });
 
     expect(report.scopes.filter((scope) => scope.registered)).toHaveLength(2);
     expect(report.warnings.join("\n")).toContain("double-load risk");
@@ -463,7 +463,7 @@ describe("StatusReporter.report", () => {
     const configPath = await writeConfig("local", "opencode.json", '{ "plugins": ["opencode-architect@latest"] }\n');
     await writeLocalManifest("1.0.0", configPath);
 
-    const report = await reporter.report(projectDir, { scopes: null, online: false });
+    const report = await reporter.report(projectDir, { scopes: null, online: false, packageName: "opencode-architect" });
 
     expect(report.scopes[0]?.warnings.join("\n")).toContain("manifest records 1.0.0");
   });
@@ -471,7 +471,7 @@ describe("StatusReporter.report", () => {
   test("warns when no cached copy exists for the registered spec", async () => {
     await writeConfig("local", "opencode.json", '{ "plugins": ["opencode-architect@0.4.0"] }\n');
 
-    const report = await reporter.report(projectDir, { scopes: null, online: false });
+    const report = await reporter.report(projectDir, { scopes: null, online: false, packageName: "opencode-architect" });
 
     expect(report.scopes[0]?.warnings.join("\n")).toContain("no cached copy");
   });
@@ -481,7 +481,7 @@ describe("StatusReporter.report", () => {
     await writeConfig("local", "opencode.json", '{ "plugins": ["opencode-architect@latest"] }\n');
     await writeConfig("global", "opencode.json", '{ "plugins": ["opencode-architect@latest"] }\n');
 
-    const report = await reporter.report(projectDir, { scopes: ["global"], online: false });
+    const report = await reporter.report(projectDir, { scopes: ["global"], online: false, packageName: "opencode-architect" });
 
     expect(report.scopes).toHaveLength(1);
     expect(report.scopes[0]?.scope).toBe("global");
@@ -494,7 +494,7 @@ describe("StatusReporter.report", () => {
     const stubFetch = ((input: string | URL | Request) =>
       Promise.resolve(new Response(JSON.stringify({ version: "2.0.0" }), { status: 200 }))) as unknown as typeof fetch;
 
-    const report = await new StatusReporter(installer, { ...isolatedEnvironment(), fetch: stubFetch }).report(projectDir, { scopes: null, online: true });
+    const report = await new StatusReporter(installer, { ...isolatedEnvironment(), fetch: stubFetch }).report(projectDir, { scopes: null, online: true, packageName: "opencode-architect" });
 
     expect(report.scopes[0]?.publishedVersion).toBe("2.0.0");
     expect(report.effective.latestVersion).toBe("2.0.0");
@@ -513,7 +513,7 @@ describe("StatusReporter.report", () => {
     const stubFetch = ((input: string | URL | Request) =>
       Promise.resolve(new Response(JSON.stringify({ version: "2.0.0" }), { status: 200 }))) as unknown as typeof fetch;
 
-    const report = await new StatusReporter(installer, { ...isolatedEnvironment(), fetch: stubFetch }).report(projectDir, { scopes: null, online: true });
+    const report = await new StatusReporter(installer, { ...isolatedEnvironment(), fetch: stubFetch }).report(projectDir, { scopes: null, online: true, packageName: "opencode-architect" });
 
     expect(report.scopes[0]?.entryForm).toBe("path");
     expect(report.scopes[0]?.publishedVersion).toBe("2.0.0");
@@ -526,7 +526,7 @@ describe("StatusReporter.report", () => {
     await writeConfig("local", "opencode.json", '{ "plugins": ["opencode-architect@latest"] }\n');
     const failingFetch = (() => Promise.reject(new Error("offline"))) as unknown as typeof fetch;
 
-    const report = await new StatusReporter(installer, { ...isolatedEnvironment(), fetch: failingFetch }).report(projectDir, { scopes: null, online: true });
+    const report = await new StatusReporter(installer, { ...isolatedEnvironment(), fetch: failingFetch }).report(projectDir, { scopes: null, online: true, packageName: "opencode-architect" });
 
     expect(report.scopes[0]?.publishedVersion).toBeNull();
     expect(report.effective.version).toBe("1.0.0");

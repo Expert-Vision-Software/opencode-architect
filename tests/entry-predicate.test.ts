@@ -3,7 +3,7 @@ import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
-import { EntryPredicate } from "../src/entry-predicate";
+import { EntryPredicate } from "../src/core/entry-predicate";
 
 describe("EntryPredicate.classify", () => {
   test("parses string entries, { package } objects, and rejects junk", () => {

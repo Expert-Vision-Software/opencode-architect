@@ -4,13 +4,14 @@ import { hashElement } from "folder-hash";
 import { AGENT_FILENAMES } from "./agent-loader";
 import { BundledAssetsMissingError } from "./bundled-assets-missing-error";
 import { CopyModeUnsupportedError } from "./copy-mode-unsupported-error";
-import { NpmCache } from "./npm-cache";
-import { PluginConfigEditor } from "./plugin-config";
-import { realEnvironment, type Environment } from "./environment";
-import { scopeBase } from "./scope-base";
-import type { ManifestState } from "./status-reporter";
+import { NpmCache } from "./core/npm-cache";
+import { PluginConfigEditor } from "./core/plugin-config";
+import { realEnvironment, type Environment } from "./core/environment";
+import { scopeBase, type Scope } from "./core/scope-base";
+import { removeCacheTargets } from "./core/cache-hygiene";
+import type { ManifestState } from "./core/status-reporter";
 
-export type Scope = "local" | "global";
+export type { Scope } from "./core/scope-base";
 export type InstallMode = "none" | "copy" | "plugin";
 export type ManifestMode = "copy" | "plugin";
 export type InstallAction = "installed" | "upgraded" | "noop" | "migrated";
@@ -158,24 +159,10 @@ export class Installer {
   }
 
   private async prunePackageCache(version: string): Promise<{ removed: string[]; warnings: string[] }> {
-    const removed: string[] = [];
-    const warnings: string[] = [];
-    const targets = [
-      PACKAGE_NAME,
-      `${PACKAGE_NAME}@latest`,
-      `${PACKAGE_NAME}@${version}`,
-    ].map((name) => path.join(this.cache.root(), name));
-    for (const target of targets) {
-      if (!(await exists(target))) continue;
-      try {
-        await this.rmFn(target, { recursive: true });
-        removed.push(target);
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        warnings.push(`Could not clear cached package ${target}: ${message}`);
-      }
-    }
-    return { removed, warnings };
+    const wanted = [PACKAGE_NAME, `${PACKAGE_NAME}@latest`, `${PACKAGE_NAME}@${version}`];
+    const targets = wanted.map((name) => path.join(this.cache.root(), name));
+    const outcome = await removeCacheTargets(this.cache.root(), (name) => wanted.includes(name), this.rmFn);
+    return { removed: targets.filter((target) => outcome.removed.includes(target)), warnings: outcome.warnings };
   }
 
   public async uninstall(scope: Scope, projectDir: string): Promise<UninstallOutcome> {
