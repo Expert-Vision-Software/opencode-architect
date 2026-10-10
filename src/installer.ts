@@ -1,5 +1,4 @@
 import { exists, mkdir, readFile, readdir, rm, rmdir, writeFile } from "node:fs/promises";
-import { homedir } from "node:os";
 import path from "node:path";
 import { hashElement } from "folder-hash";
 import { AGENT_FILENAMES } from "./agent-loader";
@@ -7,6 +6,8 @@ import { BundledAssetsMissingError } from "./bundled-assets-missing-error";
 import { CopyModeUnsupportedError } from "./copy-mode-unsupported-error";
 import { NpmCache } from "./npm-cache";
 import { PluginConfigEditor } from "./plugin-config";
+import { realEnvironment, type Environment } from "./environment";
+import { scopeBase } from "./scope-base";
 import type { ManifestState } from "./status-reporter";
 
 export type Scope = "local" | "global";
@@ -62,12 +63,14 @@ const MANIFEST_NAME = "opencode-architect.manifest.json";
 const LEGACY_MANIFEST_NAME = "opencode-architect.json";
 
 export class Installer {
-  private readonly editor = new PluginConfigEditor();
-  private readonly cache = new NpmCache();
+  private readonly editor: PluginConfigEditor;
+  private readonly cache: NpmCache;
   private readonly assetsDir: string;
 
-  constructor(assetsDir: string | null = null, private readonly rmFn: typeof rm = rm) {
+  constructor(assetsDir: string | null = null, private readonly rmFn: typeof rm = rm, private readonly environment: Environment = realEnvironment) {
     this.assetsDir = assetsDir ?? path.join(import.meta.dirname, "..");
+    this.editor = new PluginConfigEditor(environment);
+    this.cache = new NpmCache(environment);
   }
 
   public async install(scope: Scope, options: InstallOptions): Promise<InstallOutcome> {
@@ -346,10 +349,7 @@ export class Installer {
   }
 
   private scopeBase(scope: Scope, projectDir: string): string {
-    if (scope === "local") return path.join(projectDir, ".opencode");
-    const xdgConfigHome = process.env.XDG_CONFIG_HOME;
-    if (xdgConfigHome) return path.join(xdgConfigHome, "opencode");
-    return path.join(homedir(), ".config", "opencode");
+    return scopeBase(scope, projectDir, this.environment);
   }
 }
 

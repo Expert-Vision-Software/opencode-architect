@@ -6,37 +6,29 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { Installer, contentHash, type Manifest, type Scope } from "../src/installer";
 import { CopyModeUnsupportedError } from "../src/copy-mode-unsupported-error";
+import { fakeEnvironment } from "./test-helpers";
 
 const PACKAGE_ROOT = path.resolve(import.meta.dirname, "..");
 
 let projectDir = "";
 let homeDir = "";
 let cacheDir = "";
-let originalXdgConfig: string | undefined;
-let originalXdgCache: string | undefined;
-const installer = new Installer();
+let installer = new Installer();
 
 beforeEach(async () => {
   projectDir = await mkdtemp(path.join(tmpdir(), "oa-installer-project-"));
   homeDir = await mkdtemp(path.join(tmpdir(), "oa-installer-home-"));
   cacheDir = await mkdtemp(path.join(tmpdir(), "oa-installer-cache-"));
-  originalXdgConfig = process.env.XDG_CONFIG_HOME;
-  originalXdgCache = process.env.XDG_CACHE_HOME;
-  process.env.XDG_CONFIG_HOME = homeDir;
-  process.env.XDG_CACHE_HOME = cacheDir;
+  installer = new Installer(null, rm, isolatedEnvironment());
 });
 
+function isolatedEnvironment() {
+  return fakeEnvironment({
+    vars: { XDG_CONFIG_HOME: homeDir, XDG_CACHE_HOME: cacheDir },
+  });
+}
+
 afterEach(async () => {
-  if (originalXdgConfig === undefined) {
-    delete process.env.XDG_CONFIG_HOME;
-  } else {
-    process.env.XDG_CONFIG_HOME = originalXdgConfig;
-  }
-  if (originalXdgCache === undefined) {
-    delete process.env.XDG_CACHE_HOME;
-  } else {
-    process.env.XDG_CACHE_HOME = originalXdgCache;
-  }
   await rm(projectDir, { recursive: true, force: true });
   await rm(homeDir, { recursive: true, force: true });
   await rm(cacheDir, { recursive: true, force: true });
@@ -247,7 +239,7 @@ describe("Installer.install", () => {
   test("fails loudly when bundled assets are absent (partial cache artifact)", async () => {
     const partialCache = await mkdtemp(path.join(tmpdir(), "oa-partial-cache-"));
     try {
-      const broken = new Installer(partialCache);
+      const broken = new Installer(partialCache, rm, isolatedEnvironment());
 
       await expect(
         broken.install("local", { force: false, mode: "plugin", projectDir }),
@@ -263,7 +255,7 @@ describe("Installer.install", () => {
     const partialCache = await mkdtemp(path.join(tmpdir(), "oa-partial-cache-"));
     await mkdir(path.join(partialCache, "agents"), { recursive: true });
     try {
-      const broken = new Installer(partialCache);
+      const broken = new Installer(partialCache, rm, isolatedEnvironment());
 
       await expect(
         broken.install("local", { force: false, mode: "plugin", projectDir }),
@@ -488,7 +480,7 @@ describe("Installer.install cache pruning", () => {
     const failingInstaller = new Installer(null, async (target, options) => {
       if (target === blocked) throw new Error("EPERM: simulated removal failure");
       await rm(target, options);
-    });
+    }, isolatedEnvironment());
 
     const outcome = await failingInstaller.install("local", { force: false, mode: "plugin", projectDir });
 
