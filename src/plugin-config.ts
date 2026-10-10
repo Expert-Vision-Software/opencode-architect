@@ -1,7 +1,7 @@
 import { exists, mkdir, readFile, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import path from "node:path";
-import { PluginEntryResolver } from "./plugin-entry";
+import { EntryPredicate } from "./entry-predicate";
 
 export type ConfigScope = "local" | "global";
 export type PluginConfigKey = "plugins" | "plugin";
@@ -181,7 +181,7 @@ export class PluginConfigEditor {
   }
 
   public hasMatchingEntry(entries: string[], packageName: string): boolean {
-    return entries.some((entry) => this.matchesEntry(entry, packageName));
+    return entries.some((entry) => EntryPredicate.matchesName(entry, packageName));
   }
 
   private async entryResolves(
@@ -191,15 +191,9 @@ export class PluginConfigEditor {
   ): Promise<boolean> {
     if (rawEntries === null) return false;
     for (const entry of rawEntries) {
-      if (await this.entryMatches(entry, packageName, configDir)) return true;
+      if (await EntryPredicate.matches(entry, packageName, configDir)) return true;
     }
     return false;
-  }
-
-  private async entryMatches(rawEntry: unknown, packageName: string, configDir: string): Promise<boolean> {
-    const name = this.normalizeEntry(rawEntry);
-    if (name !== null && this.matchesEntry(name, packageName)) return true;
-    return PluginEntryResolver.resolvesToPackage(rawEntry, packageName, configDir);
   }
 
   private async findLegacyConfig(reads: CandidateRead[], packageName: string): Promise<string | null> {
@@ -208,12 +202,6 @@ export class PluginConfigEditor {
       if (await this.entryResolves(read.rawEntries.plugin, packageName, legacyDir)) return read.candidate.path;
     }
     return null;
-  }
-
-  private matchesEntry(entry: string, packageName: string): boolean {
-    const specIndex = entry.lastIndexOf("@");
-    const name = specIndex > 0 ? entry.slice(0, specIndex) : entry;
-    return name === packageName;
   }
 
   private canonicalEntry(packageName: string): string {
@@ -266,17 +254,12 @@ export class PluginConfigEditor {
   private keyEntries(config: Record<string, unknown>, key: PluginConfigKey): string[] {
     const value = config[key];
     if (!Array.isArray(value)) return [];
-    return value.map((entry) => this.normalizeEntry(entry)).filter((entry): entry is string => entry !== null);
+    return value.map((entry) => EntryPredicate.specOf(entry)).filter((entry): entry is string => entry !== null);
   }
 
   private entriesOf(config: Record<string, unknown>, key: PluginConfigKey): unknown[] {
     const value = config[key];
     return Array.isArray(value) ? value : [];
-  }
-
-  private normalizeEntry(entry: unknown): string | null {
-    if (typeof entry === "string") return entry;
-    return this.packageOf(entry);
   }
 
   private packageOf(entry: unknown): string | null {
@@ -438,7 +421,7 @@ export class PluginConfigEditor {
   ): Promise<{ start: number; end: number } | null> {
     for (const element of elements) {
       const spec = this.elementSpec(text.slice(element.start, element.end));
-      if (await this.entryMatches(spec, packageName, configDir)) return element;
+      if (await EntryPredicate.matches(spec, packageName, configDir)) return element;
     }
     return null;
   }

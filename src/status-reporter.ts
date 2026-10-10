@@ -2,7 +2,6 @@ import { PACKAGE_NAME } from "./cache-cleaner";
 import path from "node:path";
 import { ConfigEntriesReader, type ConfigEntries } from "./config-entries";
 import { LoadedVersionResolver, type ResolvedSource } from "./loaded-version";
-import { PluginEntryResolver } from "./plugin-entry";
 import { RegistryVersionChecker } from "./registry-version-checker";
 import { EntryPredicate } from "./entry-predicate";
 import type { InstallMode, Scope } from "./installer";
@@ -160,31 +159,16 @@ export class StatusReporter {
   private async findMatchedEntry(entries: ConfigEntries[], packageName: string): Promise<MatchedEntry | null> {
     for (const candidate of entries) {
       for (const raw of candidate.rawEntries) {
-        const classified = EntryPredicate.classify(raw);
+        const classified = await EntryPredicate.matched(raw, packageName, path.dirname(candidate.configPath));
         if (classified === null) continue;
-        if (classified.form === "npm") {
-          if (classified.name === packageName) {
-            return {
-              configPath: candidate.configPath,
-              entry: raw,
-              display: classified.display,
-              name: classified.name,
-              version: classified.version,
-              form: "npm",
-            };
-          }
-          continue;
-        }
-        if (await PluginEntryResolver.resolvesToPackage(raw, packageName, path.dirname(candidate.configPath))) {
-          return {
-            configPath: candidate.configPath,
-            entry: raw,
-            display: classified.display,
-            name: null,
-            version: null,
-            form: "path",
-          };
-        }
+        return {
+          configPath: candidate.configPath,
+          entry: raw,
+          display: classified.display,
+          name: classified.name,
+          version: classified.version,
+          form: classified.form,
+        };
       }
     }
     return null;
